@@ -93,6 +93,24 @@ export default defineConfig({
   plugins: [react(), stateSyncPlugin()],
   server: {
     port: 3000,
-    open: false
+    open: false,
+    proxy: {
+      '/api/evaluasi': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      },
+      '/api/health': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      },
+      '/api/santri': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      },
+      '/api/users': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      }
+    }
   }
 })
