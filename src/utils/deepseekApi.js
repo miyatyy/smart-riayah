@@ -52,6 +52,14 @@ export async function testDeepSeekConnection(token = DEFAULT_DEEPSEEK_TOKEN, mod
   const startTime = Date.now();
   const activeToken = (token || DEFAULT_DEEPSEEK_TOKEN).trim();
 
+  if (!activeToken) {
+    return {
+      success: false,
+      error: 'Token API DeepSeek kosong. Masukkan API Key Anda di kolom input.',
+      latencyMs: 0
+    };
+  }
+
   try {
     const response = await fetch(DEEPSEEK_API_URL, {
       method: 'POST',
@@ -73,11 +81,18 @@ export async function testDeepSeekConnection(token = DEFAULT_DEEPSEEK_TOKEN, mod
     const latencyMs = Date.now() - startTime;
 
     if (!response.ok) {
-      const errorBody = await response.text();
+      let friendlyMsg = `DeepSeek API HTTP ${response.status}`;
+      if (response.status === 401) {
+        friendlyMsg = 'HTTP 401 (Unauthorized): API Key tidak valid atau belum terdaftar.';
+      } else if (response.status === 402) {
+        friendlyMsg = 'HTTP 402 (Payment Required): Saldo kuota API DeepSeek Anda habis.';
+      } else if (response.status === 429) {
+        friendlyMsg = 'HTTP 429 (Rate Limit): Terlalu banyak permintaan dalam waktu singkat.';
+      }
       return {
         success: false,
         status: response.status,
-        error: `DeepSeek API HTTP ${response.status}: ${errorBody}`,
+        error: friendlyMsg,
         latencyMs
       };
     }
@@ -116,6 +131,15 @@ export async function generateDeepSeekSantriAnalysis({
 }) {
   const activeToken = (token || DEFAULT_DEEPSEEK_TOKEN).trim();
   const startTime = Date.now();
+
+  if (!activeToken) {
+    return {
+      success: false,
+      error: 'Token DeepSeek API belum diatur. Silakan klik tombol "Cek Token" untuk memasukkan API Key Anda.',
+      latencyMs: 0
+    };
+  }
+
   const perspective = ROLE_PERSPECTIVES[role] || ROLE_PERSPECTIVES.parent;
 
   const systemPrompt = `Anda adalah "Smart Riayah AI Agent" - agen kecerdasan buatan terpadu untuk Pesantren Modern Darul Ulum, didukung oleh DeepSeek AI.
@@ -214,9 +238,17 @@ Buatkan evaluasi mendalam, skor harmoni karakter, analisis 3 pilar, dan 3 rekome
     if (!response.ok) {
       const errText = await response.text();
       console.warn('DeepSeek API Error Response:', response.status, errText);
+      let friendlyMsg = `DeepSeek API Error (HTTP ${response.status})`;
+      if (response.status === 401) {
+        friendlyMsg = 'DeepSeek API Error (HTTP 401: Token Tidak Valid / Unauthorized). Silakan periksa kembali API Key di tombol "Cek Token".';
+      } else if (response.status === 402) {
+        friendlyMsg = 'DeepSeek API Error (HTTP 402: Kuota Saldo Habis). Silakan isi saldo akun DeepSeek Anda.';
+      } else if (response.status === 429) {
+        friendlyMsg = 'DeepSeek API Error (HTTP 429: Rate Limit). Terlalu banyak permintaan dalam waktu singkat.';
+      }
       return {
         success: false,
-        error: `DeepSeek API Error (HTTP ${response.status})`,
+        error: friendlyMsg,
         latencyMs
       };
     }
