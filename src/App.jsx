@@ -16,13 +16,15 @@ import RfidEcosystemModal from './components/modules/RfidEcosystemModal';
 import RfidCardManager from './components/modules/RfidCardManager';
 import SerialMonitorModal from './components/common/SerialMonitorModal';
 import SmartRiayahAiAgentModal from './components/common/SmartRiayahAiAgentModal';
+import MobileBottomNav from './components/layout/MobileBottomNav';
+import FlutterIntegrationModal from './components/modules/FlutterIntegrationModal';
 import { Bot } from 'lucide-react';
 
 function MainContent() {
   const { role } = useApp();
 
   return (
-    <main className="flex-1 p-2 sm:p-4 md:p-6 overflow-y-auto">
+    <main className="flex-1 p-2 sm:p-4 md:p-6 overflow-y-auto pb-24 lg:pb-6">
       {role === 'superadmin' && <SuperAdminDashboard />}
       {role === 'admin_riayah' && <AdminRiayahDashboard />}
       {role === 'parent' && <ParentPortal />}
@@ -36,11 +38,12 @@ function MainContent() {
 
 function AppShell() {
   const { isSidebarCollapsed, isRfidManagerModalOpen, setIsRfidManagerModalOpen, setIsAiAgentOpen } = useApp();
+  const [isFlutterModalOpen, setIsFlutterModalOpen] = React.useState(false);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex font-sans selection:bg-emerald-500 selection:text-white">
       {/* 1. Left Professional Sidebar (7 Roles) */}
-      <Sidebar />
+      <Sidebar onOpenFlutterModal={() => setIsFlutterModalOpen(true)} />
 
       {/* 2. Main Work Area (Adjusts with Sidebar Collapse State) */}
       <div
@@ -48,14 +51,14 @@ function AppShell() {
           isSidebarCollapsed ? 'lg:ml-[68px]' : 'lg:ml-64'
         }`}
       >
-        <Navbar />
+        <Navbar onOpenFlutterModal={() => setIsFlutterModalOpen(true)} />
         <MainContent />
       </div>
 
-      {/* Floating AI Agent Trigger FAB */}
+      {/* Floating AI Agent Trigger FAB (Adaptive position: above bottom nav on mobile) */}
       <button
         onClick={() => setIsAiAgentOpen(true)}
-        className="fixed bottom-5 right-5 z-40 flex items-center gap-2 px-3.5 py-2.5 rounded-full bg-gradient-to-r from-indigo-600 via-indigo-700 to-cyan-600 hover:from-indigo-700 hover:to-cyan-700 text-white font-bold text-xs shadow-xl shadow-indigo-600/30 hover:scale-105 active:scale-95 transition-all duration-200 border border-indigo-400/50 group"
+        className="fixed bottom-20 sm:bottom-6 right-4 sm:right-6 z-40 flex items-center gap-2 px-3.5 py-2.5 rounded-full bg-gradient-to-r from-indigo-600 via-indigo-700 to-cyan-600 hover:from-indigo-700 hover:to-cyan-700 text-white font-bold text-xs shadow-xl shadow-indigo-600/30 hover:scale-105 active:scale-95 transition-all duration-200 border border-indigo-400/50 group"
         title="Buka Smart Riayah AI Agent (Evaluasi Diagram & DeepSeek AI)"
       >
         <span className="p-1 rounded-full bg-white/20 group-hover:rotate-12 transition">
@@ -73,6 +76,13 @@ function AppShell() {
       <RfidEcosystemModal />
       <SerialMonitorModal />
       <SmartRiayahAiAgentModal />
+      <FlutterIntegrationModal
+        isOpen={isFlutterModalOpen}
+        onClose={() => setIsFlutterModalOpen(false)}
+      />
+
+      {/* 4. Auto-Responsive Mobile Bottom Navigation Bar (< 1024px) */}
+      <MobileBottomNav onOpenFlutterModal={() => setIsFlutterModalOpen(true)} />
     </div>
   );
 }

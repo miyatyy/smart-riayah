@@ -122,8 +122,8 @@ export default function SecurityCommandCenter() {
   }, [activePermitsOut]);
 
   return (
-    <div className="bg-slate-50 text-slate-800 min-h-screen pb-20 pt-4 px-4 sm:px-6 font-sans">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div>
+      <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6 pb-24">
 
         {/* Command Center Clean Topbar */}
         <div className="bg-white border border-slate-200/90 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -208,7 +208,7 @@ export default function SecurityCommandCenter() {
         </div>
 
         {/* Navigation Sub-Tabs */}
-        <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+        <div className="scroll-row border-b border-slate-200 pb-2 gap-2">
           <button
             onClick={() => setActiveTab('gate')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition shadow-xs ${

@@ -406,54 +406,54 @@ export default function RealtimePermitBoard() {
 
       {/* 3. Navigation View Switcher (Papan Realtime vs Buku Log Book) */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
-        <div className="flex items-center gap-2">
+        <div className="scroll-row gap-2 pb-1 sm:pb-0">
           <button
             type="button"
             onClick={() => setActiveTab('board')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-xs transition ${
+            className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-2xl font-bold text-xs transition whitespace-nowrap ${
               activeTab === 'board'
                 ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/20'
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
             }`}
           >
             <Compass className="w-4 h-4" />
-            <span>1. Papan Real-Time Hari Ini (Visual Board)</span>
+            <span>Papan Real-Time <span className="hidden sm:inline">Hari Ini</span></span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('logbook')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-xs transition ${
+            className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-2xl font-bold text-xs transition whitespace-nowrap ${
               activeTab === 'logbook'
                 ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/20'
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
             }`}
           >
             <Calendar className="w-4 h-4" />
-            <span>2. Buku Log Book Perizinan ({permits.length})</span>
+            <span>Buku Log Book ({permits.length})</span>
           </button>
         </div>
 
         {/* Action Buttons: Export & Print PDF */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={handleExportCSV}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition shadow-xs"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition shadow-xs"
             title="Download Log Book format CSV / Excel"
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-            <span className="hidden sm:inline">Export Excel / CSV</span>
+            <span>CSV / Excel</span>
           </button>
 
           <button
             type="button"
             onClick={() => setShowPrintPreviewModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-950/20 transition"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-950/20 transition"
             title="Buka Lembar Dokumen Resmi & Cetak PDF"
           >
             <Printer className="w-4 h-4 text-gold-300" />
-            <span>🖨️ Cetak Log Book (PDF)</span>
+            <span>Cetak PDF</span>
           </button>
         </div>
       </div>

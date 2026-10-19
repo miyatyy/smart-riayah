@@ -104,7 +104,7 @@ export default function WhatsAppDrawer() {
                 </span>
               )}
             </div>
-            <div className="text-left font-sans">
+            <div className="text-left font-sans hidden sm:block">
               <div className="text-xs font-bold leading-none flex items-center gap-1.5">
                 <span>Live WhatsApp Gateway</span>
                 <span className="w-2 h-2 rounded-full bg-emerald-300 animate-pulse"></span>
@@ -123,7 +123,7 @@ export default function WhatsAppDrawer() {
 
       {/* Floating Smartphone Mockup Drawer */}
       {isWaDrawerOpen && (
-        <div className="fixed bottom-6 right-6 z-50 w-full max-w-sm sm:max-w-md bg-white rounded-2xl shadow-2xl border border-slate-300 overflow-hidden flex flex-col h-[650px] max-h-[90vh] transition-all animate-in slide-in-from-bottom-5">
+        <div className="fixed inset-x-3 bottom-20 sm:bottom-6 sm:inset-x-auto sm:right-6 z-50 w-auto sm:w-full max-w-sm sm:max-w-md bg-white rounded-2xl shadow-2xl border border-slate-300 overflow-hidden flex flex-col h-[650px] max-h-[85vh] transition-all animate-in slide-in-from-bottom-5">
           {/* WhatsApp Header */}
           <div className="bg-[#075e54] text-white px-4 py-3 flex items-center justify-between shrink-0 shadow">
             <div className="flex items-center gap-3">

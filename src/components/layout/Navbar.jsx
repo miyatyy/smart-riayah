@@ -92,7 +92,7 @@ function NavBtn({ icon: Icon, onClick, tooltip, badge, variant = 'ghost', classN
   );
 }
 
-export default function Navbar() {
+export default function Navbar({ onOpenFlutterModal }) {
   const {
     role,
     setRole,
@@ -161,9 +161,9 @@ export default function Navbar() {
 
           {/* Role pill — compact, icon + short name only */}
           <Tip label={`Mode aktif: ${meta.label}`} side="bottom">
-            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl ring-1 ${meta.bg} ${meta.ring} cursor-default select-none`}>
+            <div className={`flex items-center gap-1.5 px-2 py-1 sm:px-2.5 rounded-xl ring-1 ${meta.bg} ${meta.ring} cursor-default select-none`}>
               <RoleIcon className={`w-3.5 h-3.5 ${meta.color} shrink-0`} />
-              <span className={`text-xs font-bold hidden sm:block ${meta.color}`}>
+              <span className={`text-[11px] sm:text-xs font-bold ${meta.color}`}>
                 {meta.label}
               </span>
             </div>
@@ -171,7 +171,7 @@ export default function Navbar() {
 
           {/* Santri headcount — mini stat, desktop only */}
           <Tip label={`${santriDiPondok} di pondok · ${santriDiLuar} di luar`} side="bottom">
-            <div className="hidden lg:flex items-center gap-2 bg-slate-50 px-2.5 py-1 rounded-xl ring-1 ring-slate-200 text-xs font-mono cursor-default">
+            <div className="hidden xl:flex items-center gap-2 bg-slate-50 px-2.5 py-1 rounded-xl ring-1 ring-slate-200 text-xs font-mono cursor-default">
               <span className="flex items-center gap-1 text-emerald-700 font-bold">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
                 {santriDiPondok}
@@ -194,24 +194,25 @@ export default function Navbar() {
             {time}
           </span>
 
-          <div className="w-px h-5 bg-slate-200 mx-1 hidden sm:block" />
+          <div className="w-px h-5 bg-slate-200 mx-1 hidden md:block" />
 
-          {/* Sound test */}
+          {/* Sound test (laptop/tablet only) */}
           <NavBtn
             icon={Volume2}
             onClick={() => sound.playSuccess()}
             tooltip="Uji suara notifikasi"
+            className="hidden sm:flex"
           />
 
-          {/* ESP32 hardware status */}
+          {/* ESP32 hardware status (laptop/desktop only) */}
           <NavBtn
             icon={isSerialConnected ? Wifi : WifiOff}
             onClick={() => isSerialConnected ? setIsSerialMonitorOpen(true) : connectSerial()}
             tooltip={isSerialConnected ? 'ESP32 terhubung — klik untuk monitor' : 'ESP32 offline — klik untuk sambungkan'}
-            className={isSerialConnected ? '!text-emerald-600 hover:!bg-emerald-50' : '!text-amber-500 hover:!bg-amber-50'}
+            className={`hidden sm:flex ${isSerialConnected ? '!text-emerald-600 hover:!bg-emerald-50' : '!text-amber-500 hover:!bg-amber-50'}`}
           />
 
-          {/* RFID Card Manager */}
+          {/* RFID Card Manager (laptop/tablet) */}
           <NavBtn
             icon={CreditCard}
             onClick={() => {
@@ -219,9 +220,18 @@ export default function Navbar() {
               setActiveRoleTab('rfid_cards');
             }}
             tooltip="Kelola kartu RFID santri"
+            className="hidden md:flex"
           />
 
-          <div className="w-px h-5 bg-slate-200 mx-1" />
+          {/* Flutter Mobile & REST API Integration */}
+          <NavBtn
+            icon={Smartphone}
+            onClick={onOpenFlutterModal}
+            tooltip="Integrasi Mobile Flutter & REST API"
+            className="hidden sm:flex !text-cyan-700 hover:!bg-cyan-50"
+          />
+
+          <div className="w-px h-5 bg-slate-200 mx-1 hidden sm:block" />
 
           {/* WhatsApp Gateway */}
           <NavBtn
@@ -288,6 +298,15 @@ export default function Navbar() {
                       ? <span className="ml-auto text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">ON</span>
                       : <span className="ml-auto text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-bold">OFF</span>
                     }
+                  </button>
+
+                  <button
+                    onClick={() => { onOpenFlutterModal?.(); setShowUserMenu(false); }}
+                    className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs text-slate-600 hover:bg-slate-50 transition text-left"
+                  >
+                    <Smartphone className="w-3.5 h-3.5 text-cyan-600" />
+                    Integrasi Flutter Mobile
+                    <span className="ml-auto text-[10px] bg-cyan-100 text-cyan-800 px-1.5 py-0.5 rounded-full font-bold">API</span>
                   </button>
 
                   <div className="my-1 mx-3 border-t border-slate-100" />

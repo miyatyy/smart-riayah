@@ -256,7 +256,7 @@ export default function SantriActivityAnalytics({ activeSantri: propActiveSantri
           </div>
 
           {/* Controls: Month Selector, DeepSeek Status, & Action Buttons */}
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="scroll-row gap-2.5 pb-1 -mb-1">
             {/* Santri Selector if in staff/admin/musyrif role */}
             {role !== 'parent' && santriList && (
               <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">

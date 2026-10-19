@@ -66,7 +66,7 @@ export default function ExecutiveAnalytics() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 space-y-6">
+    <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6 pb-24">
       {/* Kyai Executive Banner */}
       <div className="bg-gradient-to-r from-amber-950 via-slate-900 to-emerald-950 text-white rounded-2xl p-6 shadow-xl border border-amber-600/40 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
@@ -96,7 +96,7 @@ export default function ExecutiveAnalytics() {
       </div>
 
       {/* Navigation Sub-Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+      <div className="scroll-row border-b border-slate-200 pb-2 gap-2">
         <button
           onClick={() => setActiveTab('ringkasan')}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition shadow-xs ${

@@ -214,7 +214,7 @@ function Tooltip({ label, badge, isLight }) {
 /* ─────────────────────────────────────────────
    SIDEBAR COMPONENT
 ───────────────────────────────────────────── */
-export default function Sidebar() {
+export default function Sidebar({ onOpenFlutterModal }) {
   const {
     role,
     setRole,
@@ -263,6 +263,9 @@ export default function Sidebar() {
     if (window.innerWidth < 1024) setIsMobileSidebarOpen(false);
   };
 
+  // On mobile/tablet, the sidebar drawer is always full width and expanded
+  const isCollapsed = isSidebarCollapsed && !isMobileSidebarOpen;
+
   // Theme tokens
   const sidebarBg = isLight ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-800/60';
   const textBase = isLight ? 'text-slate-700' : 'text-slate-300';
@@ -283,7 +286,7 @@ export default function Sidebar() {
       <aside className={`
         fixed top-0 bottom-0 left-0 z-50 flex flex-col border-r transition-all duration-300 ease-in-out shadow-2xl
         ${sidebarBg}
-        ${isSidebarCollapsed ? 'w-[68px]' : 'w-64'}
+        w-72 max-w-[85vw] ${isSidebarCollapsed ? 'lg:w-[68px]' : 'lg:w-64'}
         ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
 
@@ -293,7 +296,7 @@ export default function Sidebar() {
             <Building2 className="w-5 h-5 text-white" />
           </div>
 
-          {!isSidebarCollapsed && (
+          {!isCollapsed && (
             <div className="flex-1 min-w-0">
               <div className="text-white font-black text-sm leading-tight">Smart Permit</div>
               <div className="text-white/65 text-[10px] font-semibold">&amp; Smart Ri'ayah</div>
@@ -318,7 +321,7 @@ export default function Sidebar() {
 
         {/* ═══ USER PROFILE ═══ */}
         {currentUser && (
-          <div className={`shrink-0 flex items-center gap-2.5 px-3 py-3 border-b ${borderColor} ${isSidebarCollapsed ? 'justify-center' : ''}`}>
+          <div className={`shrink-0 flex items-center gap-2.5 px-3 py-3 border-b ${borderColor} ${isCollapsed ? 'justify-center' : ''}`}>
             <div className="relative shrink-0">
               <img
                 src={currentUser.avatar || '/images/avatar_santri_putra.jpg'}
@@ -332,7 +335,7 @@ export default function Sidebar() {
               />
             </div>
 
-            {!isSidebarCollapsed && (
+            {!isCollapsed && (
               <>
                 <div className="flex-1 min-w-0">
                   <div className={`text-xs font-bold truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>
@@ -352,7 +355,7 @@ export default function Sidebar() {
 
         {/* ═══ NAV ═══ */}
         <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-          {!isSidebarCollapsed && (
+          {!isCollapsed && (
             <div className={`px-2 pb-2 text-[10px] font-bold uppercase tracking-widest ${sectionLabelColor}`}>
               Menu Utama
             </div>
@@ -366,15 +369,15 @@ export default function Sidebar() {
               <div
                 key={item.id}
                 className="relative"
-                onMouseEnter={() => isSidebarCollapsed && setHoveredItem(item.id)}
+                onMouseEnter={() => isCollapsed && setHoveredItem(item.id)}
                 onMouseLeave={() => setHoveredItem(null)}
               >
                 <button
                   onClick={() => handleMenuClick(item.id)}
-                  title={!isSidebarCollapsed ? item.label : undefined}
+                  title={!isCollapsed ? item.label : undefined}
                   className={`
                     w-full flex items-center rounded-xl transition-all duration-150 group
-                    ${isSidebarCollapsed ? 'justify-center p-2.5' : 'gap-3 px-2.5 py-2.5'}
+                    ${isCollapsed ? 'justify-center p-2.5' : 'gap-3 px-2.5 py-2.5'}
                     ${isActive
                       ? `border ${cfg.activeBg} font-semibold`
                       : `border border-transparent ${cfg.hoverBg} ${textBase}`
@@ -395,7 +398,7 @@ export default function Sidebar() {
                   </div>
 
                   {/* Label + badge */}
-                  {!isSidebarCollapsed && (
+                  {!isCollapsed && (
                     <>
                       <span className="flex-1 text-xs font-semibold text-left leading-tight truncate">
                         {item.label}
@@ -421,13 +424,13 @@ export default function Sidebar() {
                   )}
 
                   {/* Urgent dot (collapsed) */}
-                  {isSidebarCollapsed && item.urgent && item.badge && (
+                  {isCollapsed && item.urgent && item.badge && (
                     <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
                   )}
                 </button>
 
                 {/* Tooltip on collapsed hover */}
-                {isSidebarCollapsed && hoveredItem === item.id && (
+                {isCollapsed && hoveredItem === item.id && (
                   <Tooltip label={item.label} badge={item.badge} isLight={isLight} />
                 )}
               </div>
@@ -439,7 +442,7 @@ export default function Sidebar() {
         <div className={`shrink-0 border-t ${borderColor} px-2 py-3 space-y-1.5`}>
 
           {/* IoT Status */}
-          {!isSidebarCollapsed ? (
+          {!isCollapsed ? (
             <div className={`flex items-center justify-between px-3 py-2 rounded-xl text-[10px] font-mono
               ${isLight ? 'bg-slate-50 text-slate-500 border border-slate-200' : 'bg-slate-900 text-slate-500 border border-slate-800'}
             `}>
@@ -463,7 +466,7 @@ export default function Sidebar() {
           )}
 
           {/* Dev Role Switcher */}
-          {currentUser?.role === 'superadmin' && !isSidebarCollapsed && (
+          {currentUser?.role === 'superadmin' && !isCollapsed && (
             <div>
               <button
                 onClick={() => setShowDevSwitcher(!showDevSwitcher)}
@@ -504,8 +507,43 @@ export default function Sidebar() {
             </div>
           )}
 
+          {/* Flutter Mobile Connector */}
+          {!isCollapsed ? (
+            <button
+              onClick={() => {
+                onOpenFlutterModal?.();
+                if (window.innerWidth < 1024) setIsMobileSidebarOpen(false);
+              }}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition
+                ${isLight
+                  ? 'bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200'
+                  : 'bg-sky-950/40 hover:bg-sky-900/50 text-sky-300 border border-sky-800/40'
+                }`}
+            >
+              <div className="flex items-center gap-2">
+                <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Flutter Mobile API</span>
+              </div>
+              <span className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold bg-cyan-500/20 text-cyan-300">
+                Dart
+              </span>
+            </button>
+          ) : (
+            <div className="flex justify-center">
+              <button
+                onClick={() => onOpenFlutterModal?.()}
+                className={`p-2 rounded-xl transition ${
+                  isLight ? 'bg-sky-50 hover:bg-sky-100 text-sky-600' : 'bg-sky-950/40 hover:bg-sky-900/50 text-cyan-400'
+                }`}
+                title="Integrasi Flutter Mobile"
+              >
+                <Smartphone className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           {/* Logout */}
-          {!isSidebarCollapsed ? (
+          {!isCollapsed ? (
             <button
               onClick={() => { if (window.confirm('Keluar dari sesi ini?')) logout(); }}
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition
@@ -533,7 +571,7 @@ export default function Sidebar() {
         </div>
 
         {/* ═══ FOOTER ═══ */}
-        {!isSidebarCollapsed && (
+        {!isCollapsed && (
           <div className={`shrink-0 px-4 py-2 border-t ${borderColor} flex items-center justify-between`}>
             <span className={`text-[9px] font-mono ${textMuted}`}>Darul Ulum © 2026</span>
             <span className="text-[9px] font-bold" style={{ color: cfg.accent }}>v3.8</span>

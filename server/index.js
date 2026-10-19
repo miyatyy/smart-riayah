@@ -317,9 +317,152 @@ app.delete('/api/evaluasi/:id', async (req, res) => {
   }
 });
 
+// -------------------------------------------------------------------------------------
+// 7. REST API MODUL SMART PERMIT (FLUTTER / MOBILE COMPATIBLE)
+// -------------------------------------------------------------------------------------
+let inMemoryPermits = [
+  {
+    id: 'PRM-001',
+    tokenIzin: 'SIP-9021',
+    santriId: 'S-101',
+    santriNama: 'Ahmad Fauzi',
+    kategori: 'Pesiar',
+    keperluan: 'Beli kitab kuning dan keperluan asrama di kota',
+    penjemput: 'Ibu Fatimah Az-Zahra (Wali)',
+    waktuKeluarRencana: new Date().toISOString(),
+    batasKembali: new Date(Date.now() + 4 * 3600000).toISOString(),
+    status: 'APPROVED',
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: 'PRM-002',
+    tokenIzin: 'SIP-9022',
+    santriId: 'S-102',
+    santriNama: 'Muhammad Zaki',
+    kategori: 'Keluarga',
+    keperluan: 'Acara pernikahan kakak kandung di Surabaya',
+    penjemput: 'Bapak H. Ridwan (Ayah)',
+    waktuKeluarRencana: new Date().toISOString(),
+    batasKembali: new Date(Date.now() + 48 * 3600000).toISOString(),
+    status: 'ACTIVE',
+    createdAt: new Date().toISOString()
+  }
+];
+
+app.get('/api/permits', (req, res) => {
+  const { status, santriId } = req.query;
+  let list = [...inMemoryPermits];
+  if (status) list = list.filter(p => p.status === status);
+  if (santriId) list = list.filter(p => p.santriId === santriId);
+  res.json({ success: true, total: list.length, data: list });
+});
+
+app.post('/api/permits', (req, res) => {
+  const { santriId, kategori, keperluan, penjemput, batasKembali, waktuKeluarRencana } = req.body;
+  if (!santriId || !keperluan) {
+    return res.status(400).json({ success: false, message: 'santriId dan keperluan wajib diisi' });
+  }
+
+  const newPermit = {
+    id: `PRM-${Date.now().toString().slice(-4)}`,
+    tokenIzin: `SIP-${Math.floor(1000 + Math.random() * 9000)}`,
+    santriId,
+    santriNama: req.body.santriNama || 'Santri Terdaftar',
+    kategori: kategori || 'Pesiar',
+    keperluan,
+    penjemput: penjemput || 'Wali Santri',
+    waktuKeluarRencana: waktuKeluarRencana || new Date().toISOString(),
+    batasKembali: batasKembali || new Date(Date.now() + 4 * 3600000).toISOString(),
+    status: 'PENDING',
+    createdAt: new Date().toISOString()
+  };
+
+  inMemoryPermits.unshift(newPermit);
+  res.status(201).json({ success: true, message: 'Izin berhasil diajukan', data: newPermit });
+});
+
+app.post('/api/permits/:id/approve', (req, res) => {
+  const { id } = req.params;
+  const permit = inMemoryPermits.find(p => p.id === id);
+  if (!permit) return res.status(404).json({ success: false, message: 'Izin tidak ditemukan' });
+
+  permit.status = 'APPROVED';
+  permit.catatanMusyrif = req.body.catatanMusyrif || 'Disetujui. Harap taati batas waktu.';
+  permit.approvedAt = new Date().toISOString();
+  res.json({ success: true, message: 'Izin disetujui & disinkronkan ke IoT Gate', data: permit });
+});
+
+app.post('/api/permits/:id/reject', (req, res) => {
+  const { id } = req.params;
+  const permit = inMemoryPermits.find(p => p.id === id);
+  if (!permit) return res.status(404).json({ success: false, message: 'Izin tidak ditemukan' });
+
+  permit.status = 'REJECTED';
+  permit.alasanPenolakan = req.body.alasanPenolakan || 'Alasan penolakan pengasuhan.';
+  res.json({ success: true, message: 'Izin ditolak', data: permit });
+});
+
+// -------------------------------------------------------------------------------------
+// 8. REST API IOT SMART TURNSTILE GATE (VERIFIKASI RFID RC522)
+// -------------------------------------------------------------------------------------
+let inMemoryGateLogs = [
+  { id: 'GL-1', rfidUid: '04:A1:2B:9C', santriNama: 'Ahmad Fauzi', direction: 'EXIT', status: 'GRANTED', gateId: 'GATE-01', timestamp: new Date().toISOString() }
+];
+
+app.post('/api/gate/verify-rfid', (req, res) => {
+  const { rfidUid, gateId = 'GATE-01', direction = 'EXIT' } = req.body;
+  if (!rfidUid) return res.status(400).json({ success: false, message: 'rfidUid wajib disertakan' });
+
+  // Cari izin aktif
+  const hasApprovedPermit = inMemoryPermits.some(p => p.status === 'APPROVED' || p.status === 'ACTIVE');
+  const isGranted = rfidUid === '04:A1:2B:9C' || rfidUid === '53:57:98:0F' || hasApprovedPermit;
+
+  const logEntry = {
+    id: `GL-${Date.now().toString().slice(-4)}`,
+    rfidUid,
+    santriNama: rfidUid === '04:A1:2B:9C' ? 'Ahmad Fauzi' : 'Santri Terdaftar',
+    direction,
+    status: isGranted ? 'GRANTED' : 'DENIED',
+    gateId,
+    timestamp: new Date().toISOString()
+  };
+  inMemoryGateLogs.unshift(logEntry);
+
+  res.json({
+    accessGranted: isGranted,
+    direction,
+    rfidUid,
+    gateId,
+    oledDisplay: {
+      line1: isGranted ? 'AKSES DIBERIKAN' : 'AKSES DITOLAK',
+      line2: isGranted ? 'SILAKAN MELINTAS' : 'IZIN TIDAK VALID',
+      buzzer: isGranted ? 'BEEP_SUCCESS' : 'ALARM_LONG'
+    },
+    log: logEntry
+  });
+});
+
+app.get('/api/gate/logs', (req, res) => {
+  res.json({ success: true, total: inMemoryGateLogs.length, data: inMemoryGateLogs });
+});
+
+app.get('/api/gate/headcount', (req, res) => {
+  const totalSantri = 1482;
+  const diLuar = inMemoryPermits.filter(p => p.status === 'ACTIVE').length;
+  res.json({
+    totalSantri,
+    diAsrama: totalSantri - diLuar,
+    diLuar,
+    persentaseAsrama: (((totalSantri - diLuar) / totalSantri) * 100).toFixed(1)
+  });
+});
+
 // Jalankan Server Backend
 app.listen(PORT, () => {
   console.log(`🚀 [Smart Riayah Backend] Server aktif di: http://localhost:${PORT}`);
   console.log(`📡 [API Endpoint] Evaluasi Santri: http://localhost:${PORT}/api/evaluasi`);
+  console.log(`📡 [API Endpoint] Smart Permit: http://localhost:${PORT}/api/permits`);
+  console.log(`📡 [API Endpoint] IoT Gate: http://localhost:${PORT}/api/gate/verify-rfid`);
   console.log(`🩺 [API Health] Status DB: http://localhost:${PORT}/api/health`);
 });
+

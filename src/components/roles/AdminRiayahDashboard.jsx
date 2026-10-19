@@ -255,7 +255,7 @@ export default function AdminRiayahDashboard() {
   };
 
   return (
-    <div className="bg-slate-50 text-slate-800 min-h-screen p-4 sm:p-6 lg:p-8 font-sans space-y-6">
+    <div className="space-y-4 sm:space-y-6 pb-24">
       
       {/* 1. Header Admin Ri'ayah */}
       <div className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -316,7 +316,7 @@ export default function AdminRiayahDashboard() {
       </div>
 
       {/* 2. Navigation Tabs (Clean Responsive Horizontal Bar) */}
-      <div className="flex border-b border-slate-200 space-x-1 overflow-x-auto pb-1 text-xs">
+      <div className="scroll-row border-b border-slate-200 gap-1 pb-1 text-xs">
         <button
           onClick={() => { setActiveTab('rooms'); setActiveScanMode(null); }}
           className={`flex items-center gap-2 py-2.5 px-3.5 font-bold transition rounded-t-xl shrink-0 ${

@@ -30,3 +30,7 @@ dist-ssr
 src/.env
 src/.env.*
 !.env.example
+
+# Generator artifacts
+graphify-out/
+

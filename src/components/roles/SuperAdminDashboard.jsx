@@ -193,7 +193,7 @@ void loop() {
   };
 
   return (
-    <div className="bg-slate-950 text-slate-100 min-h-screen p-4 sm:p-6 lg:p-8 font-sans space-y-6">
+    <div className="bg-slate-950 text-slate-100 min-h-full pb-24 font-sans space-y-6 rounded-2xl">
       
       {/* 1. Header Developer Console */}
       <div className="bg-slate-900/90 border border-cyan-500/30 rounded-3xl p-5 sm:p-6 shadow-2xl backdrop-blur-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -251,7 +251,7 @@ void loop() {
       <FonnteSettingsBox defaultExpanded={false} />
 
       {/* 2. Navigation Tabs */}
-      <div className="flex border-b border-slate-800 space-x-2">
+      <div className="scroll-row border-b border-slate-800 gap-2">
         <button
           onClick={() => setActiveTab('diagnostics')}
           className={`flex items-center gap-2 py-3 px-4 border-b-2 font-bold text-xs transition ${

@@ -109,7 +109,7 @@ export default function ParentPortal() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto pb-20 pt-4 px-4 sm:px-6">
+    <div className="max-w-4xl mx-auto pb-24 space-y-4">
       {/* Mobile-first simulated banner */}
       <div className="mb-4 bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -139,7 +139,7 @@ export default function ParentPortal() {
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-tr from-emerald-900 via-emerald-800 to-teal-900 text-white p-5 sm:p-6 shadow-xl border border-emerald-600/40 mb-6">
         {/* Decorative holographic chip & curves */}
         <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full bg-emerald-500/10 blur-2xl"></div>
-        <div className="absolute top-4 right-4 flex items-center gap-2">
+        <div className="hidden sm:flex absolute top-4 right-4 items-center gap-2">
           <div className="text-right">
             <p className="text-[10px] text-emerald-300 uppercase tracking-widest font-mono">13.56 MHz RFID CARD</p>
             <p className="text-xs font-mono font-bold text-gold-300">UID: {activeSantri.rfidUid}</p>
@@ -221,7 +221,7 @@ export default function ParentPortal() {
       </div>
 
       {/* Navigation Sub-Tabs */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-4 border-b border-slate-200">
+      <div className="scroll-row gap-1.5 pb-2 mb-4 border-b border-slate-200">
         {[
           { id: 'permit', label: 'Smart Permit (Izin)', icon: Calendar },
           { id: 'aktivitas', label: 'Diagram Aktivitas & AI', icon: Sparkles, isAi: true },

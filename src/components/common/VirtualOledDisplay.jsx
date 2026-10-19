@@ -383,7 +383,7 @@ void loop() {
           </div>
 
           {/* Quick Hardware Actions */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="scroll-row gap-2 pb-1 -mb-1">
             <button
               onClick={handleDownloadIno}
               className="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-xl shadow transition flex items-center gap-1.5"

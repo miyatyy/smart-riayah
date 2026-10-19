@@ -96,7 +96,7 @@ export default function MusyrifDashboard() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 space-y-6">
+    <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6 pb-24">
       {/* Header Banner */}
       <div className="bg-gradient-to-r from-teal-900 via-teal-800 to-emerald-900 text-white rounded-2xl p-6 shadow-lg border border-teal-700/50 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
@@ -157,7 +157,7 @@ export default function MusyrifDashboard() {
 
       {/* Navigation Tabs */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
-        <div className="flex items-center gap-2 overflow-x-auto">
+        <div className="scroll-row gap-2">
           {[
             { id: 'approval', label: `Antrean Otorisasi (${pendingPermits.length})`, icon: ShieldCheck },
             { id: 'ai_santri', label: '🤖 AI Evaluasi Harian Santri', icon: Sparkles },

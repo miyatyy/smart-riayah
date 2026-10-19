@@ -77,6 +77,29 @@
   background: #374151;
 }
 
+/* ─── Scrollable row utility (tab bars, action rows) ──────────────────
+   Apply .scroll-row to any flex container that should scroll
+   horizontally on mobile without a visible scrollbar.
+   Children automatically get flex-shrink: 0 so they never compress.
+──────────────────────────────────────────────────────────────────── */
+.scroll-row {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  align-items: center;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scroll-row::-webkit-scrollbar { display: none; }
+.scroll-row > * { flex-shrink: 0; }
+
+/* ─── Mobile bottom safe zone – add pb-safe to pages with FABs ─── */
+@media (max-width: 1023px) {
+  .pb-fab {
+    padding-bottom: 7rem; /* clearance above stacked FAB buttons */
+  }
+}
+
 /* Print Optimization for Official PDF Log Book Document */
 @media print {
   body {
