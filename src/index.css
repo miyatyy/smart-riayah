@@ -1,0 +1,122 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+}
+
+/* Dropdown / modal entrance animation */
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeInDown 0.15s ease-out forwards;
+  }
+}
+
+/* Custom Islamic pattern subtle overlay */
+.bg-islamic-pattern {
+  background-color: #f8fafc;
+  background-image: radial-gradient(#059669 0.65px, transparent 0.65px), radial-gradient(#059669 0.65px, #f8fafc 0.65px);
+  background-size: 26px 26px;
+  background-position: 0 0, 13px 13px;
+  background-opacity: 0.05;
+}
+
+/* Dark mode command center pattern */
+.bg-cyber-grid {
+  background-color: #0b0f19;
+  background-image: linear-gradient(to right, rgba(16, 185, 129, 0.07) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(16, 185, 129, 0.07) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Glowing animations */
+.glow-emerald {
+  box-shadow: 0 0 25px -5px rgba(16, 185, 129, 0.4);
+}
+
+.glow-red {
+  box-shadow: 0 0 25px -5px rgba(239, 68, 68, 0.5);
+}
+
+.glow-amber {
+  box-shadow: 0 0 25px -5px rgba(245, 158, 11, 0.4);
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Command center scrollbars */
+.dark-scroll::-webkit-scrollbar-thumb {
+  background: #1f2937;
+}
+.dark-scroll::-webkit-scrollbar-thumb:hover {
+  background: #374151;
+}
+
+/* Print Optimization for Official PDF Log Book Document */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+    font-size: 11pt;
+  }
+  
+  /* Hide all app chrome, sidebars, buttons, and landing elements during print */
+  body * {
+    visibility: hidden;
+  }
+
+  /* Make only the print container and its descendants visible */
+  #printable-logbook-document,
+  #printable-logbook-document *,
+  #printable-gatelog-document,
+  #printable-gatelog-document * {
+    visibility: visible;
+  }
+
+  #printable-logbook-document,
+  #printable-gatelog-document {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background: white !important;
+    color: black !important;
+    display: block !important;
+  }
+
+  @page {
+    size: A4 landscape;
+    margin: 12mm 15mm 12mm 15mm;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+}
