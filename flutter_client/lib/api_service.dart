@@ -2,22 +2,40 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class SmartRiayahApiService {
-  // IP Default lokal laptop/server. Bila diuji lewat HP fisik, ganti dengan IP WiFi laptop (contoh: 192.168.1.10)
-  // Bila di emulator Android, gunakan 10.0.2.2:5000
-  static String baseUrl = 'http://10.0.2.2:5000/api';
+  // Daftar kandidat endpoint (127.0.0.1 untuk USB adb reverse, WiFi laptop, dan emulator)
+  static final List<String> _candidateHosts = [
+    'http://127.0.0.1:5000/api',
+    'http://localhost:5000/api',
+    'http://192.168.18.6:5000/api',
+    'http://10.0.2.2:5000/api',
+  ];
+
+  static String baseUrl = 'http://127.0.0.1:5000/api';
 
   static void setCustomHost(String hostWithPort) {
     baseUrl = 'http://$hostWithPort/api';
   }
 
-  // 1. Cek Kesehatan Server
+  // 1. Cek Kesehatan Server dengan Auto-Discovery Host
   static Future<bool> checkHealth() async {
+    // Coba baseUrl saat ini terlebih dahulu
     try {
-      final res = await http.get(Uri.parse('$baseUrl/health')).timeout(const Duration(seconds: 4));
-      return res.statusCode == 200;
-    } catch (_) {
-      return false;
+      final res = await http.get(Uri.parse('$baseUrl/health')).timeout(const Duration(seconds: 2));
+      if (res.statusCode == 200) return true;
+    } catch (_) {}
+
+    // Jika gagal, cari otomatis host mana yang aktif
+    for (final candidate in _candidateHosts) {
+      if (candidate == baseUrl) continue;
+      try {
+        final res = await http.get(Uri.parse('$candidate/health')).timeout(const Duration(seconds: 2));
+        if (res.statusCode == 200) {
+          baseUrl = candidate;
+          return true;
+        }
+      } catch (_) {}
     }
+    return false;
   }
 
   // 2. Mengambil Data Santri
