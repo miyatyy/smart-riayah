@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="32" height="32">
+  <defs>
+    <linearGradient id="srGrad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#059669" />
+      <stop offset="50%" stop-color="#0d9488" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+    <linearGradient id="srGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399" />
+      <stop offset="100%" stop-color="#38bdf8" />
+    </linearGradient>
+  </defs>
+  <!-- Outer Rounded Shield -->
+  <rect width="256" height="256" rx="56" fill="url(#srGrad1)" />
+  <rect x="12" y="12" width="232" height="232" rx="46" fill="#042f2e" opacity="0.92" />
+  <!-- Crescent Moon Symbol -->
+  <path d="M142 54C100 54 66 88 66 130C66 172 100 206 142 206C160 206 176 199 188 189C154 186 128 158 128 124C128 90 154 62 188 59C176 49 160 54 142 54Z" fill="url(#srGrad2)" opacity="0.4" />
+  <!-- IoT Lightning Bolt -->
+  <path d="M146 52L86 140H132L118 204L182 116H136L146 52Z" fill="url(#srGrad2)" />
+  <!-- Circuit Nodes -->
+  <circle cx="186" cy="82" r="10" fill="#38bdf8" />
+  <circle cx="78" cy="182" r="8" fill="#34d399" />
+</svg>

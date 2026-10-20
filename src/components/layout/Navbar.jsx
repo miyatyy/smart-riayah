@@ -20,6 +20,7 @@ import {
   Home,
   Activity,
   Bell,
+  Smartphone,
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
 

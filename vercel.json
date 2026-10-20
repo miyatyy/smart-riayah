@@ -1,0 +1,17 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "source": "/api/sync/version",
+      "destination": "/api/sync/version"
+    },
+    {
+      "source": "/api/sync",
+      "destination": "/api/sync"
+    },
+    {
+      "source": "/((?!api/|images/|assets/|vite\\.svg|favicon\\.ico).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

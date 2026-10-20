@@ -489,6 +489,7 @@ export const AppProvider = ({ children }) => {
   // =========================================================================
   const isApplyingRemoteSync = useRef(false);
   const syncVersionRef = useRef(0);
+  const isServerSyncSupportedRef = useRef(true);
 
   // Apply synced data payload to state
   const applySyncedData = useCallback((payload) => {
@@ -547,11 +548,24 @@ export const AppProvider = ({ children }) => {
   // Server-side sync via /api/sync (Cross-profile, cross-browser, incognito sync)
   useEffect(() => {
     let isMounted = true;
+    let pollInterval = null;
 
     const fetchServerSync = async () => {
       try {
         const res = await fetch('/api/sync');
+        // If endpoint is not found or not implemented, gracefully disable remote server sync
+        if (res.status === 404 || res.status === 405) {
+          isServerSyncSupportedRef.current = false;
+          return;
+        }
         if (!res.ok) return;
+
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          isServerSyncSupportedRef.current = false;
+          return;
+        }
+
         const result = await res.json();
         if (result && result.data && result.version && result.version > syncVersionRef.current) {
           if (isMounted) {
@@ -582,36 +596,53 @@ export const AppProvider = ({ children }) => {
           }).catch(() => {});
         }
       } catch (err) {
-        // Dev server might not have middleware ready yet, safe to ignore
+        // Safe to ignore network glitches or dev environment initializations
       }
     };
 
     fetchServerSync();
 
-    // Fast polling every 1200ms to detect updates from other accounts / browser windows
-    const interval = setInterval(async () => {
+    // Fast polling to detect updates from other accounts / browser windows
+    pollInterval = setInterval(async () => {
+      if (!isServerSyncSupportedRef.current || !isMounted) return;
       try {
         const verRes = await fetch('/api/sync/version');
+        if (verRes.status === 404 || verRes.status === 405) {
+          isServerSyncSupportedRef.current = false;
+          if (pollInterval) clearInterval(pollInterval);
+          return;
+        }
         if (!verRes.ok) return;
+
+        const contentType = verRes.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          isServerSyncSupportedRef.current = false;
+          if (pollInterval) clearInterval(pollInterval);
+          return;
+        }
+
         const verData = await verRes.json();
         if (verData.version && verData.version > syncVersionRef.current) {
           const res = await fetch('/api/sync');
           if (res.ok) {
-            const fullData = await res.json();
-            if (fullData.data && fullData.version > syncVersionRef.current) {
-              if (isMounted) {
-                applySyncedData(fullData.data);
-                syncVersionRef.current = fullData.version;
+            const resType = res.headers.get('content-type') || '';
+            if (resType.includes('application/json')) {
+              const fullData = await res.json();
+              if (fullData.data && fullData.version > syncVersionRef.current) {
+                if (isMounted) {
+                  applySyncedData(fullData.data);
+                  syncVersionRef.current = fullData.version;
+                }
               }
             }
           }
         }
       } catch {}
-    }, 1200);
+    }, 2500);
 
     return () => {
       isMounted = false;
-      clearInterval(interval);
+      if (pollInterval) clearInterval(pollInterval);
     };
   }, [applySyncedData]);
 
@@ -645,12 +676,14 @@ export const AppProvider = ({ children }) => {
         }
       } catch {}
 
-      // Push to server for other profiles and browsers
-      fetch('/api/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ version: newVer, data: payload })
-      }).catch(() => {});
+      // Push to server for other profiles and browsers (only if server sync is available)
+      if (isServerSyncSupportedRef.current) {
+        fetch('/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ version: newVer, data: payload })
+        }).catch(() => {});
+      }
     }, 350);
 
     return () => clearTimeout(timer);
