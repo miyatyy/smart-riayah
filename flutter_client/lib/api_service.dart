@@ -5,14 +5,14 @@ import 'screens/login_screen.dart';
 class SmartRiayahApiService {
   // Ganti dengan URL backend yang sudah di-deploy di Railway
   // Jika masih lokal, gunakan IP WiFi laptop
-  static String baseUrl = 'http://10.0.2.2:5000/api'; // Default emulator Android
+  static String baseUrl = 'http://localhost:5000/api'; // Works via adb reverse or local
 
   // Daftar kandidat endpoint (auto-discovery)
   static final List<String> _candidateHosts = [
-    'http://127.0.0.1:5000/api',
     'http://localhost:5000/api',
-    'http://192.168.18.6:5000/api',
-    'http://10.0.2.2:5000/api', // Android emulator -> host
+    'http://127.0.0.1:5000/api',
+    'http://192.168.18.12:5000/api',
+    'http://10.0.2.2:5000/api',
   ];
 
   static void setDeployedBackend(String deployedUrl) {
