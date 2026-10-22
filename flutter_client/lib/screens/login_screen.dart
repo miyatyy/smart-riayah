@@ -117,6 +117,25 @@ class _LoginScreenState extends State<LoginScreen>
     setState(() {
       _selectedRole = role;
       _errorMsg = null;
+      // Isi otomatis kredensial aktif dari database
+      switch (role) {
+        case UserRole.musyrif:
+          _userCtrl.text = 'musyrif01';
+          _passCtrl.text = 'musyrif01';
+          break;
+        case UserRole.wali:
+          _userCtrl.text = 'walisantri01';
+          _passCtrl.text = 'walisantri01';
+          break;
+        case UserRole.admin:
+          _userCtrl.text = 'superadmin';
+          _passCtrl.text = 'superadmin01';
+          break;
+        case UserRole.santri:
+          _userCtrl.text = 'santri';
+          _passCtrl.text = 'santri123';
+          break;
+      }
     });
   }
 
@@ -519,47 +538,89 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Widget _buildLoginButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 52,
-      child: ElevatedButton(
-        onPressed: _isLoading ? null : _doLogin,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.emerald600,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          padding: EdgeInsets.zero,
-        ),
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 200),
-          child: _isLoading
-              ? const SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 2.5,
-                  ),
-                )
-              : Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.login_rounded, size: 20),
-                    const SizedBox(width: 8),
-                    Text(
-                      _selectedRole != null
-                          ? 'Masuk sebagai ${_selectedRole!.label}'
-                          : 'Masuk ke Smart Riayah',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
+    return Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: ElevatedButton(
+            onPressed: _isLoading ? null : _doLogin,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.emerald600,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              padding: EdgeInsets.zero,
+            ),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: _isLoading
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2.5,
                       ),
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.login_rounded, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          _selectedRole != null
+                              ? 'Masuk sebagai ${_selectedRole!.label}'
+                              : 'Masuk ke Smart Riayah',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+            ),
+          ),
         ),
-      ),
+        const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          height: 42,
+          child: OutlinedButton.icon(
+            onPressed: () {
+              final r = _selectedRole ?? UserRole.musyrif;
+              final session = AppSession(
+                namaLengkap: 'Demo (${r.label})',
+                role: r,
+                token: 'demo-bypass-${DateTime.now().millisecondsSinceEpoch}',
+              );
+              Navigator.of(context).pushReplacement(
+                PageRouteBuilder(
+                  pageBuilder: (_, anim, __) => RoleSelectionScreen(session: session),
+                  transitionsBuilder: (_, anim, __, child) =>
+                      FadeTransition(opacity: anim, child: child),
+                  transitionDuration: const Duration(milliseconds: 400),
+                ),
+              );
+            },
+            icon: const Icon(Icons.flash_on_rounded, size: 16, color: AppColors.emerald400),
+            label: Text(
+              _selectedRole != null
+                  ? 'Masuk Langsung Tanpa Password (${_selectedRole!.label})'
+                  : 'Masuk Langsung (Mode Demo)',
+              style: const TextStyle(
+                color: AppColors.emerald300,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: AppColors.emerald500.withValues(alpha: 0.3)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

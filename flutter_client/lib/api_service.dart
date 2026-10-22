@@ -55,8 +55,14 @@ class SmartRiayahApiService {
         }
         throw Exception(json['message'] ?? 'Login gagal');
       }
-      if (res.statusCode == 401) {
-        throw Exception('Username atau password salah');
+      if (res.statusCode == 400 || res.statusCode == 401) {
+        try {
+          final json = jsonDecode(res.body);
+          throw Exception(json['message'] ?? 'Username atau password salah');
+        } catch (e) {
+          if (e is Exception) rethrow;
+          throw Exception('Username atau password salah');
+        }
       }
       throw Exception('Server error: ${res.statusCode}');
     } on Exception {

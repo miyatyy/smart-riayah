@@ -32,7 +32,7 @@ app.get('/api/health', async (req, res) => {
 });
 
 // -------------------------------------------------------------------------------------
-// AUTH: LOGIN ENDPOINT (Semua Role)
+// AUTH: LOGIN ENDPOINT (Semua Role & Demo Fallback)
 // -------------------------------------------------------------------------------------
 app.post('/api/auth/login', async (req, res) => {
   const { username, password, role } = req.body;
@@ -40,66 +40,93 @@ app.post('/api/auth/login', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Username dan password wajib diisi' });
   }
 
+  const cleanUser = username.trim().toLowerCase();
+  const cleanPass = password.trim();
+
+  // Alias mapping untuk kemudahan input user
+  const aliasMap = {
+    'musyrif': 'musyrif01',
+    'wali': 'walisantri01',
+    'walisantri': 'walisantri01',
+    'admin': 'superadmin',
+    'admin_riayah': 'riayah01',
+    'riayah': 'riayah01',
+    'satpam': 'satpam01',
+    'mudir': 'mudir01',
+  };
+  const targetUser = aliasMap[cleanUser] || cleanUser;
+
   try {
-    // Coba autentikasi via tabel users di database
+    // 1. Cek ke tabel users di database
     const result = await query(
-      `SELECT u.id, u.username, u.nama_lengkap, u.email, r.nama_role
+      `SELECT u.id, u.username, u.nama_lengkap, u.email, r.nama_role, u.password_hash
        FROM users u
-       JOIN roles r ON u.role_id = r.id
-       WHERE (u.username = $1 OR u.email = $1)
-         AND u.is_active = true`,
-      [username.trim()]
+       LEFT JOIN roles r ON u.role_id = r.id
+       WHERE (LOWER(u.username) = $1 OR LOWER(u.username) = $2 OR LOWER(u.email) = $1)
+         AND (u.is_active IS NULL OR u.is_active = true)`,
+      [cleanUser, targetUser]
     );
 
-    if (result.rowCount === 0) {
-      return res.status(401).json({ success: false, message: 'Akun tidak ditemukan' });
+    if (result.rowCount > 0) {
+      const user = result.rows[0];
+      // Cek password: password_hash di DB, atau cocok dengan demo '123' / 'demo'
+      const isPassValid =
+        user.password_hash === cleanPass ||
+        user.password_hash === cleanUser ||
+        cleanPass === `${user.username}123` ||
+        cleanPass === `${cleanUser}123` ||
+        cleanPass === 'demo';
+
+      if (isPassValid) {
+        return res.json({
+          success: true,
+          message: 'Login berhasil',
+          data: {
+            id: user.id,
+            namaLengkap: user.nama_lengkap || user.username,
+            username: user.username,
+            email: user.email,
+            role: user.nama_role || role || 'User',
+            token: `SR-${user.id}-${Date.now()}`,
+          },
+        });
+      }
     }
-
-    const user = result.rows[0];
-    // Catatan: idealnya password di-hash (bcrypt), ini simplified untuk demo
-    // Untuk production, tambahkan: const valid = await bcrypt.compare(password, user.password_hash)
-    const token = `SR-${user.id}-${Date.now()}`;
-
-    return res.json({
-      success: true,
-      message: 'Login berhasil',
-      data: {
-        id: user.id,
-        namaLengkap: user.nama_lengkap,
-        username: user.username,
-        email: user.email,
-        role: user.nama_role,
-        token,
-      },
-    });
   } catch (dbErr) {
-    // Fallback: jika DB belum ada tabel users, pakai demo accounts
-    console.warn('⚠️  DB auth error, fallback ke demo accounts:', dbErr.message);
-    const demoAccounts = {
-      musyrif:  { nama: 'Ust. Ahmad Musyrif',  pass: 'musyrif123', role: 'Musyrif' },
-      wali:     { nama: 'Bapak H. Ridwan',     pass: 'wali123',    role: 'Wali Santri' },
-      admin:    { nama: 'Admin Sistem',         pass: 'admin123',   role: 'Admin' },
-      santri:   { nama: 'Ahmad Fauzi',          pass: 'santri123',  role: 'Santri' },
-      demo:     { nama: 'Demo User',            pass: 'demo',       role: role || 'Admin' },
-    };
-    const acc = demoAccounts[username.toLowerCase()];
-    if (!acc || (acc.pass !== password && password !== 'demo')) {
-      return res.status(401).json({
-        success: false,
-        message: 'Username atau password salah. (Demo: musyrif/musyrif123)'
-      });
-    }
+    console.warn('⚠️  DB query error di auth:', dbErr.message);
+  }
+
+  // 2. Demo accounts fallback (jika belum ada di DB atau kredensial demo dipakai)
+  const demoAccounts = {
+    musyrif:     { nama: 'Ust. Ahmad Musyrif',  pass: ['musyrif123', 'musyrif01', 'demo'], role: 'Musyrif' },
+    musyrif01:   { nama: 'Ust. Ahmad Musyrif',  pass: ['musyrif01', 'musyrif123', 'demo'], role: 'Musyrif' },
+    wali:        { nama: 'Bapak H. Ridwan',     pass: ['wali123', 'walisantri01', 'demo'], role: 'Wali Santri' },
+    walisantri01:{ nama: 'Bapak H. Ridwan',     pass: ['walisantri01', 'wali123', 'demo'], role: 'Wali Santri' },
+    admin:       { nama: 'Admin Sistem',        pass: ['admin123', 'superadmin01', 'demo'],role: 'Admin' },
+    superadmin:  { nama: 'Super Admin',         pass: ['superadmin01', 'admin123', 'demo'],role: 'Admin' },
+    riayah01:    { nama: 'Admin Riayah',        pass: ['riayah01', 'admin123', 'demo'],    role: 'Admin' },
+    santri:      { nama: 'Ahmad Fauzi',         pass: ['santri123', 'santri', 'demo'],     role: 'Santri' },
+    demo:        { nama: 'Demo User',           pass: ['demo', '123456'],                  role: role || 'Admin' },
+  };
+
+  const acc = demoAccounts[cleanUser] || demoAccounts[targetUser];
+  if (acc && (acc.pass.includes(cleanPass) || cleanPass === 'demo')) {
     return res.json({
       success: true,
       message: 'Login berhasil (demo mode)',
       data: {
         namaLengkap: acc.nama,
-        username,
+        username: cleanUser,
         role: acc.role,
         token: `DEMO-${Date.now()}`,
       },
     });
   }
+
+  return res.status(401).json({
+    success: false,
+    message: 'Username atau password salah. Coba: musyrif / musyrif123 atau musyrif01 / musyrif01',
+  });
 });
 
 app.post('/api/auth/logout', (req, res) => {
