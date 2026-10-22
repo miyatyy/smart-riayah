@@ -7,6 +7,7 @@ import 'widgets/rfid_hero_card.dart';
 import 'widgets/stat_card.dart';
 import 'widgets/santri_card.dart';
 import 'widgets/quick_action_grid.dart';
+import 'widgets/app_sidebar_drawer.dart';
 import 'screens/submit_izin_screen.dart';
 import 'screens/login_screen.dart';
 
@@ -872,10 +873,13 @@ class _SessionHomeScreenState extends State<_SessionHomeScreen>
   int _selectedTab = 0;
   late AnimationController _animCtrl;
   late Animation<double> _fadeAnim;
+  late AppSession _session;
+  String _activeMenuId = 'active_permits';
 
   @override
   void initState() {
     super.initState();
+    _session = widget.session;
     _animCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 600));
     _fadeAnim =
@@ -887,6 +891,319 @@ class _SessionHomeScreenState extends State<_SessionHomeScreen>
   void dispose() {
     _animCtrl.dispose();
     super.dispose();
+  }
+
+  void _handleSwitchRole(UserRole newRole) {
+    setState(() {
+      _session = AppSession(
+        namaLengkap: _session.namaLengkap,
+        role: newRole,
+        token: _session.token,
+      );
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Beralih ke mode simulasi: ${newRole.label}'),
+        backgroundColor: newRole.accentColor,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _handleMenuSelection(String menuId) {
+    setState(() => _activeMenuId = menuId);
+    switch (menuId) {
+      case 'approval':
+      case 'permit':
+      case 'my_permit':
+        _goToIzin();
+        break;
+      case 'ai_santri':
+      case 'ai_analytics':
+      case 'aktivitas':
+      case 'ai_tanya':
+        _showAiAgentSheet();
+        break;
+      case 'diagnostics':
+      case 'rfid_pairing':
+      case 'gate_logs':
+        _showIotGateSheet();
+        break;
+      case 'points':
+      case 'my_points':
+        _showPointsSheet();
+        break;
+      case 'kamar':
+        _showKamarInspectionSheet();
+        break;
+      default:
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Membuka modul: $menuId'),
+            backgroundColor: AppColors.emerald700,
+            duration: const Duration(milliseconds: 1500),
+          ),
+        );
+        break;
+    }
+  }
+
+  void _showAiAgentSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        height: MediaQuery.of(context).size.height * 0.75,
+        decoration: const BoxDecoration(
+          color: Color(0xFF0F172A),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF6366F1), Color(0xFF06B6D4)],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 22),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Smart Riayah AI Agent',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(
+                        'Evaluasi Adab & Disiplin Santri Holistik',
+                        style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Expanded(
+              child: ListView(
+                children: [
+                  _buildAiInsightCard(
+                    title: 'Rata-rata Poin Disiplin Santri',
+                    value: '${_avgPoin.toStringAsFixed(1)} / 100 Poin',
+                    insight: 'Sebagian besar santri berada pada kategori Disiplin Tinggi (Ri\'ayah Prima).',
+                    color: const Color(0xFF10B981),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildAiInsightCard(
+                    title: 'Analisis Izin & Pulang',
+                    value: '$_izin Santri Aktif Izin',
+                    insight: 'Prediksi kepulangan tepat waktu 96.4%. Tidak ada anomali keterlambatan jam malam.',
+                    color: const Color(0xFF38BDF8),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildAiInsightCard(
+                    title: 'Rekomendasi AI untuk ${_session.role.label}',
+                    value: 'Prioritas: Evaluasi Kamar A3 & B2',
+                    insight: 'Pantau riwayat adab santri yang mendekati batas toleransi poin izin.',
+                    color: const Color(0xFFA855F7),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAiInsightCard({
+    required String title,
+    required String value,
+    required String insight,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(title, style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 12)),
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(color: color, fontSize: 15, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            insight,
+            style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showIotGateSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF0F172A),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '📡 Diagnostik Hardware Gate IoT',
+              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 12),
+            _buildIotDetailRow('Mikrokontroler', 'NodeMCU ESP32 (38-pin)'),
+            _buildIotDetailRow('Sensor RFID', 'RC522 13.56 MHz (SPI Protocol)'),
+            _buildIotDetailRow('Servo Gate Barrier', 'MG996R Metal Gear (Pin D18)'),
+            _buildIotDetailRow('Status Koneksi', _isServerOnline ? 'Terhubung (Online)' : 'Standby Offline'),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => Navigator.pop(ctx),
+                icon: const Icon(Icons.check_rounded),
+                label: const Text('Tutup Diagnostik'),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIotDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
+          Text(value, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
+  void _showPointsSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF0F172A),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('🏆 Buku Poin & Adab Santri',
+                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 8),
+            const Text('Sistem penilaian kedisiplinan dan kepatuhan jam malam asrama.',
+                style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
+            const SizedBox(height: 14),
+            Text('Total Santri Teregistrasi: $_totalSantri Santri',
+                style: const TextStyle(color: Color(0xFF34D399), fontWeight: FontWeight.w700)),
+            Text('Rata-rata Disiplin Asrama: ${_avgPoin.toStringAsFixed(1)} Pts',
+                style: const TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.w700)),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showKamarInspectionSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF0F172A),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('🏠 Inspeksi Kamar Asrama',
+                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 8),
+            const Text('Pantau kebersihan dan kerapian kamar asrama santri.',
+                style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
+            const SizedBox(height: 14),
+            const Text('• Gedung Al-Fatih: Kamar 101 - 108 (Lengkap)', style: TextStyle(color: Colors.white)),
+            const Text('• Gedung Ibnu Sina: Kamar 201 - 206 (Lengkap)', style: TextStyle(color: Colors.white)),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _loadData() async {
@@ -932,7 +1249,7 @@ class _SessionHomeScreenState extends State<_SessionHomeScreen>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Keluar', style: TextStyle(fontWeight: FontWeight.w700)),
         content: Text(
-          'Yakin ingin keluar dari akun ${widget.session.namaLengkap}?',
+          'Yakin ingin keluar dari akun ${_session.namaLengkap}?',
           style: const TextStyle(fontSize: 14),
         ),
         actions: [
@@ -964,6 +1281,13 @@ class _SessionHomeScreenState extends State<_SessionHomeScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.surface,
+      drawer: AppSidebarDrawer(
+        session: _session,
+        currentRoute: _activeMenuId,
+        onSelectMenu: _handleMenuSelection,
+        onSwitchRole: _handleSwitchRole,
+        onLogout: _doLogout,
+      ),
       body: Column(
         children: [
           _buildSessionAppBar(),
@@ -987,7 +1311,7 @@ class _SessionHomeScreenState extends State<_SessionHomeScreen>
   }
 
   Widget _buildSessionAppBar() {
-    final role = widget.session.role;
+    final role = _session.role;
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -1005,61 +1329,73 @@ class _SessionHomeScreenState extends State<_SessionHomeScreen>
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
           child: Row(
             children: [
-              // Logo
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.emerald600.withValues(alpha: 0.3),
+              // ☰ Hamburger Button untuk buka Sidebar / Drawer (Sama Seperti di Web)
+              Builder(
+                builder: (ctx) => InkWell(
+                  onTap: () => Scaffold.of(ctx).openDrawer(),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: AppColors.emerald600.withValues(alpha: 0.4)),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.2)),
+                    ),
+                    child: const Icon(Icons.menu_rounded,
+                        color: Colors.white, size: 22),
+                  ),
                 ),
-                child: Icon(role.icon,
-                    color: AppColors.emerald300, size: 22),
               ),
               const SizedBox(width: 12),
+              // User Info (Tap untuk buka drawer juga)
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.session.namaLengkap,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.3,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Row(
+                child: Builder(
+                  builder: (ctx) => InkWell(
+                    onTap: () => Scaffold.of(ctx).openDrawer(),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: role.accentColor.withValues(alpha: 0.25),
-                            borderRadius: BorderRadius.circular(4),
+                        Text(
+                          _session.namaLengkap,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.3,
                           ),
-                          child: Text(
-                            role.label,
-                            style: TextStyle(
-                              color: role.accentColor,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(width: 6),
-                        const Text(
-                          'Smart Riayah',
-                          style: TextStyle(
-                              color: AppColors.emerald300, fontSize: 10),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: role.accentColor.withValues(alpha: 0.25),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                role.label,
+                                style: TextStyle(
+                                  color: role.accentColor,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            const Text(
+                              'Smart Riayah ▾',
+                              style: TextStyle(
+                                  color: AppColors.emerald300, fontSize: 10),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                  ],
+                  ),
                 ),
               ),
               // Server status
@@ -1224,7 +1560,7 @@ class _SessionHomeScreenState extends State<_SessionHomeScreen>
       crossAxisSpacing: 10,
       mainAxisSpacing: 10,
       shrinkWrap: true,
-      childAspectRatio: 1.5,
+      childAspectRatio: 1.35,
       physics: const NeverScrollableScrollPhysics(),
       children: [
         StatCard(
