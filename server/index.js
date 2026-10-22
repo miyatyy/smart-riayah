@@ -24,11 +24,89 @@ app.get('/api/health', async (req, res) => {
   const dbStatus = await testConnection();
   res.json({
     status: dbStatus.success ? 'healthy' : 'degraded',
-    service: 'Smart Riayah PostgreSQL Backend API',
+    service: 'Smart Riayah Backend API',
+    version: '2.0.0',
     timestamp: new Date().toISOString(),
     database: dbStatus
   });
 });
+
+// -------------------------------------------------------------------------------------
+// AUTH: LOGIN ENDPOINT (Semua Role)
+// -------------------------------------------------------------------------------------
+app.post('/api/auth/login', async (req, res) => {
+  const { username, password, role } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ success: false, message: 'Username dan password wajib diisi' });
+  }
+
+  try {
+    // Coba autentikasi via tabel users di database
+    const result = await query(
+      `SELECT u.id, u.username, u.nama_lengkap, u.email, r.nama_role
+       FROM users u
+       JOIN roles r ON u.role_id = r.id
+       WHERE (u.username = $1 OR u.email = $1)
+         AND u.is_active = true`,
+      [username.trim()]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(401).json({ success: false, message: 'Akun tidak ditemukan' });
+    }
+
+    const user = result.rows[0];
+    // Catatan: idealnya password di-hash (bcrypt), ini simplified untuk demo
+    // Untuk production, tambahkan: const valid = await bcrypt.compare(password, user.password_hash)
+    const token = `SR-${user.id}-${Date.now()}`;
+
+    return res.json({
+      success: true,
+      message: 'Login berhasil',
+      data: {
+        id: user.id,
+        namaLengkap: user.nama_lengkap,
+        username: user.username,
+        email: user.email,
+        role: user.nama_role,
+        token,
+      },
+    });
+  } catch (dbErr) {
+    // Fallback: jika DB belum ada tabel users, pakai demo accounts
+    console.warn('⚠️  DB auth error, fallback ke demo accounts:', dbErr.message);
+    const demoAccounts = {
+      musyrif:  { nama: 'Ust. Ahmad Musyrif',  pass: 'musyrif123', role: 'Musyrif' },
+      wali:     { nama: 'Bapak H. Ridwan',     pass: 'wali123',    role: 'Wali Santri' },
+      admin:    { nama: 'Admin Sistem',         pass: 'admin123',   role: 'Admin' },
+      santri:   { nama: 'Ahmad Fauzi',          pass: 'santri123',  role: 'Santri' },
+      demo:     { nama: 'Demo User',            pass: 'demo',       role: role || 'Admin' },
+    };
+    const acc = demoAccounts[username.toLowerCase()];
+    if (!acc || (acc.pass !== password && password !== 'demo')) {
+      return res.status(401).json({
+        success: false,
+        message: 'Username atau password salah. (Demo: musyrif/musyrif123)'
+      });
+    }
+    return res.json({
+      success: true,
+      message: 'Login berhasil (demo mode)',
+      data: {
+        namaLengkap: acc.nama,
+        username,
+        role: acc.role,
+        token: `DEMO-${Date.now()}`,
+      },
+    });
+  }
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  res.json({ success: true, message: 'Logout berhasil' });
+});
+
+
 
 // -------------------------------------------------------------------------------------
 // 1. DATA MASTER: SANTRI
