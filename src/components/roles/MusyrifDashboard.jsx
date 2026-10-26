@@ -18,12 +18,14 @@ import {
   Plus,
   CreditCard,
   BellRing,
-  ClipboardList
+  ClipboardList,
+  Pencil
 } from 'lucide-react';
 import RfidCardManager from '../modules/RfidCardManager';
 import MusyrifAlarmMonitor from '../modules/MusyrifAlarmMonitor';
 import RealtimePermitBoard from '../modules/RealtimePermitBoard';
 import SantriActivityAnalytics from '../modules/SantriActivityAnalytics';
+import EditRoomModal from '../modules/EditRoomModal';
 
 export default function MusyrifDashboard() {
   const { 
@@ -34,11 +36,13 @@ export default function MusyrifDashboard() {
     disciplineRecords,
     addDisciplineRecord,
     rooms,
+    updateRoom,
     reminderThresholdMinutes,
     activeRoleTab,
     setActiveRoleTab
   } = useApp();
 
+  const [editingRoom, setEditingRoom] = useState(null);
   const [filterKategori, setFilterKategori] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const selectedTab = (activeRoleTab === 'approval' || activeRoleTab === 'active_permits' || activeRoleTab === 'points' || activeRoleTab === 'kamar' || activeRoleTab === 'alarm_monitor' || activeRoleTab === 'rfid_management' || activeRoleTab === 'ai_santri') ? activeRoleTab : 'approval';
@@ -405,9 +409,18 @@ export default function MusyrifDashboard() {
           {rooms.map(room => (
             <div key={room.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-3">
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                <div>
-                  <h4 className="font-bold text-slate-900 text-sm">{room.nomorKamar}</h4>
-                  <p className="text-[11px] text-slate-500">{room.namaGedung}</p>
+                <div className="flex items-center gap-2">
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-sm">{room.nomorKamar}</h4>
+                    <p className="text-[11px] text-slate-500">{room.namaGedung}</p>
+                  </div>
+                  <button
+                    onClick={() => setEditingRoom(room)}
+                    className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-colors duration-150"
+                    title="Edit Data Kamar"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
                 </div>
                 <div className="text-right">
                   <span className="text-[10px] text-slate-400 block font-bold">Skor Kerapian</span>
@@ -549,6 +562,14 @@ export default function MusyrifDashboard() {
           </div>
         </div>
       )}
+
+      {/* MODAL: EDIT DATA KAMAR (PENCIL ICON MODAL) */}
+      <EditRoomModal
+        isOpen={Boolean(editingRoom)}
+        room={editingRoom}
+        onClose={() => setEditingRoom(null)}
+        onSave={(roomId, data) => updateRoom(roomId, data)}
+      />
     </div>
   );
 }

@@ -32,7 +32,8 @@ import {
   ClipboardList,
   FileText,
   Printer,
-  Smartphone
+  Smartphone,
+  Pencil
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
 import RfidCardManager from '../modules/RfidCardManager';
@@ -40,12 +41,14 @@ import ExpressPermitKiosk from '../modules/ExpressPermitKiosk';
 import RealtimeGateLogsManager from '../modules/RealtimeGateLogsManager';
 import FonnteDeviceManager from '../modules/FonnteDeviceManager';
 import SantriActivityAnalytics from '../modules/SantriActivityAnalytics';
+import EditRoomModal from '../modules/EditRoomModal';
 
 export default function AdminRiayahDashboard() {
   const { 
     rooms, 
     addRoom, 
     updateRoomCapacity, 
+    updateRoom,
     addBuilding, 
     santriList, 
     addNewSantri, 
@@ -522,14 +525,11 @@ export default function AdminRiayahDashboard() {
                     </div>
 
                     <button
-                      onClick={() => {
-                        setEditingRoom(room);
-                        setNewCapacityInput(String(room.kapasitas));
-                      }}
-                      className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition"
-                      title="Edit Kapasitas Kamar"
+                      onClick={() => setEditingRoom(room)}
+                      className="p-2 bg-slate-100 hover:bg-emerald-50 text-slate-500 hover:text-emerald-600 rounded-xl transition-colors duration-150 border border-slate-200/60 hover:border-emerald-200"
+                      title="Edit Data Kamar"
                     >
-                      <Edit3 className="w-4 h-4" />
+                      <Pencil className="w-4 h-4" />
                     </button>
                   </div>
 
@@ -1254,54 +1254,13 @@ export default function AdminRiayahDashboard() {
         </div>
       )}
 
-      {/* MODAL: EDIT ROOM CAPACITY */}
-      {editingRoom && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-sm w-full space-y-4 shadow-xl max-h-[90vh] overflow-y-auto my-auto animate-fade-in text-slate-800">
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <Edit3 className="w-4 h-4 text-emerald-600" />
-              <span>Edit Kapasitas {editingRoom.nomorKamar}</span>
-            </h3>
-
-            <p className="text-xs text-slate-500">
-              Gedung: {editingRoom.namaGedung} ({editingRoom.kategoriGedung})
-            </p>
-
-            <div>
-              <label className="block text-xs text-slate-700 mb-1 font-semibold">Kapasitas Maksimal Kasur</label>
-              <input
-                type="number"
-                value={newCapacityInput}
-                onChange={(e) => setNewCapacityInput(e.target.value)}
-                min="1"
-                max="50"
-                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-mono text-base focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600"
-              />
-              <span className="text-[10px] text-slate-400 mt-1 block">
-                *Contoh: ubah dari 10 menjadi 15 kasur sesuai penambahan ranjang baru.
-              </span>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                onClick={() => setEditingRoom(null)}
-                className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs hover:bg-slate-200 transition font-medium"
-              >
-                Batal
-              </button>
-              <button
-                onClick={() => {
-                  updateRoomCapacity(editingRoom.id, newCapacityInput);
-                  setEditingRoom(null);
-                }}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition shadow-xs"
-              >
-                Simpan Kapasitas
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* MODAL: EDIT DATA KAMAR ASRAMA (4 INPUTS) */}
+      <EditRoomModal
+        isOpen={Boolean(editingRoom)}
+        room={editingRoom}
+        onClose={() => setEditingRoom(null)}
+        onSave={(roomId, data) => updateRoom(roomId, data)}
+      />
 
       {/* MODAL: ADD NEW ROOM */}
       {showAddRoomModal && (

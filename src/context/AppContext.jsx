@@ -3,6 +3,7 @@ import confetti from 'canvas-confetti';
 import { sound } from '../utils/audio';
 import { webSerial } from '../utils/webSerial';
 import { DEFAULT_DEEPSEEK_TOKEN, testDeepSeekConnection } from '../utils/deepseekApi';
+import { deleteRoomData } from '../utils/roomService';
 import {
   INITIAL_SANTRI,
   INITIAL_PERMITS,
@@ -2159,6 +2160,31 @@ export const AppProvider = ({ children }) => {
     sound.playSuccess();
   };
 
+  const updateRoom = (roomId, updatedData) => {
+    setRooms(prev => prev.map(r => {
+      if (r.id === roomId) {
+        return {
+          ...r,
+          nomorKamar: updatedData.nomorKamar !== undefined ? updatedData.nomorKamar : r.nomorKamar,
+          kapasitas: updatedData.kapasitas !== undefined ? Math.max(1, parseInt(updatedData.kapasitas) || 1) : r.kapasitas,
+          ketuaKamar: updatedData.ketuaKamar !== undefined ? updatedData.ketuaKamar : r.ketuaKamar,
+          catatanInspeksi: updatedData.catatanInspeksi !== undefined ? updatedData.catatanInspeksi : r.catatanInspeksi
+        };
+      }
+      return r;
+    }));
+    sound.playSuccess();
+  };
+
+  const deleteRoom = async (roomId, roomName) => {
+    const result = await deleteRoomData(roomId, roomName);
+    if (result.success) {
+      setRooms(prev => prev.filter(r => r.id !== roomId));
+      sound.playSuccess();
+    }
+    return result;
+  };
+
   // 12. Admin Ri'ayah: Onboarding Santri Baru & Live Hardware RFID Tap Integration
   const addNewSantri = (santriData) => {
     const formattedUid = santriData.rfidUid ? santriData.rfidUid.trim().toUpperCase() : `04:${Math.floor(10 + Math.random() * 89)}:${Math.floor(10 + Math.random() * 89)}:${Math.floor(10 + Math.random() * 89)}`;
@@ -2404,6 +2430,8 @@ export const AppProvider = ({ children }) => {
         addBuilding,
         addRoom,
         updateRoomCapacity,
+        updateRoom,
+        deleteRoom,
         addNewSantri,
         replaceLostCard,
         unblockCard,
