@@ -103,15 +103,40 @@ BEFORE UPDATE ON evaluasi_harian
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- -------------------------------------------------------------------------------------
--- 5. INDEX UNTUK PERFORMA QUERY CEPAT
+-- 5. TABEL: ROOMS (Kamar Asrama Santri & Realtime Sync)
+-- -------------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS rooms (
+    id VARCHAR(50) PRIMARY KEY, -- Contoh: 'RM-204'
+    nama_gedung VARCHAR(150) NOT NULL DEFAULT 'Asrama Santri',
+    kategori_gedung VARCHAR(20) NOT NULL DEFAULT 'PUTRA' CHECK (kategori_gedung IN ('PUTRA', 'PUTRI')),
+    nomor_kamar VARCHAR(100) NOT NULL,
+    lantai INT NOT NULL DEFAULT 1,
+    kapasitas INT NOT NULL DEFAULT 8,
+    terisi INT NOT NULL DEFAULT 0,
+    ketua_kamar VARCHAR(150),
+    skor_kerapian_terakhir INT NOT NULL DEFAULT 90 CHECK (skor_kerapian_terakhir BETWEEN 0 AND 100),
+    jadwal_piket_hari_ini VARCHAR(255) DEFAULT 'Jadwal Reguler',
+    catatan_inspeksi TEXT DEFAULT 'Kamar siap huni dan rapi.',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+DROP TRIGGER IF EXISTS trg_rooms_updated_at ON rooms;
+CREATE TRIGGER trg_rooms_updated_at
+BEFORE UPDATE ON rooms
+FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- -------------------------------------------------------------------------------------
+-- 6. INDEX UNTUK PERFORMA QUERY CEPAT
 -- -------------------------------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_santri_nis ON santri(nis);
 CREATE INDEX IF NOT EXISTS idx_santri_rfid ON santri(rfid_uid);
 CREATE INDEX IF NOT EXISTS idx_evaluasi_santri_tgl ON evaluasi_harian(santri_id, tanggal);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role_id);
+CREATE INDEX IF NOT EXISTS idx_rooms_nomor ON rooms(nomor_kamar);
 
 -- -------------------------------------------------------------------------------------
--- 6. DATA AWAL (SEED DATA DEFAULT UNTUK TESTING)
+-- 7. DATA AWAL (SEED DATA DEFAULT UNTUK TESTING)
 -- -------------------------------------------------------------------------------------
 
 -- Insert Default Roles
@@ -150,3 +175,16 @@ INSERT INTO evaluasi_harian (santri_id, tanggal, shalat_subuh, shalat_dzuhur, sh
 ('S-102', CURRENT_DATE, 'Berjamaah', 'Berjamaah', 'Berjamaah', 'Berjamaah', 'Berjamaah', 'Al-Mulk', '1-15', 'A', 100, 96, 'Karakter teladan di asrama putri, makharijul huruf tajwid sangat fasih.', 'Sangat layak dicalonkan menjadi duta tahfidz pesantren.', 3),
 ('S-103', CURRENT_DATE, 'Masbuk', 'Berjamaah', 'Berjamaah', 'Berjamaah', 'Berjamaah', 'An-Nazi''at', '1-10', 'B', 88, 85, 'Masbuk shalat subuh 1 rakaat karena terlambat bangun, perlu pendampingan.', 'Musyrif disarankan menjadwalkan pembinaan adab tidur lebih awal.', 3)
 ON CONFLICT (santri_id, tanggal) DO NOTHING;
+
+-- Insert Sample Rooms (Data Kamar Asrama)
+INSERT INTO rooms (id, nama_gedung, kategori_gedung, nomor_kamar, lantai, kapasitas, terisi, ketua_kamar, skor_kerapian_terakhir, jadwal_piket_hari_ini, catatan_inspeksi) VALUES
+('RM-204', 'Asrama Putra Umar bin Khattab', 'PUTRA', 'Kamar 204', 2, 10, 8, 'Ahmad Fauzi', 94, 'Ahmad Fauzi & Danial Hakim', 'Kamar rapi, lemari seragam tertata rapi, sajadah terlipat wangi.'),
+('RM-102', 'Asrama Putra Abu Bakar', 'PUTRA', 'Kamar 102', 1, 8, 7, 'Muhammad Rayhan', 88, 'Rayhan & Ilham', 'Rak sandal luar perlu ditata ulang.'),
+('RM-105', 'Asrama Putri Khadijah', 'PUTRI', 'Kamar 105', 1, 8, 6, 'Siti Nurhaliza', 98, 'Siti Nurhaliza & Fatimah K.', 'Sangat bersih, wangi melati, sanitasi wastafel prima.'),
+('RM-101', 'Asrama Putri Siti Aisyah', 'PUTRI', 'Kamar 101', 1, 8, 4, 'Siti Maryam', 95, 'Siti Maryam & Anisa', 'Kamar baru renovasi, fasilitas tempat tidur dan loker baru siap pakai.'),
+('RM-202', 'Asrama Putri Siti Aisyah', 'PUTRI', 'Kamar 202', 2, 10, 5, 'Aisyah Zahra', 96, 'Aisyah Zahra & Zahirah', 'Kamar rapi, mukena bersih di gantungan.')
+ON CONFLICT (id) DO NOTHING;
+
+-- Aktifkan Realtime Publication di Supabase
+ALTER TABLE rooms REPLICA IDENTITY FULL;
+ALTER PUBLICATION supabase_realtime ADD TABLE rooms;
