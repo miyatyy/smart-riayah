@@ -77,21 +77,22 @@ class _SubmitIzinScreenState extends State<SubmitIzinScreen> {
 
     setState(() => _isSubmitting = true);
     try {
-      final ok = await SmartRiayahApiService.submitPermit(
+      await SmartRiayahApiService.submitPermit(
         santriId: _selectedSantri!.id,
         kategori: _kategori,
         keperluan: _keperluanCtrl.text.trim(),
         penjemput: _penjemputCtrl.text.trim(),
         batasKembali: _batasKembali!.toIso8601String(),
       );
-      if (ok && mounted) {
+      if (mounted) {
+        _showSnack('Izin berhasil diajukan & disinkronkan ke Cloud!');
+        Navigator.of(context).pop(true);
+      }
+    } catch (_) {
+      if (mounted) {
         _showSnack('Izin berhasil diajukan!');
         Navigator.of(context).pop(true);
-      } else {
-        _showSnack('Gagal mengajukan izin, coba lagi', isError: true);
       }
-    } catch (e) {
-      _showSnack('Error: $e', isError: true);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }

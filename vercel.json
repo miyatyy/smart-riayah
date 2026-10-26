@@ -1,13 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "rewrites": [
     {
-      "source": "/api/sync/version",
-      "destination": "/api/sync/version"
-    },
-    {
-      "source": "/api/sync",
-      "destination": "/api/sync"
+      "source": "/api/(.*)",
+      "destination": "/server/index.js"
     },
     {
       "source": "/((?!api/|images/|assets/|vite\\.svg|favicon\\.ico).*)",

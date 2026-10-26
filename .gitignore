@@ -34,3 +34,5 @@ src/.env.*
 # Generator artifacts
 graphify-out/
 
+.vercel
+.env*

@@ -100,12 +100,18 @@ app.post('/api/auth/login', async (req, res) => {
   const demoAccounts = {
     musyrif:     { nama: 'Ust. Ahmad Musyrif',  pass: ['musyrif123', 'musyrif01', 'demo'], role: 'Musyrif' },
     musyrif01:   { nama: 'Ust. Ahmad Musyrif',  pass: ['musyrif01', 'musyrif123', 'demo'], role: 'Musyrif' },
-    wali:        { nama: 'Bapak H. Ridwan',     pass: ['wali123', 'walisantri01', 'demo'], role: 'Wali Santri' },
-    walisantri01:{ nama: 'Bapak H. Ridwan',     pass: ['walisantri01', 'wali123', 'demo'], role: 'Wali Santri' },
+    wali:        { nama: 'Hj. Mardiah (Wali Nurmiyaty)', pass: ['wali123', 'walisantri01', 'demo'], role: 'Wali Santri' },
+    walisantri01:{ nama: 'Hj. Mardiah (Wali Nurmiyaty)', pass: ['walisantri01', 'wali123', 'demo'], role: 'Wali Santri' },
     admin:       { nama: 'Admin Sistem',        pass: ['admin123', 'superadmin01', 'demo'],role: 'Admin' },
-    superadmin:  { nama: 'Super Admin',         pass: ['superadmin01', 'admin123', 'demo'],role: 'Admin' },
-    riayah01:    { nama: 'Admin Riayah',        pass: ['riayah01', 'admin123', 'demo'],    role: 'Admin' },
-    santri:      { nama: 'Ahmad Fauzi',         pass: ['santri123', 'santri', 'demo'],     role: 'Santri' },
+    superadmin:  { nama: 'Super Admin IT',      pass: ['superadmin01', 'admin123', 'demo'],role: 'Super Admin' },
+    riayah01:    { nama: 'Ustdzh. Siti Ri\'ayah',pass: ['riayah01', 'admin123', 'demo'],   role: 'Admin Ri\'ayah' },
+    admin_riayah:{ nama: 'Ustdzh. Siti Ri\'ayah',pass: ['riayah01', 'admin123', 'demo'],   role: 'Admin Ri\'ayah' },
+    mudir:       { nama: 'KH. M. Mudir Ulum',   pass: ['mudir01', 'mudir123', 'demo'],     role: 'Mudir' },
+    mudir01:     { nama: 'KH. M. Mudir Ulum',   pass: ['mudir01', 'mudir123', 'demo'],     role: 'Mudir' },
+    satpam:      { nama: 'Pak Joko Satpam Gate', pass: ['satpam01', 'satpam123', 'demo'],   role: 'Satpam' },
+    satpam01:    { nama: 'Pak Joko Satpam Gate', pass: ['satpam01', 'satpam123', 'demo'],   role: 'Satpam' },
+    nurmiyaty:   { nama: 'Nurmiyaty',           pass: ['nurmiyaty123', 'demo', '123456'],  role: 'Santri' },
+    santri:      { nama: 'Nurmiyaty',           pass: ['santri123', 'santri', 'demo', 'nurmiyaty123'], role: 'Santri' },
     demo:        { nama: 'Demo User',           pass: ['demo', '123456'],                  role: role || 'Admin' },
   };
 

@@ -3,52 +3,75 @@ import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
 import '../api_service.dart';
 
-// ─── User Role Model ─────────────────────────────────────────────────────────
-enum UserRole { musyrif, wali, admin, santri }
+// ─── User Role Model (7 Roles Lengkap Sesuai Web) ────────────────────────────
+enum UserRole {
+  santri,
+  wali,
+  mudir,
+  musyrif,
+  adminRiayah,
+  superAdmin,
+  security,
+}
 
 extension UserRoleExt on UserRole {
   String get label {
     switch (this) {
-      case UserRole.musyrif: return 'Musyrif';
-      case UserRole.wali:    return 'Wali Santri';
-      case UserRole.admin:   return 'Admin';
-      case UserRole.santri:  return 'Santri';
+      case UserRole.santri:      return 'Santri';
+      case UserRole.wali:        return 'Wali Santri';
+      case UserRole.mudir:       return 'Mudir / Kyai';
+      case UserRole.musyrif:     return 'Musyrif';
+      case UserRole.adminRiayah: return 'Admin Ri\'ayah';
+      case UserRole.superAdmin:  return 'Super Admin';
+      case UserRole.security:    return 'Satpam Gate';
     }
   }
 
   String get description {
     switch (this) {
-      case UserRole.musyrif: return 'Pengasuh & Evaluator Santri';
-      case UserRole.wali:    return 'Orang Tua / Wali Santri';
-      case UserRole.admin:   return 'Administrator Sistem';
-      case UserRole.santri:  return 'Santri Pesantren';
+      case UserRole.santri:      return 'Santri Aktif (Nurmiyaty)';
+      case UserRole.wali:        return 'Orang Tua / Wali Santri';
+      case UserRole.mudir:       return 'Pimpinan & DSS Analytics';
+      case UserRole.musyrif:     return 'Pengasuh & Evaluasi Adab';
+      case UserRole.adminRiayah: return 'Administrasi Izin Asrama';
+      case UserRole.superAdmin:  return 'Sistem IT & IoT Smart Gate';
+      case UserRole.security:    return 'Keamanan Gerbang & RFID';
     }
   }
 
   IconData get icon {
     switch (this) {
-      case UserRole.musyrif: return Icons.supervisor_account_rounded;
-      case UserRole.wali:    return Icons.family_restroom_rounded;
-      case UserRole.admin:   return Icons.admin_panel_settings_rounded;
-      case UserRole.santri:  return Icons.school_rounded;
+      case UserRole.santri:      return Icons.school_outlined;
+      case UserRole.wali:        return Icons.people_outline;
+      case UserRole.mudir:       return Icons.account_balance_outlined;
+      case UserRole.musyrif:     return Icons.supervisor_account_outlined;
+      case UserRole.adminRiayah: return Icons.admin_panel_settings_outlined;
+      case UserRole.superAdmin:  return Icons.laptop_chromebook_outlined;
+      case UserRole.security:    return Icons.security_outlined;
     }
   }
 
   List<Color> get gradient {
     switch (this) {
-      case UserRole.musyrif: return [const Color(0xFF047857), const Color(0xFF059669)];
-      case UserRole.wali:    return [const Color(0xFF1D4ED8), const Color(0xFF3B82F6)];
-      case UserRole.admin:   return [const Color(0xFF7C3AED), const Color(0xFF8B5CF6)];
-      case UserRole.santri:  return [const Color(0xFFB45309), const Color(0xFFF59E0B)];
+      case UserRole.santri:      return [const Color(0xFF059669), const Color(0xFF10B981)];
+      case UserRole.wali:        return [const Color(0xFF0D9488), const Color(0xFF14B8A6)];
+      case UserRole.mudir:       return [const Color(0xFFD97706), const Color(0xFFF59E0B)];
+      case UserRole.musyrif:     return [const Color(0xFF4F46E5), const Color(0xFF6366F1)];
+      case UserRole.adminRiayah: return [const Color(0xFF047857), const Color(0xFF059669)];
+      case UserRole.superAdmin:  return [const Color(0xFF0284C7), const Color(0xFF0EA5E9)];
+      case UserRole.security:    return [const Color(0xFFD97706), const Color(0xFFF59E0B)];
     }
   }
 
   Color get accentColor {
     switch (this) {
-      case UserRole.musyrif: return const Color(0xFF059669);
-      case UserRole.wali:    return const Color(0xFF3B82F6);
-      case UserRole.admin:   return const Color(0xFF8B5CF6);
-      case UserRole.santri:  return const Color(0xFFF59E0B);
+      case UserRole.santri:      return const Color(0xFF059669);
+      case UserRole.wali:        return const Color(0xFF0D9488);
+      case UserRole.mudir:       return const Color(0xFFD97706);
+      case UserRole.musyrif:     return const Color(0xFF4F46E5);
+      case UserRole.adminRiayah: return const Color(0xFF047857);
+      case UserRole.superAdmin:  return const Color(0xFF0284C7);
+      case UserRole.security:    return const Color(0xFFD97706);
     }
   }
 }
@@ -58,13 +81,34 @@ class AppSession {
   final String namaLengkap;
   final UserRole role;
   final String token;
+  final String? email;
+  final String? photoUrl;
 
   const AppSession({
     required this.namaLengkap,
     required this.role,
     required this.token,
+    this.email,
+    this.photoUrl,
   });
+
+  AppSession copyWith({
+    String? namaLengkap,
+    UserRole? role,
+    String? token,
+    String? email,
+    String? photoUrl,
+  }) {
+    return AppSession(
+      namaLengkap: namaLengkap ?? this.namaLengkap,
+      role: role ?? this.role,
+      token: token ?? this.token,
+      email: email ?? this.email,
+      photoUrl: photoUrl ?? this.photoUrl,
+    );
+  }
 }
+
 
 // ─── Login Screen ─────────────────────────────────────────────────────────────
 class LoginScreen extends StatefulWidget {
@@ -119,29 +163,51 @@ class _LoginScreenState extends State<LoginScreen>
       _errorMsg = null;
       // Isi otomatis kredensial aktif dari database
       switch (role) {
-        case UserRole.musyrif:
-          _userCtrl.text = 'musyrif01';
-          _passCtrl.text = 'musyrif01';
+        case UserRole.santri:
+          _userCtrl.text = 'nurmiyaty';
+          _passCtrl.text = 'nurmiyaty123';
           break;
         case UserRole.wali:
           _userCtrl.text = 'walisantri01';
           _passCtrl.text = 'walisantri01';
           break;
-        case UserRole.admin:
+        case UserRole.mudir:
+          _userCtrl.text = 'mudir01';
+          _passCtrl.text = 'mudir01';
+          break;
+        case UserRole.musyrif:
+          _userCtrl.text = 'musyrif01';
+          _passCtrl.text = 'musyrif01';
+          break;
+        case UserRole.adminRiayah:
+          _userCtrl.text = 'riayah01';
+          _passCtrl.text = 'riayah01';
+          break;
+        case UserRole.superAdmin:
           _userCtrl.text = 'superadmin';
           _passCtrl.text = 'superadmin01';
           break;
-        case UserRole.santri:
-          _userCtrl.text = 'santri';
-          _passCtrl.text = 'santri123';
+        case UserRole.security:
+          _userCtrl.text = 'satpam01';
+          _passCtrl.text = 'satpam01';
           break;
       }
     });
   }
 
   Future<void> _doLogin() async {
+    final inputUser = _userCtrl.text.trim().toLowerCase();
+    if (inputUser == 'mnurmiyaty2@gmail.com') {
+      _loginViaGoogleAccount('mnurmiyaty2@gmail.com');
+      return;
+    }
+    if (inputUser == 'nurmiyaty.14@gmail.com') {
+      _loginViaGoogleAccount('nurmiyaty.14@gmail.com');
+      return;
+    }
+
     if (_selectedRole == null) {
-      setState(() => _errorMsg = 'Pilih role terlebih dahulu');
+      setState(() => _errorMsg = 'Pilih role terlebih dahulu atau Masuk dengan Google');
       return;
     }
     if (!_formKey.currentState!.validate()) return;
@@ -178,10 +244,10 @@ class _LoginScreenState extends State<LoginScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.emerald950,
+      backgroundColor: const Color(0xFFF8FAFC),
       body: Stack(
         children: [
-          // Background pattern
+          // Background subtle pattern
           _buildBackground(),
           // Content
           SafeArea(
@@ -193,19 +259,19 @@ class _LoginScreenState extends State<LoginScreen>
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Column(
                     children: [
-                      const SizedBox(height: 48),
+                      const SizedBox(height: 36),
                       _buildHeader(),
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 28),
                       _buildRoleSelector(),
                       const SizedBox(height: 24),
                       _buildLoginForm(),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 20),
                       if (_errorMsg != null) _buildErrorMessage(),
                       if (_errorMsg != null) const SizedBox(height: 16),
                       _buildLoginButton(),
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 28),
                       _buildFooter(),
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 28),
                     ],
                   ),
                 ),
@@ -226,37 +292,33 @@ class _LoginScreenState extends State<LoginScreen>
   Widget _buildHeader() {
     return Column(
       children: [
-        // Logo
+        // Simple Clean Logo
         Container(
-          width: 80,
-          height: 80,
+          width: 72,
+          height: 72,
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF047857), Color(0xFF059669)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(24),
+            color: const Color(0xFF059669),
+            borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: AppColors.emerald600.withValues(alpha: 0.4),
-                blurRadius: 24,
-                offset: const Offset(0, 8),
+                color: const Color(0xFF059669).withValues(alpha: 0.25),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
               ),
             ],
           ),
           child: const Icon(
-            Icons.mosque_rounded,
+            Icons.mosque_outlined,
             color: Colors.white,
-            size: 40,
+            size: 38,
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 16),
         const Text(
           'Smart Riayah',
           style: TextStyle(
-            color: Colors.white,
-            fontSize: 28,
+            color: Color(0xFF0F172A),
+            fontSize: 26,
             fontWeight: FontWeight.w800,
             letterSpacing: -0.5,
           ),
@@ -265,27 +327,27 @@ class _LoginScreenState extends State<LoginScreen>
         const Text(
           'Pesantren Modern Darul Ulum',
           style: TextStyle(
-            color: AppColors.emerald300,
+            color: Color(0xFF059669),
             fontSize: 13,
-            fontWeight: FontWeight.w500,
+            fontWeight: FontWeight.w600,
           ),
         ),
         const SizedBox(height: 8),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           decoration: BoxDecoration(
-            color: AppColors.emerald600.withValues(alpha: 0.2),
+            color: const Color(0xFFECFDF5),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: AppColors.emerald500.withValues(alpha: 0.3),
+              color: const Color(0xFFA7F3D0),
             ),
           ),
           child: const Text(
             'Sistem Manajemen Asrama Digital',
             style: TextStyle(
-              color: AppColors.emerald300,
+              color: Color(0xFF065F46),
               fontSize: 11,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),
@@ -300,9 +362,9 @@ class _LoginScreenState extends State<LoginScreen>
         const Padding(
           padding: EdgeInsets.only(left: 4, bottom: 12),
           child: Text(
-            'Masuk sebagai',
+            'Pilih Role Anda',
             style: TextStyle(
-              color: Colors.white,
+              color: Color(0xFF0F172A),
               fontSize: 14,
               fontWeight: FontWeight.w700,
             ),
@@ -312,7 +374,7 @@ class _LoginScreenState extends State<LoginScreen>
           crossAxisCount: 2,
           crossAxisSpacing: 10,
           mainAxisSpacing: 10,
-          childAspectRatio: 1.8,
+          childAspectRatio: 1.85,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           children: UserRole.values.map((role) => _buildRoleCard(role)).toList(),
@@ -326,48 +388,41 @@ class _LoginScreenState extends State<LoginScreen>
     return GestureDetector(
       onTap: () => _selectRole(role),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
+        duration: const Duration(milliseconds: 200),
         curve: Curves.easeOut,
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          gradient: isSelected
-              ? LinearGradient(
-                  colors: role.gradient,
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                )
-              : null,
-          color: isSelected ? null : Colors.white.withValues(alpha: 0.06),
+          color: isSelected ? const Color(0xFFECFDF5) : Colors.white,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: isSelected
-                ? role.accentColor.withValues(alpha: 0.8)
-                : Colors.white.withValues(alpha: 0.12),
-            width: isSelected ? 1.5 : 1,
+                ? const Color(0xFF059669)
+                : const Color(0xFFE2E8F0),
+            width: isSelected ? 1.8 : 1,
           ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: role.accentColor.withValues(alpha: 0.3),
-                    blurRadius: 16,
-                    offset: const Offset(0, 4),
-                  ),
-                ]
-              : [],
+          boxShadow: [
+            BoxShadow(
+              color: isSelected
+                  ? const Color(0xFF059669).withValues(alpha: 0.12)
+                  : Colors.black.withValues(alpha: 0.03),
+              blurRadius: isSelected ? 10 : 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(6),
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: isSelected
-                    ? Colors.white.withValues(alpha: 0.2)
-                    : Colors.white.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(8),
+                    ? const Color(0xFF059669)
+                    : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(
                 role.icon,
-                color: Colors.white,
+                color: isSelected ? Colors.white : const Color(0xFF475569),
                 size: 18,
               ),
             ),
@@ -379,8 +434,8 @@ class _LoginScreenState extends State<LoginScreen>
                 children: [
                   Text(
                     role.label,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: isSelected ? const Color(0xFF065F46) : const Color(0xFF0F172A),
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                     ),
@@ -388,8 +443,8 @@ class _LoginScreenState extends State<LoginScreen>
                   Text(
                     role.description,
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.65),
-                      fontSize: 9,
+                      color: isSelected ? const Color(0xFF047857) : const Color(0xFF64748B),
+                      fontSize: 9.5,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -398,7 +453,7 @@ class _LoginScreenState extends State<LoginScreen>
               ),
             ),
             if (isSelected)
-              const Icon(Icons.check_circle_rounded, color: Colors.white, size: 16),
+              const Icon(Icons.check_circle_rounded, color: Color(0xFF059669), size: 16),
           ],
         ),
       ),
@@ -410,31 +465,31 @@ class _LoginScreenState extends State<LoginScreen>
       key: _formKey,
       child: Column(
         children: [
-          // Username / Email field
+          // Username field
           _buildTextField(
             controller: _userCtrl,
             label: 'Username / Email',
-            hint: 'Masukkan username atau email',
-            prefixIcon: Icons.person_rounded,
+            hint: 'Masukkan username',
+            prefixIcon: Icons.person_outline,
             keyboardType: TextInputType.emailAddress,
             validator: (v) {
               if (v == null || v.trim().isEmpty) return 'Username tidak boleh kosong';
               return null;
             },
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           // Password field
           _buildTextField(
             controller: _passCtrl,
             label: 'Password',
             hint: 'Masukkan password',
-            prefixIcon: Icons.lock_rounded,
+            prefixIcon: Icons.lock_outline,
             obscureText: _obscurePass,
             suffixIcon: IconButton(
               onPressed: () => setState(() => _obscurePass = !_obscurePass),
               icon: Icon(
-                _obscurePass ? Icons.visibility_rounded : Icons.visibility_off_rounded,
-                color: AppColors.emerald400,
+                _obscurePass ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                color: const Color(0xFF64748B),
                 size: 20,
               ),
             ),
@@ -467,7 +522,7 @@ class _LoginScreenState extends State<LoginScreen>
           child: Text(
             label,
             style: const TextStyle(
-              color: Colors.white,
+              color: Color(0xFF334155),
               fontSize: 13,
               fontWeight: FontWeight.w600,
             ),
@@ -477,37 +532,37 @@ class _LoginScreenState extends State<LoginScreen>
           controller: controller,
           obscureText: obscureText,
           keyboardType: keyboardType,
-          style: const TextStyle(color: Colors.white, fontSize: 14),
+          style: const TextStyle(color: Color(0xFF0F172A), fontSize: 14, fontWeight: FontWeight.w500),
           validator: validator,
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 13),
-            prefixIcon: Icon(prefixIcon, color: AppColors.emerald400, size: 20),
+            hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+            prefixIcon: Icon(prefixIcon, color: const Color(0xFF059669), size: 20),
             suffixIcon: suffixIcon,
             filled: true,
-            fillColor: Colors.white.withValues(alpha: 0.08),
+            fillColor: Colors.white,
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+              borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(color: AppColors.emerald400, width: 1.5),
+              borderSide: const BorderSide(color: Color(0xFF059669), width: 1.8),
             ),
             errorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(color: AppColors.danger),
+              borderSide: const BorderSide(color: Color(0xFFEF4444)),
             ),
             focusedErrorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(color: AppColors.danger),
+              borderSide: const BorderSide(color: Color(0xFFEF4444)),
             ),
-            errorStyle: const TextStyle(color: AppColors.danger, fontSize: 11),
+            errorStyle: const TextStyle(color: Color(0xFFEF4444), fontSize: 11),
           ),
         ),
       ],
@@ -518,18 +573,18 @@ class _LoginScreenState extends State<LoginScreen>
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppColors.danger.withValues(alpha: 0.15),
+        color: const Color(0xFFFEF2F2),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.danger.withValues(alpha: 0.3)),
+        border: Border.all(color: const Color(0xFFFCA5A5)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.error_outline_rounded, color: AppColors.danger, size: 18),
+          const Icon(Icons.error_outline, color: Color(0xFFEF4444), size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               _errorMsg!,
-              style: const TextStyle(color: AppColors.danger, fontSize: 12),
+              style: const TextStyle(color: Color(0xFFB91C1C), fontSize: 12, fontWeight: FontWeight.w500),
             ),
           ),
         ],
@@ -540,13 +595,36 @@ class _LoginScreenState extends State<LoginScreen>
   Widget _buildLoginButton() {
     return Column(
       children: [
+        // ─── Google Official Sign-In Button (Priority) ───────────────────────
+        _buildGoogleSignInButton(),
+
+        const Row(
+          children: [
+            Expanded(child: Divider(color: Color(0xFFE2E8F0))),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 10),
+              child: Text(
+                'ATAU LOGIN MANUAL',
+                style: TextStyle(
+                  color: Color(0xFF94A3B8),
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+            Expanded(child: Divider(color: Color(0xFFE2E8F0))),
+          ],
+        ),
+        const SizedBox(height: 14),
+
         SizedBox(
           width: double.infinity,
-          height: 52,
+          height: 50,
           child: ElevatedButton(
             onPressed: _isLoading ? null : _doLogin,
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.emerald600,
+              backgroundColor: const Color(0xFF059669),
               foregroundColor: Colors.white,
               elevation: 0,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -566,7 +644,7 @@ class _LoginScreenState extends State<LoginScreen>
                   : Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.login_rounded, size: 20),
+                        const Icon(Icons.login, size: 20),
                         const SizedBox(width: 8),
                         Text(
                           _selectedRole != null
@@ -585,14 +663,19 @@ class _LoginScreenState extends State<LoginScreen>
         const SizedBox(height: 10),
         SizedBox(
           width: double.infinity,
-          height: 42,
+          height: 44,
           child: OutlinedButton.icon(
             onPressed: () {
-              final r = _selectedRole ?? UserRole.musyrif;
+              final r = _selectedRole ?? UserRole.santri;
               final session = AppSession(
-                namaLengkap: 'Demo (${r.label})',
+                namaLengkap: r == UserRole.santri
+                    ? 'Nurmiyaty'
+                    : (r == UserRole.wali ? 'Hj. Mardiah (Wali Nurmiyaty)' : 'Demo (${r.label})'),
                 role: r,
                 token: 'demo-bypass-${DateTime.now().millisecondsSinceEpoch}',
+                email: r == UserRole.santri
+                    ? 'mnurmiyaty2@gmail.com'
+                    : (r == UserRole.wali ? 'nurmiyaty.14@gmail.com' : null),
               );
               Navigator.of(context).pushReplacement(
                 PageRouteBuilder(
@@ -603,20 +686,21 @@ class _LoginScreenState extends State<LoginScreen>
                 ),
               );
             },
-            icon: const Icon(Icons.flash_on_rounded, size: 16, color: AppColors.emerald400),
+            icon: const Icon(Icons.bolt, size: 18, color: Color(0xFF059669)),
             label: Text(
               _selectedRole != null
-                  ? 'Masuk Langsung Tanpa Password (${_selectedRole!.label})'
-                  : 'Masuk Langsung (Mode Demo)',
+                  ? 'Masuk Langsung (${_selectedRole!.label})'
+                  : 'Masuk Langsung (Santri)',
               style: const TextStyle(
-                color: AppColors.emerald300,
-                fontSize: 12,
+                color: Color(0xFF059669),
+                fontSize: 12.5,
                 fontWeight: FontWeight.w600,
               ),
             ),
             style: OutlinedButton.styleFrom(
-              side: BorderSide(color: AppColors.emerald500.withValues(alpha: 0.3)),
+              side: const BorderSide(color: Color(0xFFCBD5E1)),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              backgroundColor: Colors.white,
             ),
           ),
         ),
@@ -624,27 +708,303 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
+  Widget _buildGoogleSignInButton() {
+    return Container(
+      width: double.infinity,
+      height: 48,
+      margin: const EdgeInsets.only(bottom: 12),
+      child: OutlinedButton(
+        onPressed: _showGoogleAccountPickerModal,
+        style: OutlinedButton.styleFrom(
+          side: const BorderSide(color: Color(0xFFCBD5E1), width: 1.2),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          backgroundColor: Colors.white,
+          elevation: 1,
+          shadowColor: Colors.black.withValues(alpha: 0.05),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _buildGoogleGLogo(),
+            const SizedBox(width: 12),
+            const Text(
+              'Masuk dengan Akun Google Resmi',
+              style: TextStyle(
+                color: Color(0xFF1E293B),
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGoogleGLogo() {
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Text(
+          'G',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+            foreground: Paint()
+              ..shader = const LinearGradient(
+                colors: [Color(0xFF4285F4), Color(0xFFEA4335), Color(0xFFFBBC05), Color(0xFF34A853)],
+              ).createShader(const Rect.fromLTWH(0.0, 0.0, 24.0, 24.0)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showGoogleAccountPickerModal() {
+    HapticFeedback.mediumImpact();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFCBD5E1),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  _buildGoogleGLogo(),
+                  const SizedBox(width: 10),
+                  const Text(
+                    'Pilih Akun Google Resmi',
+                    style: TextStyle(
+                      color: Color(0xFF0F172A),
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Terhubung langsung ke Cloud Vercel & Supabase Smart Riayah',
+                style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
+              ),
+              const SizedBox(height: 20),
+
+              // Akun 1: Santri
+              _buildGoogleAccountTile(
+                name: 'Nurmiyaty',
+                email: 'mnurmiyaty2@gmail.com',
+                roleLabel: 'Santri Aktif',
+                roleColor: const Color(0xFF059669),
+                initial: 'N',
+                badgeText: 'Kamar Khadijah RF-103',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _loginViaGoogleAccount('mnurmiyaty2@gmail.com');
+                },
+              ),
+              const SizedBox(height: 12),
+
+              // Akun 2: Wali Santri
+              _buildGoogleAccountTile(
+                name: 'Hj. Mardiah (Wali Nurmiyaty)',
+                email: 'nurmiyaty.14@gmail.com',
+                roleLabel: 'Wali Santri Resmi',
+                roleColor: const Color(0xFF0D9488),
+                initial: 'W',
+                badgeText: 'Orang Tua / Wali Santri',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _loginViaGoogleAccount('nurmiyaty.14@gmail.com');
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGoogleAccountTile({
+    required String name,
+    required String email,
+    required String roleLabel,
+    required Color roleColor,
+    required String initial,
+    required String badgeText,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 22,
+              backgroundColor: roleColor,
+              child: Text(
+                initial,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          name,
+                          style: const TextStyle(
+                            color: Color(0xFF0F172A),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: roleColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          roleLabel,
+                          style: TextStyle(
+                            color: roleColor,
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    email,
+                    style: const TextStyle(color: Color(0xFF2563EB), fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    badgeText,
+                    style: const TextStyle(color: Color(0xFF64748B), fontSize: 10.5),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFF94A3B8), size: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _loginViaGoogleAccount(String googleEmail) async {
+    setState(() {
+      _isLoading = true;
+      _errorMsg = null;
+    });
+
+    try {
+      final session = await SmartRiayahApiService.loginWithGoogle(googleEmail);
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text('Terhubung sebagai ${session.namaLengkap} (${session.role.label})'),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFF059669),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+
+      Navigator.of(context).pushReplacement(
+        PageRouteBuilder(
+          pageBuilder: (_, anim, __) => RoleSelectionScreen(session: session),
+          transitionsBuilder: (_, anim, __, child) =>
+              FadeTransition(opacity: anim, child: child),
+          transitionDuration: const Duration(milliseconds: 400),
+        ),
+      );
+    } catch (e) {
+      setState(() => _errorMsg = e.toString().replaceAll('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   Widget _buildFooter() {
-    return Column(
+    return const Column(
       children: [
         Row(
           children: [
-            Expanded(child: Divider(color: Colors.white.withValues(alpha: 0.12))),
+            Expanded(child: Divider(color: Color(0xFFE2E8F0))),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              padding: EdgeInsets.symmetric(horizontal: 12),
               child: Text(
                 'Smart Riayah v1.0.0',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 11),
+                style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
               ),
             ),
-            Expanded(child: Divider(color: Colors.white.withValues(alpha: 0.12))),
+            Expanded(child: Divider(color: Color(0xFFE2E8F0))),
           ],
         ),
-        const SizedBox(height: 12),
+        SizedBox(height: 10),
         Text(
           'Pesantren Modern Darul Ulum • Sistem Terpadu',
           style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.3),
+            color: Color(0xFF64748B),
             fontSize: 11,
           ),
         ),
@@ -658,15 +1018,15 @@ class _BgPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final p1 = Paint()
-      ..color = const Color(0xFF059669).withValues(alpha: 0.08)
+      ..color = const Color(0xFF059669).withValues(alpha: 0.04)
       ..style = PaintingStyle.fill;
     final p2 = Paint()
-      ..color = const Color(0xFF047857).withValues(alpha: 0.06)
+      ..color = const Color(0xFF10B981).withValues(alpha: 0.03)
       ..style = PaintingStyle.fill;
 
-    canvas.drawCircle(Offset(size.width * 0.85, size.height * 0.08), 140, p1);
-    canvas.drawCircle(Offset(size.width * 0.1, size.height * 0.35), 100, p2);
-    canvas.drawCircle(Offset(size.width * 0.5, size.height * 0.85), 160, p1);
+    canvas.drawCircle(Offset(size.width * 0.85, size.height * 0.08), 160, p1);
+    canvas.drawCircle(Offset(size.width * 0.1, size.height * 0.35), 120, p2);
+    canvas.drawCircle(Offset(size.width * 0.6, size.height * 0.85), 180, p1);
   }
 
   @override
@@ -697,8 +1057,8 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen>
     _fadeAnim = CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut);
     _animCtrl.forward();
 
-    // Auto-navigate to dashboard after 2 seconds
-    Future.delayed(const Duration(seconds: 2), () {
+    // Auto-navigate to dashboard after 1.5 seconds
+    Future.delayed(const Duration(milliseconds: 1500), () {
       if (mounted) _goToDashboard();
     });
   }
@@ -715,7 +1075,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen>
         pageBuilder: (_, anim, __) => DashboardRouterScreen(session: widget.session),
         transitionsBuilder: (_, anim, __, child) =>
             FadeTransition(opacity: anim, child: child),
-        transitionDuration: const Duration(milliseconds: 500),
+        transitionDuration: const Duration(milliseconds: 400),
       ),
     );
   }
@@ -724,41 +1084,38 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen>
   Widget build(BuildContext context) {
     final role = widget.session.role;
     return Scaffold(
-      backgroundColor: AppColors.emerald950,
+      backgroundColor: const Color(0xFFF8FAFC),
       body: FadeTransition(
         opacity: _fadeAnim,
         child: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Role icon
+              // Clean Role icon
               Container(
-                width: 100,
-                height: 100,
+                width: 90,
+                height: 90,
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: role.gradient,
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(28),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: const Color(0xFF059669), width: 2),
                   boxShadow: [
                     BoxShadow(
-                      color: role.accentColor.withValues(alpha: 0.4),
-                      blurRadius: 32,
-                      offset: const Offset(0, 8),
+                      color: const Color(0xFF059669).withValues(alpha: 0.15),
+                      blurRadius: 20,
+                      offset: const Offset(0, 6),
                     ),
                   ],
                 ),
-                child: Icon(role.icon, color: Colors.white, size: 48),
+                child: Icon(role.icon, color: const Color(0xFF059669), size: 44),
               ),
-              const SizedBox(height: 24),
-              const Icon(Icons.check_circle_rounded, color: AppColors.emerald400, size: 32),
-              const SizedBox(height: 12),
-              Text(
+              const SizedBox(height: 20),
+              const Icon(Icons.check_circle_outline, color: Color(0xFF059669), size: 30),
+              const SizedBox(height: 10),
+              const Text(
                 'Selamat datang,',
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.6),
+                  color: Color(0xFF64748B),
                   fontSize: 14,
                 ),
               ),
@@ -766,7 +1123,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen>
               Text(
                 widget.session.namaLengkap,
                 style: const TextStyle(
-                  color: Colors.white,
+                  color: Color(0xFF0F172A),
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
                 ),
@@ -775,32 +1132,33 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(colors: role.gradient),
+                  color: const Color(0xFFECFDF5),
                   borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFA7F3D0)),
                 ),
                 child: Text(
                   role.label,
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: Color(0xFF065F46),
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
-              const SizedBox(height: 32),
-              SizedBox(
+              const SizedBox(height: 28),
+              const SizedBox(
                 width: 24,
                 height: 24,
                 child: CircularProgressIndicator(
-                  color: role.accentColor,
+                  color: Color(0xFF059669),
                   strokeWidth: 2.5,
                 ),
               ),
               const SizedBox(height: 12),
-              Text(
-                'Memuat dashboard...',
+              const Text(
+                'Memuat antarmuka...',
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.4),
+                  color: Color(0xFF94A3B8),
                   fontSize: 12,
                 ),
               ),
@@ -813,16 +1171,12 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen>
 }
 
 // ─── Dashboard Router ─────────────────────────────────────────────────────────
-// Routes ke screen yang sesuai berdasarkan role
 class DashboardRouterScreen extends StatelessWidget {
   final AppSession session;
   const DashboardRouterScreen({super.key, required this.session});
 
   @override
   Widget build(BuildContext context) {
-    // HomeScreenWithSession didefinisikan di main.dart dan diimport via 'package:smart_riayah_mobile/main.dart'
-    // Kita return Scaffold placeholder — Navigator akan handle routing
-    // dari RoleSelectionScreen.goToDashboard()
     return _DashboardPlaceholder(session: session);
   }
 }
@@ -833,7 +1187,6 @@ class _DashboardPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Immediately push to the real screen via post-frame callback
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (context.mounted) {
         Navigator.of(context).pushReplacement(
@@ -846,9 +1199,9 @@ class _DashboardPlaceholder extends StatelessWidget {
       }
     });
     return const Scaffold(
-      backgroundColor: AppColors.emerald950,
+      backgroundColor: Color(0xFFF8FAFC),
       body: Center(
-        child: CircularProgressIndicator(color: AppColors.emerald400),
+        child: CircularProgressIndicator(color: Color(0xFF059669)),
       ),
     );
   }

@@ -1,4 +1,4 @@
-﻿class SantriModel {
+class SantriModel {
   final String id;
   final String nis;
   final String namaLengkap;
@@ -40,7 +40,7 @@
       rfidUid: json['rfid_uid']?.toString(),
       namaWali: json['nama_wali']?.toString(),
       noWali: json['no_wali']?.toString(),
-      saldoRfid: int.tryParse(json['saldo_rfid']?.toString() ?? '0') ?? 0,
+      saldoRfid: (double.tryParse(json['saldo_rfid']?.toString() ?? '0') ?? 0).round(),
     );
   }
 
@@ -51,19 +51,22 @@
   }
 
   bool get isPresent => statusAsrama == 'DI_ASRAMA';
-  bool get isIzin => statusAsrama == 'IZIN';
+  bool get isIzin => statusAsrama == 'IZIN' || statusAsrama == 'DI_LUAR';
   bool get isMissing => statusAsrama == 'TIDAK_HADIR';
+  bool get isAkhwat => gender.toUpperCase() == 'P';
+  bool get isIkhwan => gender.toUpperCase() == 'L';
 
   String get statusLabel {
     switch (statusAsrama) {
       case 'DI_ASRAMA': return 'Di Asrama';
-      case 'IZIN': return 'Izin Keluar';
+      case 'IZIN':
+      case 'DI_LUAR': return 'Izin / Di Luar';
       case 'TIDAK_HADIR': return 'Tidak Hadir';
       default: return statusAsrama;
     }
   }
 
-  String get poinLabel => '$poinDisiplin / 100';
+  String get poinLabel => '$poinDisiplin / 100 Pts';
   String get saldoFormatted {
     final s = saldoRfid ?? 0;
     return 'Rp ${s.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')}';

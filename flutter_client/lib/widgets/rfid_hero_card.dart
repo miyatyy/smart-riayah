@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../models/santri_model.dart';
 
@@ -30,16 +30,16 @@ class RfidHeroCard extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(22),
         gradient: const LinearGradient(
-          colors: [AppColors.emerald950, AppColors.emerald900, Color(0xFF047857)],
+          colors: [Color(0xFF047857), Color(0xFF059669), Color(0xFF10B981)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           stops: [0.0, 0.5, 1.0],
         ),
-        boxShadow: [
+        boxShadow: const [
           BoxShadow(
-            color: AppColors.emerald800.withValues(alpha: 0.5),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
+            color: Color(0x40059669),
+            blurRadius: 16,
+            offset: Offset(0, 6),
           ),
         ],
       ),
