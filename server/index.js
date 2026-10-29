@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { query, testConnection } from './db.js';
+import whatsappGatewayRouter from './whatsapp-gateway/whatsappGatewayRouter.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,6 +17,9 @@ const PORT = process.env.SERVER_PORT || 5000;
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// WhatsApp Real-Time Gateway (Redis Message Broker & Soketi Broadcaster)
+app.use('/api/whatsapp', whatsappGatewayRouter);
 
 // -------------------------------------------------------------------------------------
 // HEALTH CHECK ENDPOINT

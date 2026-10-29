@@ -15,14 +15,18 @@ import {
   Settings2,
   Copy,
   Check,
-  Zap
+  Zap,
+  Radio,
+  ArrowDownLeft
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
 import FonnteSettingsBox from './FonnteSettingsBox';
+import WhatsAppSocketLiveMonitor from '../modules/WhatsAppSocketLiveMonitor';
 
 export default function WhatsAppDrawer() {
   const { 
     whatsappLogs, 
+    setWhatsappLogs,
     isWaDrawerOpen, 
     setIsWaDrawerOpen, 
     unreadWaCount, 
@@ -34,7 +38,25 @@ export default function WhatsAppDrawer() {
 
   const [testCustomMsg, setTestCustomMsg] = useState('');
   const [showSettings, setShowSettings] = useState(false);
+  const [showSocketMonitor, setShowSocketMonitor] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
+
+  const handleIncomingSocketMessage = (msg) => {
+    const newEntry = {
+      id: msg.id || `IN-${Date.now()}`,
+      waktu: msg.waktu || new Date().toLocaleTimeString('id-ID'),
+      penerima: 'Pesantren Modern Darul Ulum',
+      pengirim: msg.pengirim || 'Wali Santri',
+      nomor: msg.nomor || '08xxxxxxxxxx',
+      tipe: 'PESAN_MASUK_WALI',
+      pesan: msg.pesan,
+      latencyMs: msg.latencyMs || null,
+      apiStatus: 'DELIVERED',
+      isIncoming: true
+    };
+    setWhatsappLogs(prev => [newEntry, ...prev]);
+    setUnreadWaCount(prev => prev + 1);
+  };
 
   const handleManualTestSend = (e) => {
     e.preventDefault();
@@ -78,6 +100,9 @@ export default function WhatsAppDrawer() {
         return 'bg-purple-100 text-purple-800 border-purple-300';
       case 'CASHLESS_NOTIF':
         return 'bg-indigo-100 text-indigo-800 border-indigo-300';
+      case 'PESAN_MASUK_WALI':
+      case 'INCOMING_REPLY':
+        return 'bg-emerald-100 text-emerald-900 border-emerald-400 font-black';
       default:
         return 'bg-slate-100 text-slate-800 border-slate-300';
     }
@@ -150,6 +175,15 @@ export default function WhatsAppDrawer() {
 
             <div className="flex items-center gap-1">
               <button
+                onClick={() => setShowSocketMonitor(!showSocketMonitor)}
+                title="Buka / Tutup Live Soketi & Redis WebSocket Stream"
+                className={`p-1.5 rounded-full transition ${
+                  showSocketMonitor ? 'bg-emerald-800 text-emerald-300 ring-1 ring-emerald-400' : 'hover:bg-emerald-800 text-emerald-200'
+                }`}
+              >
+                <Radio className="w-4 h-4 animate-pulse" />
+              </button>
+              <button
                 onClick={() => setShowSettings(!showSettings)}
                 title="Buka / Tutup Pengaturan Fonnte Gateway"
                 className={`p-1.5 rounded-full transition ${
@@ -178,15 +212,33 @@ export default function WhatsAppDrawer() {
           <div className="bg-[#128c7e] text-white/95 px-3 py-1.5 text-[11px] flex items-center justify-between">
             <span className="flex items-center gap-1 font-medium">
               <Sparkles className="w-3.5 h-3.5 text-gold-300" />
-              <span>Fonnte Real-Time WhatsApp API Gateway</span>
+              <span>Fonnte & Soketi WS Gateway</span>
             </span>
-            <button
-              onClick={() => setShowSettings(!showSettings)}
-              className="text-[10px] bg-emerald-950/60 hover:bg-emerald-950 text-emerald-200 px-2 py-0.5 rounded transition flex items-center gap-1 font-mono font-bold"
-            >
-              <span>{showSettings ? 'Tutup Pengaturan' : '⚙️ Pengaturan Fonnte'}</span>
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setShowSocketMonitor(!showSocketMonitor)}
+                className={`text-[10px] px-2 py-0.5 rounded transition flex items-center gap-1 font-mono font-bold ${
+                  showSocketMonitor ? 'bg-emerald-950 text-emerald-300' : 'bg-emerald-950/60 hover:bg-emerald-950 text-emerald-200'
+                }`}
+              >
+                <Radio className="w-3 h-3 text-emerald-400" />
+                <span>{showSocketMonitor ? 'Tutup Stream' : 'Live WS'}</span>
+              </button>
+              <button
+                onClick={() => setShowSettings(!showSettings)}
+                className="text-[10px] bg-emerald-950/60 hover:bg-emerald-950 text-emerald-200 px-2 py-0.5 rounded transition flex items-center gap-1 font-mono font-bold"
+              >
+                <span>{showSettings ? 'Tutup' : '⚙️ Fonnte'}</span>
+              </button>
+            </div>
           </div>
+
+          {/* Soketi WebSocket Live Stream Monitor */}
+          {showSocketMonitor && (
+            <div className="p-2.5 bg-slate-950 border-b border-emerald-500/30 shrink-0 max-h-[350px] overflow-y-auto">
+              <WhatsAppSocketLiveMonitor onIncomingReceived={handleIncomingSocketMessage} />
+            </div>
+          )}
 
           {/* Settings Box Drawer Component */}
           {showSettings && (
@@ -230,8 +282,8 @@ export default function WhatsAppDrawer() {
 
                     {/* Sender context */}
                     <div className="text-[11px] font-bold text-emerald-800 mb-1 flex items-center justify-between">
-                      <span>Pesantren Modern Darul Ulum:</span>
-                      <span className="text-[9px] text-slate-400 font-mono">Ke: {msg.nomor || 'Testing'}</span>
+                      <span>{msg.isIncoming ? `📥 Pesan Masuk (${msg.pengirim || 'Wali Santri'}):` : 'Pesantren Modern Darul Ulum:'}</span>
+                      <span className="text-[9px] text-slate-400 font-mono">{msg.isIncoming ? `Dari: ${msg.nomor}` : `Ke: ${msg.nomor || 'Testing'}`}</span>
                     </div>
 
                     {/* Body Text */}

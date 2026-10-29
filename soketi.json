@@ -1,0 +1,31 @@
+{
+  "debug": true,
+  "port": 6001,
+  "host": "0.0.0.0",
+  "appManager.array.apps": [
+    {
+      "id": "smart-riayah-app",
+      "key": "smart-riayah-key",
+      "secret": "smart-riayah-secret",
+      "maxConnections": -1,
+      "enableClientMessages": true,
+      "enabled": true,
+      "maxBackendEventsPerSecond": -1,
+      "maxClientEventsPerSecond": -1,
+      "maxReadRequestsPerSecond": -1
+    }
+  ],
+  "adapter": {
+    "type": "redis",
+    "redis": {
+      "host": "127.0.0.1",
+      "port": 6379,
+      "keyPrefix": "soketi"
+    }
+  },
+  "cors": {
+    "origin": ["*"],
+    "methods": ["GET", "POST"]
+  }
+}
+

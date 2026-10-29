@@ -776,6 +776,7 @@ export const AppProvider = ({ children }) => {
         rooms,
         rfidTransactions,
         whatsappLogs,
+        setWhatsappLogs,
         blacklistedUids,
         reminderThresholdMinutes
       };
@@ -967,6 +968,18 @@ export const AppProvider = ({ children }) => {
     setWhatsappLogs(prev => [newMsg, ...prev]);
     setUnreadWaCount(prev => prev + 1);
 
+    // Broadcast ke Soketi WebSocket & Redis Pub/Sub jika service backend aktif
+    try {
+      fetch('/api/whatsapp/broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event: 'whatsapp.notification',
+          data: newMsg
+        })
+      }).catch(() => {});
+    } catch (e) {}
+
     // Call Fonnte API asynchronously in background
     try {
       const res = await sendFonnteWhatsApp(nomor, pesan, tipe);
@@ -983,6 +996,24 @@ export const AppProvider = ({ children }) => {
         }
         return m;
       }));
+
+      // Broadcast pembaruan status ke Soketi WebSocket
+      try {
+        fetch('/api/whatsapp/broadcast', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event: 'whatsapp.status',
+            data: {
+              id,
+              status: res.apiStatus === 'SUCCESS' ? 'DELIVERED' : 'SENT',
+              latencyMs: res.latencyMs,
+              latencySec: res.latencySec,
+              nomor: res.target || newMsg.nomor
+            }
+          })
+        }).catch(() => {});
+      } catch (e) {}
     } catch (e) {
       console.error('Error in sendWhatsAppNotification Fonnte dispatch:', e);
     }
@@ -2644,6 +2675,7 @@ export const AppProvider = ({ children }) => {
         rooms,
         rfidTransactions,
         whatsappLogs,
+        setWhatsappLogs,
         blacklistedUids,
         setBlacklistedUids,
 

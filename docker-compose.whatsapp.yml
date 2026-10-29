@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  redis-broker:
+    image: redis:7-alpine
+    container_name: smart_riayah_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  soketi-websocket:
+    image: 'quay.io/soketi/soketi:1.6-16-alpine'
+    container_name: smart_riayah_soketi
+    restart: unless-stopped
+    environment:
+      SOKETI_DEBUG: '1'
+      SOKETI_DEFAULT_APP_ID: 'smart-riayah-app'
+      SOKETI_DEFAULT_APP_KEY: 'smart-riayah-key'
+      SOKETI_DEFAULT_APP_SECRET: 'smart-riayah-secret'
+      SOKETI_ADAPTER_DRIVER: 'redis'
+      SOKETI_REDIS_HOST: 'redis-broker'
+      SOKETI_REDIS_PORT: '6379'
+    ports:
+      - "6001:6001"
+    depends_on:
+      redis-broker:
+        condition: service_healthy
+
+volumes:
+  redis_data:
+    driver: local
+
