@@ -212,7 +212,7 @@ export default function WhatsAppDrawer() {
           <div className="bg-[#128c7e] text-white/95 px-3 py-1.5 text-[11px] flex items-center justify-between">
             <span className="flex items-center gap-1 font-medium">
               <Sparkles className="w-3.5 h-3.5 text-gold-300" />
-              <span>Fonnte & Soketi WS Gateway</span>
+              <span>Supabase Realtime WhatsApp Gateway</span>
             </span>
             <div className="flex items-center gap-1.5">
               <button
@@ -222,7 +222,7 @@ export default function WhatsAppDrawer() {
                 }`}
               >
                 <Radio className="w-3 h-3 text-emerald-400" />
-                <span>{showSocketMonitor ? 'Tutup Stream' : 'Live WS'}</span>
+                <span>{showSocketMonitor ? 'Tutup Stream' : 'Live Realtime'}</span>
               </button>
               <button
                 onClick={() => setShowSettings(!showSettings)}
@@ -233,7 +233,7 @@ export default function WhatsAppDrawer() {
             </div>
           </div>
 
-          {/* Soketi WebSocket Live Stream Monitor */}
+          {/* Supabase Realtime Live Stream Monitor */}
           {showSocketMonitor && (
             <div className="p-2.5 bg-slate-950 border-b border-emerald-500/30 shrink-0 max-h-[350px] overflow-y-auto">
               <WhatsAppSocketLiveMonitor onIncomingReceived={handleIncomingSocketMessage} />

@@ -1,14 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { getSoketiPusher } from '../utils/soketiClient';
-import { soketiConfig } from '../utils/soketiConfig';
+import { supabase } from '../utils/supabaseClient';
 
 /**
  * ============================================================================
- * SMART RI'AYAH - USE WHATSAPP SOCKET HOOK
- * Hook listener WebSocket real-time untuk Soketi & Redis event WhatsApp:
- * - whatsapp.status (DLR / laporan pengiriman pesan)
- * - whatsapp.incoming (Pesan masuk dari wali santri)
- * - whatsapp.notification (Live event alert sistem)
+ * SMART RI'AYAH - USE WHATSAPP REALTIME SOCKET HOOK (SUPABASE CHANNEL)
+ * Channel: 'whatsapp-room'
+ * Mendengarkan dan memancarkan event pesan WhatsApp secara live via Supabase Realtime:
+ * - 'whatsapp.status' (DLR laporan pengiriman pesan)
+ * - 'whatsapp.incoming' (Pesan masuk dari wali santri)
+ * - 'whatsapp.notification' (Live notifikasi gerbang/perizinan)
+ * Berjalan langsung di Vercel tanpa perlu server WebSocket eksternal.
  * ============================================================================
  */
 
@@ -20,12 +21,11 @@ export function useWhatsAppSocket(options = {}) {
     autoConnect = true 
   } = options;
 
-  const [connectionStatus, setConnectionStatus] = useState('connecting'); // 'connected' | 'connecting' | 'disconnected' | 'unavailable'
+  const [connectionStatus, setConnectionStatus] = useState('connecting'); // 'connected' | 'connecting' | 'disconnected'
   const [lastEvent, setLastEvent] = useState(null);
   const [eventHistory, setEventHistory] = useState([]);
   const channelRef = useRef(null);
 
-  // Callback references to avoid re-subscribing on each render
   const callbacksRef = useRef({ onStatusUpdate, onIncomingMessage, onNotification });
   useEffect(() => {
     callbacksRef.current = { onStatusUpdate, onIncomingMessage, onNotification };
@@ -33,7 +33,7 @@ export function useWhatsAppSocket(options = {}) {
 
   const addEventToHistory = useCallback((eventName, payload) => {
     const eventItem = {
-      id: `EVT-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      id: payload?.id || `EVT-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       event: eventName,
       timestamp: new Date().toLocaleTimeString('id-ID'),
       data: payload
@@ -45,87 +45,81 @@ export function useWhatsAppSocket(options = {}) {
   useEffect(() => {
     if (!autoConnect) return;
 
-    const pusher = getSoketiPusher();
-    if (!pusher) {
-      setConnectionStatus('unavailable');
-      return;
-    }
+    // Inisialisasi Supabase Realtime Channel: 'whatsapp-room'
+    const channel = supabase.channel('whatsapp-room', {
+      config: {
+        broadcast: { self: true, ack: false },
+        presence: { key: 'smart-riayah-app' }
+      }
+    });
 
-    // Bind connection states
-    const handleStateChange = (states) => {
-      setConnectionStatus(states.current);
-    };
-
-    pusher.connection.bind('state_change', handleStateChange);
-    setConnectionStatus(pusher.connection.state);
-
-    // Subscribe to WhatsApp channel
-    const channel = pusher.subscribe(soketiConfig.channelName);
     channelRef.current = channel;
 
     // 1. Event: whatsapp.status
-    channel.bind('whatsapp.status', (data) => {
-      console.log('⚡ [WebSocket whatsapp.status]:', data);
-      addEventToHistory('whatsapp.status', data);
+    channel.on('broadcast', { event: 'whatsapp.status' }, ({ payload }) => {
+      console.log('⚡ [Supabase Realtime whatsapp.status]:', payload);
+      addEventToHistory('whatsapp.status', payload);
       if (callbacksRef.current.onStatusUpdate) {
-        callbacksRef.current.onStatusUpdate(data);
+        callbacksRef.current.onStatusUpdate(payload);
       }
     });
 
     // 2. Event: whatsapp.incoming
-    channel.bind('whatsapp.incoming', (data) => {
-      console.log('⚡ [WebSocket whatsapp.incoming]:', data);
-      addEventToHistory('whatsapp.incoming', data);
+    channel.on('broadcast', { event: 'whatsapp.incoming' }, ({ payload }) => {
+      console.log('⚡ [Supabase Realtime whatsapp.incoming]:', payload);
+      addEventToHistory('whatsapp.incoming', payload);
       if (callbacksRef.current.onIncomingMessage) {
-        callbacksRef.current.onIncomingMessage(data);
+        callbacksRef.current.onIncomingMessage(payload);
       }
     });
 
     // 3. Event: whatsapp.notification
-    channel.bind('whatsapp.notification', (data) => {
-      console.log('⚡ [WebSocket whatsapp.notification]:', data);
-      addEventToHistory('whatsapp.notification', data);
+    channel.on('broadcast', { event: 'whatsapp.notification' }, ({ payload }) => {
+      console.log('⚡ [Supabase Realtime whatsapp.notification]:', payload);
+      addEventToHistory('whatsapp.notification', payload);
       if (callbacksRef.current.onNotification) {
-        callbacksRef.current.onNotification(data);
+        callbacksRef.current.onNotification(payload);
+      }
+    });
+
+    // Berlangganan channel
+    channel.subscribe((status, err) => {
+      console.log('📡 [Supabase Realtime whatsapp-room] Status:', status);
+      if (status === 'SUBSCRIBED') {
+        setConnectionStatus('connected');
+      } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+        setConnectionStatus('disconnected');
+        if (err) console.warn('⚠️ [Supabase Realtime Error]:', err);
+      } else {
+        setConnectionStatus('connecting');
       }
     });
 
     return () => {
       if (channel) {
-        channel.unbind_all();
-        pusher.unsubscribe(soketiConfig.channelName);
+        supabase.removeChannel(channel);
       }
-      pusher.connection.unbind('state_change', handleStateChange);
     };
   }, [autoConnect, addEventToHistory]);
 
   /**
-   * Mengirim event melalui backend API WhatsApp Broadcaster
+   * Mengirim event langsung ke Supabase Realtime channel 'whatsapp-room'
    */
   const broadcastEvent = useCallback(async (event, data) => {
     try {
-      const res = await fetch('/api/whatsapp/broadcast', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      if (channelRef.current) {
+        await channelRef.current.send({
+          type: 'broadcast',
           event,
-          data,
-          channel: soketiConfig.channelName
-        })
-      });
-      return await res.json();
-    } catch (err) {
-      console.warn('⚠️ [useWhatsAppSocket] broadcastEvent gagal kirim ke backend:', err.message);
-      // Fallback lokal dispatch jika backend belum aktif
-      addEventToHistory(event, data);
-      if (event === 'whatsapp.status' && callbacksRef.current.onStatusUpdate) {
-        callbacksRef.current.onStatusUpdate(data);
-      } else if (event === 'whatsapp.incoming' && callbacksRef.current.onIncomingMessage) {
-        callbacksRef.current.onIncomingMessage(data);
+          payload: data
+        });
       }
-      return { success: true, simulated: true };
+      return { success: true, event, data };
+    } catch (err) {
+      console.error('❌ [useWhatsAppSocket broadcastEvent Error]:', err);
+      return { success: false, error: err.message };
     }
-  }, [addEventToHistory]);
+  }, []);
 
   /**
    * Helper simulasi: Pesan masuk dari wali santri
@@ -136,7 +130,7 @@ export function useWhatsAppSocket(options = {}) {
       pengirim: customData.pengirim || 'Hj. Siti Aminah (Wali Fatih)',
       nomor: customData.nomor || '0812-9876-5432',
       santriNama: customData.santriNama || 'Muhammad Fatih Robbani',
-      pesan: customData.pesan || 'Assalamu’alaikum, terima kasih infonya Ustadz. Ananda sudah tiba di asrama.',
+      pesan: customData.pesan || 'Assalamu’alaikum, terima kasih infonya Ustadz. Ananda sudah tiba di asrama dengan selamat.',
       waktu: new Date().toLocaleTimeString('id-ID'),
       tipe: 'INCOMING_REPLY',
       ...customData
@@ -174,4 +168,3 @@ export function useWhatsAppSocket(options = {}) {
 }
 
 export default useWhatsAppSocket;
-

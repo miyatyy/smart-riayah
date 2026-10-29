@@ -7,6 +7,7 @@ import { deleteRoomData } from '../utils/roomService';
 import { deleteSantriData } from '../utils/santriService';
 import { supabase } from '../utils/supabaseClient';
 import { syncRoomToFirebase } from '../utils/firebaseSync';
+import { sendWhatsAppBroadcast } from '../utils/whatsappRealtime';
 import {
   fetchAllDataFromSupabase,
   subscribeToAllTablesRealtime,
@@ -660,6 +661,58 @@ export const AppProvider = ({ children }) => {
     };
   }, []);
 
+  // 3. Berlangganan Supabase Realtime Broadcast Channel: 'whatsapp-room'
+  useEffect(() => {
+    let isMounted = true;
+    const waChannel = supabase.channel('whatsapp-room', {
+      config: {
+        broadcast: { self: false }
+      }
+    });
+
+    waChannel
+      .on('broadcast', { event: 'whatsapp.status' }, ({ payload }) => {
+        if (!isMounted || !payload?.id) return;
+        setWhatsappLogs(prev => prev.map(m => {
+          if (m.id === payload.id) {
+            return {
+              ...m,
+              apiStatus: payload.status || m.apiStatus,
+              latencyMs: payload.latencyMs ?? m.latencyMs,
+              latencySec: payload.latencySec ?? m.latencySec
+            };
+          }
+          return m;
+        }));
+      })
+      .on('broadcast', { event: 'whatsapp.incoming' }, ({ payload }) => {
+        if (!isMounted || !payload) return;
+        sound.playWhatsApp();
+        const incomingEntry = {
+          id: payload.id || `IN-${Date.now()}`,
+          waktu: payload.waktu || getNowWIB(),
+          penerima: 'Pesantren Modern Darul Ulum',
+          pengirim: payload.pengirim || 'Wali Santri',
+          nomor: payload.nomor || '08xxxxxxxxxx',
+          tipe: 'PESAN_MASUK_WALI',
+          pesan: payload.pesan,
+          latencyMs: payload.latencyMs || null,
+          apiStatus: 'DELIVERED',
+          isIncoming: true
+        };
+        setWhatsappLogs(prev => [incomingEntry, ...prev]);
+        setUnreadWaCount(prev => prev + 1);
+      })
+      .subscribe((status) => {
+        console.log('📡 [AppContext Supabase Realtime whatsapp-room] Status:', status);
+      });
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(waChannel);
+    };
+  }, []);
+
   // Server-side sync via /api/sync (Cross-profile, cross-browser, incognito sync)
   useEffect(() => {
     let isMounted = true;
@@ -968,17 +1021,8 @@ export const AppProvider = ({ children }) => {
     setWhatsappLogs(prev => [newMsg, ...prev]);
     setUnreadWaCount(prev => prev + 1);
 
-    // Broadcast ke Soketi WebSocket & Redis Pub/Sub jika service backend aktif
-    try {
-      fetch('/api/whatsapp/broadcast', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          event: 'whatsapp.notification',
-          data: newMsg
-        })
-      }).catch(() => {});
-    } catch (e) {}
+    // Broadcast ke Supabase Realtime channel 'whatsapp-room'
+    sendWhatsAppBroadcast('whatsapp.notification', newMsg);
 
     // Call Fonnte API asynchronously in background
     try {
@@ -997,23 +1041,14 @@ export const AppProvider = ({ children }) => {
         return m;
       }));
 
-      // Broadcast pembaruan status ke Soketi WebSocket
-      try {
-        fetch('/api/whatsapp/broadcast', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            event: 'whatsapp.status',
-            data: {
-              id,
-              status: res.apiStatus === 'SUCCESS' ? 'DELIVERED' : 'SENT',
-              latencyMs: res.latencyMs,
-              latencySec: res.latencySec,
-              nomor: res.target || newMsg.nomor
-            }
-          })
-        }).catch(() => {});
-      } catch (e) {}
+      // Broadcast pembaruan status pengiriman ke Supabase Realtime
+      sendWhatsAppBroadcast('whatsapp.status', {
+        id,
+        status: res.apiStatus === 'SUCCESS' ? 'DELIVERED' : 'SENT',
+        latencyMs: res.latencyMs,
+        latencySec: res.latencySec,
+        nomor: res.target || newMsg.nomor
+      });
     } catch (e) {
       console.error('Error in sendWhatsAppNotification Fonnte dispatch:', e);
     }

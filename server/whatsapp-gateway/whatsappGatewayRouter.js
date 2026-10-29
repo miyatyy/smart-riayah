@@ -1,16 +1,11 @@
 import express from 'express';
-import { checkRedisStatus } from './redisClient.js';
-import { 
-  broadcastWhatsAppEvent, 
-  broadcastWhatsAppStatus, 
-  broadcastWhatsAppIncoming, 
-  broadcastWhatsAppNotification 
-} from './soketiBroadcaster.js';
+import { broadcastToSupabaseRealtime } from './supabaseBroadcaster.js';
 
 /**
  * ============================================================================
- * SMART RI'AYAH - WHATSAPP GATEWAY MODULAR ROUTER
- * Endpoint terisolasi untuk Webhook, status message broker Redis, dan push Soketi.
+ * SMART RI'AYAH - WHATSAPP GATEWAY MODULAR ROUTER (SUPABASE REALTIME)
+ * Channel: 'whatsapp-room'
+ * Endpoint terisolasi untuk Webhook dan status Supabase Realtime Broadcast.
  * ============================================================================
  */
 
@@ -18,41 +13,32 @@ const router = express.Router();
 
 /**
  * GET /api/whatsapp/gateway-status
- * Menampilkan status koneksi Redis dan konfigurasi Soketi
+ * Menampilkan status konfigurasi Supabase Realtime channel 'whatsapp-room'
  */
 router.get('/gateway-status', async (req, res) => {
-  const redisInfo = await checkRedisStatus();
-  
   res.json({
     success: true,
     service: 'Smart Riayah WhatsApp Realtime Gateway',
     timestamp: new Date().toISOString(),
-    broker: {
-      engine: 'Redis',
-      ...redisInfo
-    },
-    websocket: {
-      engine: 'Soketi (Pusher Protocol Compatible)',
-      host: process.env.SOKETI_HOST || '127.0.0.1',
-      port: process.env.SOKETI_PORT || '6001',
-      appId: process.env.SOKETI_APP_ID || 'smart-riayah-app',
-      appKey: process.env.SOKETI_APP_KEY || 'smart-riayah-key',
-      channel: 'whatsapp-channel',
-      supportedEvents: [
+    realtime: {
+      engine: 'Supabase Realtime Broadcast',
+      channel: 'whatsapp-room',
+      events: [
         'whatsapp.status',
         'whatsapp.incoming',
         'whatsapp.notification'
-      ]
+      ],
+      mode: 'Serverless Native (Vercel Ready, No external WebSocket server needed)'
     }
   });
 });
 
 /**
  * POST /api/whatsapp/broadcast
- * Mengirim event broadcast secara manual / programmatic ke Redis & Soketi
+ * Mengirim event broadcast secara manual / programmatic ke Supabase Realtime
  */
 router.post('/broadcast', async (req, res) => {
-  const { event, data, channel } = req.body;
+  const { event, data } = req.body;
 
   if (!event || !data) {
     return res.status(400).json({
@@ -62,10 +48,10 @@ router.post('/broadcast', async (req, res) => {
   }
 
   try {
-    const result = await broadcastWhatsAppEvent(event, data, channel);
+    const result = await broadcastToSupabaseRealtime(event, data);
     res.json({
       success: true,
-      message: `Event "${event}" berhasil dibroadcast`,
+      message: `Event "${event}" berhasil dibroadcast ke Supabase Realtime (whatsapp-room)`,
       dispatch: result,
       payload: data
     });
@@ -81,7 +67,7 @@ router.post('/broadcast', async (req, res) => {
 /**
  * POST /api/whatsapp/webhook
  * Menerima callback webhook status pesan atau pesan masuk dari provider WA (Fonnte/Waba)
- * lalu langsung menyiarkannya secara real-time ke Soketi & Redis.
+ * lalu menyiarkannya secara real-time via Supabase Realtime channel 'whatsapp-room'.
  */
 router.post('/webhook', async (req, res) => {
   const payload = req.body;
@@ -100,7 +86,7 @@ router.post('/webhook', async (req, res) => {
         keterangan: payload.message || 'Status diperbarui via webhook'
       };
 
-      await broadcastWhatsAppStatus(statusData);
+      await broadcastToSupabaseRealtime('whatsapp.status', statusData);
 
       return res.json({
         success: true,
@@ -121,7 +107,7 @@ router.post('/webhook', async (req, res) => {
         tipe: 'INCOMING_REPLY'
       };
 
-      await broadcastWhatsAppIncoming(incomingData);
+      await broadcastToSupabaseRealtime('whatsapp.incoming', incomingData);
 
       return res.json({
         success: true,
@@ -132,7 +118,7 @@ router.post('/webhook', async (req, res) => {
     }
 
     // 3. Fallback generic notification
-    await broadcastWhatsAppNotification(payload);
+    await broadcastToSupabaseRealtime('whatsapp.notification', payload);
 
     res.json({
       success: true,
@@ -146,4 +132,3 @@ router.post('/webhook', async (req, res) => {
 });
 
 export default router;
-
