@@ -4,6 +4,7 @@ import { sound } from '../utils/audio';
 import { webSerial } from '../utils/webSerial';
 import { DEFAULT_DEEPSEEK_TOKEN, testDeepSeekConnection } from '../utils/deepseekApi';
 import { deleteRoomData } from '../utils/roomService';
+import { supabase } from '../utils/supabaseClient';
 import {
   INITIAL_SANTRI,
   INITIAL_PERMITS,
@@ -2130,7 +2131,7 @@ export const AppProvider = ({ children }) => {
     setRooms(prev => [...prev, newRoom]);
   };
 
-  const addRoom = (roomData) => {
+  const addRoom = async (roomData) => {
     sound.playSuccess();
     const newRoom = {
       id: `RM-${Date.now().toString().slice(-4)}`,
@@ -2146,6 +2147,34 @@ export const AppProvider = ({ children }) => {
       catatanInspeksi: roomData.catatanInspeksi || 'Kamar siap huni.'
     };
     setRooms(prev => [...prev, newRoom]);
+
+    // Simpan kamar baru ke database Supabase
+    try {
+      const { data, error } = await supabase
+        .from('rooms')
+        .insert([{
+          id: newRoom.id,
+          nama_gedung: newRoom.namaGedung,
+          kategori_gedung: newRoom.kategoriGedung,
+          nomor_kamar: newRoom.nomorKamar,
+          lantai: newRoom.lantai,
+          kapasitas: newRoom.kapasitas,
+          terisi: newRoom.terisi,
+          ketua_kamar: newRoom.ketuaKamar,
+          skor_kerapian_terakhir: newRoom.skorKerapianTerakhir,
+          jadwal_piket_hari_ini: newRoom.jadwalPiketHariIni,
+          catatan_inspeksi: newRoom.catatanInspeksi
+        }])
+        .select();
+
+      if (error) {
+        console.warn('⚠️ [Supabase addRoom] Warning saat menyimpan kamar ke Supabase:', error.message);
+      } else {
+        console.log('✅ [Supabase addRoom] Kamar baru berhasil disimpan ke Supabase:', data);
+      }
+    } catch (err) {
+      console.warn('⚠️ [Supabase addRoom] Exception saat menyimpan ke Supabase:', err);
+    }
   };
 
   const updateRoomCapacity = (roomId, newCapacity) => {
