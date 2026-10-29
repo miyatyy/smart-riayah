@@ -47,3 +47,64 @@ export async function insertSantriToSupabase(santriData) {
   }
 }
 
+/**
+ * Menghapus data santri dari database Supabase berdasarkan ID uniknya.
+ * Eksekusi: supabase.from('santri').delete().eq('id', santriId)
+ *
+ * @param {string} santriId - ID unik santri (contoh: 'S-101')
+ * @param {string} [santriNama] - Nama santri untuk log/pemberitahuan
+ * @param {boolean} [skipConfirm] - Jika true, lewati window.confirm bawaan (cocok untuk custom modal)
+ * @returns {Promise<{success: boolean, data?: any, error?: any, cancelled?: boolean}>}
+ */
+export async function deleteSantriData(santriId, santriNama = '', skipConfirm = false) {
+  if (!santriId) {
+    const errorMsg = 'ID Santri tidak valid atau kosong!';
+    console.error('❌ [Supabase deleteSantriData]:', errorMsg);
+    if (!skipConfirm) alert(`⚠️ Gagal: ${errorMsg}`);
+    return { success: false, error: new Error(errorMsg) };
+  }
+
+  const label = santriNama ? `"${santriNama}" (ID: ${santriId})` : `santri ID: ${santriId}`;
+
+  // Konfirmasi jika tidak skipConfirm
+  if (!skipConfirm) {
+    const isConfirmed = window.confirm(
+      `⚠️ KONFIRMASI PENGHAPUSAN DATA SANTRI\n\nApakah Anda yakin ingin menghapus data ${label}?\n\nSemua data terkait santri ini di Supabase & Firebase akan dihapus permanen.`
+    );
+    if (!isConfirmed) {
+      console.log('ℹ️ [Supabase deleteSantriData]: Penghapusan dibatalkan oleh pengguna.');
+      return { success: false, cancelled: true };
+    }
+  }
+
+  try {
+    console.log(`📡 [Supabase deleteSantriData] Menghapus data ${label}...`);
+
+    const { data, error } = await supabase
+      .from('santri')
+      .delete()
+      .eq('id', santriId)
+      .select();
+
+    if (error) {
+      console.error('❌ [Supabase deleteSantriData] Gagal menghapus santri dari Supabase:', error);
+      if (!skipConfirm) {
+        alert(`❌ Gagal menghapus data santri!\n\nDetail Error: ${error.message || JSON.stringify(error)}`);
+      }
+      return { success: false, error };
+    }
+
+    if (!skipConfirm) {
+      alert(`🗑️ Sukses! Data santri ${label} telah berhasil dihapus dari database.`);
+    }
+    console.log(`✅ [Supabase deleteSantriData] Berhasil menghapus ${label} dari Supabase:`, data);
+    return { success: true, data };
+  } catch (err) {
+    console.error('❌ [Supabase deleteSantriData] Exception tak terduga:', err);
+    if (!skipConfirm) {
+      alert(`❌ Terjadi kesalahan sistem saat menghapus santri:\n${err?.message || err}`);
+    }
+    return { success: false, error: err };
+  }
+}
+

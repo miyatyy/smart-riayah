@@ -38,6 +38,17 @@ export async function syncSantriToFirebase(santri) {
   }
 }
 
+export async function deleteSantriFromFirebase(santriId) {
+  if (!db || !santriId) return;
+  try {
+    const ref = doc(db, 'santri', String(santriId));
+    await deleteDoc(ref);
+    console.log('🔥 [Firebase Firestore] Santri dihapus:', santriId);
+  } catch (error) {
+    console.warn('⚠️ [Firebase] Gagal hapus santri:', error.message);
+  }
+}
+
 export async function syncGateLogToFirebase(log) {
   if (!db || !log) return;
   try {
@@ -63,6 +74,17 @@ export async function syncPermitToFirebase(permit) {
     console.log('🔥 [Firebase Firestore] Permit tersinkron:', permit.id);
   } catch (error) {
     console.warn('⚠️ [Firebase] Gagal simpan permit:', error.message);
+  }
+}
+
+export async function deletePermitFromFirebase(permitId) {
+  if (!db || !permitId) return;
+  try {
+    const ref = doc(db, 'permits', String(permitId));
+    await deleteDoc(ref);
+    console.log('🔥 [Firebase Firestore] Permit dihapus:', permitId);
+  } catch (error) {
+    console.warn('⚠️ [Firebase] Gagal hapus permit:', error.message);
   }
 }
 

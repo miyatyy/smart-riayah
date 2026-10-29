@@ -52,27 +52,31 @@ export async function updateRoomData(roomId, updatedData) {
  * 
  * @param {string|number} roomId - ID unik kamar yang akan dihapus
  * @param {string} [roomName] - Nama kamar untuk ditampilkan pada pop-up konfirmasi
+ * @param {boolean} [skipConfirm] - Jika true, lewati window.confirm bawaan (cocok untuk custom modal)
  * @returns {Promise<{success: boolean, cancelled?: boolean, error?: any}>}
  */
-export async function deleteRoomData(roomId, roomName = '') {
+export async function deleteRoomData(roomId, roomName = '', skipConfirm = false) {
   // 1. Validasi parameter ID
   if (!roomId) {
     const errorMsg = 'ID Kamar tidak valid atau tidak ditemukan!';
     console.error('❌ [Supabase deleteRoomData]:', errorMsg);
-    alert(`⚠️ Gagal: ${errorMsg}`);
+    if (!skipConfirm) alert(`⚠️ Gagal: ${errorMsg}`);
     return { success: false, error: new Error(errorMsg) };
   }
 
-  // 2. Dialog konfirmasi hapus kepada pengguna (window.confirm)
   const displayName = roomName ? `"${roomName}" (ID: ${roomId})` : `kamar ID: ${roomId}`;
-  const isConfirmed = window.confirm(
-    `⚠️ KONFIRMASI PENGHAPUSAN KAMAR\n\nApakah Anda yakin ingin menghapus data ${displayName}?\n\nData yang dihapus tidak dapat dipulihkan kembali.`
-  );
 
-  // Jika pengguna membatalkan (klik Cancel)
-  if (!isConfirmed) {
-    console.log('ℹ️ [Supabase deleteRoomData]: Penghapusan dibatalkan oleh pengguna.');
-    return { success: false, cancelled: true };
+  // 2. Dialog konfirmasi hapus kepada pengguna (window.confirm) jika tidak skipConfirm
+  if (!skipConfirm) {
+    const isConfirmed = window.confirm(
+      `⚠️ KONFIRMASI PENGHAPUSAN KAMAR\n\nApakah Anda yakin ingin menghapus data ${displayName}?\n\nData yang dihapus tidak dapat dipulihkan kembali.`
+    );
+
+    // Jika pengguna membatalkan (klik Cancel)
+    if (!isConfirmed) {
+      console.log('ℹ️ [Supabase deleteRoomData]: Penghapusan dibatalkan oleh pengguna.');
+      return { success: false, cancelled: true };
+    }
   }
 
   try {
@@ -88,7 +92,9 @@ export async function deleteRoomData(roomId, roomName = '') {
     }
 
     // 5. Alert pemberitahuan berhasil
-    alert(`🗑️ Sukses! Data kamar ${displayName} telah berhasil dihapus dari database.`);
+    if (!skipConfirm) {
+      alert(`🗑️ Sukses! Data kamar ${displayName} telah berhasil dihapus dari database.`);
+    }
     console.log('✅ [Supabase deleteRoomData] Sukses menghapus kamar:', roomId);
     
     return { success: true, data };
@@ -96,7 +102,9 @@ export async function deleteRoomData(roomId, roomName = '') {
     // 6. Tangani error & tampilkan alert gagal
     const errorMessage = error?.message || 'Gagal menghapus data kamar dari database.';
     console.error('❌ [Supabase deleteRoomData] Error:', error);
-    alert(`❌ Terjadi Kesalahan Saat Menghapus Kamar!\n\nDetail Error: ${errorMessage}`);
+    if (!skipConfirm) {
+      alert(`❌ Terjadi Kesalahan Saat Menghapus Kamar!\n\nDetail Error: ${errorMessage}`);
+    }
     
     return { success: false, error };
   }

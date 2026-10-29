@@ -42,6 +42,7 @@ import RealtimeGateLogsManager from '../modules/RealtimeGateLogsManager';
 import FonnteDeviceManager from '../modules/FonnteDeviceManager';
 import SantriActivityAnalytics from '../modules/SantriActivityAnalytics';
 import EditRoomModal from '../modules/EditRoomModal';
+import DeleteConfirmModal from '../common/DeleteConfirmModal';
 import { supabase } from '../../utils/supabaseClient';
 import { insertSantriToSupabase } from '../../utils/santriService';
 
@@ -51,6 +52,7 @@ export default function AdminRiayahDashboard() {
     addRoom, 
     updateRoomCapacity, 
     updateRoom,
+    deleteRoom,
     addBuilding, 
     santriList, 
     addNewSantri, 
@@ -117,6 +119,28 @@ export default function AdminRiayahDashboard() {
 
   // Hardware Scan Active Mode ('onboarding' | 'replacement' | null)
   const [activeScanMode, setActiveScanMode] = useState(null);
+
+  // State untuk modal konfirmasi hapus kamar
+  const [deletingRoom, setDeletingRoom] = useState(null);
+  const [isDeletingRoom, setIsDeletingRoom] = useState(false);
+
+  const handleDeleteRoomConfirm = async () => {
+    if (!deletingRoom) return;
+    setIsDeletingRoom(true);
+    try {
+      const res = await deleteRoom(deletingRoom.id, deletingRoom.nomorKamar, true);
+      if (res?.success) {
+        alert(`🗑️ Kamar "${deletingRoom.nomorKamar}" (${deletingRoom.namaGedung}) berhasil dihapus dari Supabase & Firebase!`);
+        setDeletingRoom(null);
+      } else {
+        alert(`❌ Gagal menghapus kamar: ${res?.error?.message || 'Terjadi kesalahan sistem'}`);
+      }
+    } catch (err) {
+      alert(`❌ Terjadi kesalahan: ${err.message}`);
+    } finally {
+      setIsDeletingRoom(false);
+    }
+  };
 
   // 1. Reactive Auto-fill newUid whenever an RFID card is tapped while on lost_card tab
   useEffect(() => {
@@ -591,13 +615,24 @@ export default function AdminRiayahDashboard() {
                       </p>
                     </div>
 
-                    <button
-                      onClick={() => setEditingRoom(room)}
-                      className="p-2 bg-slate-100 hover:bg-emerald-50 text-slate-500 hover:text-emerald-600 rounded-xl transition-colors duration-150 border border-slate-200/60 hover:border-emerald-200"
-                      title="Edit Data Kamar"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setEditingRoom(room)}
+                        className="p-2 bg-slate-100 hover:bg-emerald-50 text-slate-500 hover:text-emerald-600 rounded-xl transition-colors duration-150 border border-slate-200/60 hover:border-emerald-200"
+                        title="Edit Data Kamar"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setDeletingRoom(room)}
+                        className="p-2 bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 rounded-xl transition-colors duration-150 border border-slate-200/60 hover:border-rose-200"
+                        title="Hapus Data Kamar dari Database"
+                      >
+                        <Trash2 className="w-4 h-4 text-rose-500" />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Occupancy Indicator Bar */}
@@ -1435,6 +1470,20 @@ export default function AdminRiayahDashboard() {
           </div>
         </div>
       )}
+
+      {/* MODAL KONFIRMASI HAPUS KAMAR */}
+      <DeleteConfirmModal
+        isOpen={!!deletingRoom}
+        onClose={() => setDeletingRoom(null)}
+        onConfirm={handleDeleteRoomConfirm}
+        title="Hapus Data Kamar Asrama"
+        message="Apakah Anda yakin ingin menghapus data kamar asrama ini? Kamar akan dihapus dari data gedung di Supabase dan Firebase."
+        itemName={deletingRoom ? `${deletingRoom.nomorKamar} (${deletingRoom.namaGedung})` : ''}
+        itemId={deletingRoom?.id}
+        itemType="Data Kamar Asrama"
+        warningNote="Data kamar akan dihapus permanen dari Supabase & Firebase. Santri yang saat ini terdaftar di kamar ini tidak akan terhapus, namun status penempatan kamar mereka perlu disesuaikan ulang."
+        isLoading={isDeletingRoom}
+      />
 
     </div>
   );

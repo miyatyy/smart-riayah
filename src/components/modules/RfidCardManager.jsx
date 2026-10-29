@@ -23,9 +23,11 @@ import {
   Send,
   DoorOpen,
   Wifi,
-  CheckCircle2
+  CheckCircle2,
+  Trash2
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
+import DeleteConfirmModal from '../common/DeleteConfirmModal';
 
 export default function RfidCardManager({ isModal = false, onClose = () => {}, defaultView = 'table' }) {
   const [activeSubTab, setActiveSubTab] = useState(defaultView);
@@ -47,6 +49,7 @@ export default function RfidCardManager({ isModal = false, onClose = () => {}, d
     linkCardToSantri, 
     registerNewSantriCard, 
     updateSantriCard,
+    deleteSantri,
     processRfidTap,
     createExpressPermit,
     sendWhatsAppNotification,
@@ -125,6 +128,28 @@ export default function RfidCardManager({ isModal = false, onClose = () => {}, d
     waliHubungan: 'Orang Tua / Wali',
     statusAsrama: 'DI_ASRAMA'
   });
+
+  // State untuk konfirmasi modal hapus santri
+  const [deletingSantri, setDeletingSantri] = useState(null);
+  const [isDeletingSantri, setIsDeletingSantri] = useState(false);
+
+  const handleDeleteSantriConfirm = async () => {
+    if (!deletingSantri) return;
+    setIsDeletingSantri(true);
+    try {
+      const res = await deleteSantri(deletingSantri.id, deletingSantri.nama, true);
+      if (res?.success) {
+        showNotification(`🗑️ Data santri "${deletingSantri.nama}" berhasil dihapus dari Supabase & Firebase!`);
+        setDeletingSantri(null);
+      } else {
+        alert(`❌ Gagal menghapus santri: ${res?.error?.message || 'Terjadi kesalahan basis data'}`);
+      }
+    } catch (err) {
+      alert(`❌ Terjadi kesalahan: ${err.message}`);
+    } finally {
+      setIsDeletingSantri(false);
+    }
+  };
 
   // Keep UID synced whenever user taps a new physical card or virtual tap
   React.useEffect(() => {
@@ -820,6 +845,16 @@ export default function RfidCardManager({ isModal = false, onClose = () => {}, d
                           <Zap className="w-3.5 h-3.5 text-cyan-600" />
                           <span>Tap Gate</span>
                         </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setDeletingSantri(s)}
+                          className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 border border-rose-300 hover:border-rose-400 rounded-lg text-xs font-bold flex items-center gap-1 transition shadow-xs"
+                          title="Hapus Data Santri & Kartu RFID dari Database"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                          <span>Hapus</span>
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -1270,6 +1305,20 @@ export default function RfidCardManager({ isModal = false, onClose = () => {}, d
           </div>
         </div>
       )}
+
+      {/* MODAL KONFIRMASI HAPUS SANTRI */}
+      <DeleteConfirmModal
+        isOpen={!!deletingSantri}
+        onClose={() => setDeletingSantri(null)}
+        onConfirm={handleDeleteSantriConfirm}
+        title="Hapus Data Santri & RFID"
+        message="Apakah Anda yakin ingin menghapus data santri ini? Data profil santri, kepemilikan kartu RFID, dan kuota kamar akan dibersihkan dari database."
+        itemName={deletingSantri?.nama}
+        itemId={deletingSantri?.id}
+        itemType="Data Induk Santri"
+        warningNote="Data yang dihapus akan hilang dari database Supabase dan Firebase secara permanen dan tidak dapat dipulihkan."
+        isLoading={isDeletingSantri}
+      />
     </div>
   );
 

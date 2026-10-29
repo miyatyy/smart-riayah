@@ -4,15 +4,18 @@ import { sound } from '../utils/audio';
 import { webSerial } from '../utils/webSerial';
 import { DEFAULT_DEEPSEEK_TOKEN, testDeepSeekConnection } from '../utils/deepseekApi';
 import { deleteRoomData } from '../utils/roomService';
+import { deleteSantriData } from '../utils/santriService';
 import { supabase } from '../utils/supabaseClient';
 import { syncRoomToFirebase } from '../utils/firebaseSync';
 import {
   fetchAllDataFromSupabase,
   subscribeToAllTablesRealtime,
   syncSantriToSupabase,
+  deleteSantriFromSupabase,
   syncRoomToSupabase,
   deleteRoomFromSupabase,
   syncPermitToSupabase,
+  deletePermitFromSupabase,
   syncGateLogToSupabase,
   syncDisciplineToSupabase,
   syncMedicalToSupabase,
@@ -2345,14 +2348,57 @@ export const AppProvider = ({ children }) => {
     sound.playSuccess();
   };
 
-  const deleteRoom = async (roomId, roomName) => {
-    deleteRoomFromSupabase(roomId);
-    const result = await deleteRoomData(roomId, roomName);
+  const deleteRoom = async (roomId, roomName, skipConfirm = false) => {
+    const result = await deleteRoomData(roomId, roomName, skipConfirm);
     if (result.success) {
+      deleteRoomFromSupabase(roomId);
       setRooms(prev => prev.filter(r => r.id !== roomId));
       sound.playSuccess();
     }
     return result;
+  };
+
+  const deleteSantri = async (santriId, santriNama = '', skipConfirm = false) => {
+    const result = await deleteSantriData(santriId, santriNama, skipConfirm);
+    if (result.success) {
+      deleteSantriFromSupabase(santriId);
+      const targetSantri = santriList.find(s => s.id === santriId);
+      setSantriList(prev => prev.filter(s => s.id !== santriId));
+
+      // Kurangi okupansi kasur kamar terkait jika ada
+      if (targetSantri && (targetSantri.kamarId || targetSantri.kamar)) {
+        setRooms(prev => prev.map(r => {
+          if ((targetSantri.kamarId && String(r.id) === String(targetSantri.kamarId)) ||
+              (targetSantri.kamar && (
+                r.nomorKamar.toLowerCase().includes(targetSantri.kamar.toLowerCase()) || 
+                targetSantri.kamar.toLowerCase().includes(r.nomorKamar.toLowerCase())
+              ))) {
+            return { ...r, terisi: Math.max(0, r.terisi - 1) };
+          }
+          return r;
+        }));
+      }
+
+      sound.playSuccess();
+    }
+    return result;
+  };
+
+  const deletePermit = async (permitId) => {
+    if (!permitId) return { success: false };
+    try {
+      const { error } = await supabase.from('permits').delete().eq('id', permitId);
+      if (error) {
+        console.warn('⚠️ [Supabase deletePermit] Error:', error.message);
+      }
+      deletePermitFromSupabase(permitId);
+      setPermits(prev => prev.filter(p => p.id !== permitId));
+      sound.playSuccess();
+      return { success: true };
+    } catch (err) {
+      console.error('❌ [AppContext deletePermit] Exception:', err);
+      return { success: false, error: err };
+    }
   };
 
   // 12. Admin Ri'ayah: Onboarding Santri Baru & Live Hardware RFID Tap Integration
@@ -2608,6 +2654,8 @@ export const AppProvider = ({ children }) => {
         updateRoom,
         deleteRoom,
         addNewSantri,
+        deleteSantri,
+        deletePermit,
         replaceLostCard,
         unblockCard,
         setHardwareScanCallback,

@@ -1,9 +1,11 @@
 import { supabase } from './supabaseClient';
 import {
   syncSantriToFirebase,
+  deleteSantriFromFirebase,
   syncRoomToFirebase,
   deleteRoomFromFirebase,
   syncPermitToFirebase,
+  deletePermitFromFirebase,
   syncGateLogToFirebase,
   syncDisciplineToFirebase,
   syncMedicalToFirebase,
@@ -335,6 +337,18 @@ export async function syncSantriToSupabase(santri) {
   }
 }
 
+export async function deleteSantriFromSupabase(santriId) {
+  // Hapus di Google Firebase Firestore
+  deleteSantriFromFirebase(santriId);
+
+  try {
+    const { error } = await supabase.from('santri').delete().eq('id', santriId);
+    if (error) console.warn('⚠️ [Supabase Delete Santri]:', error.message);
+  } catch (err) {
+    console.warn('⚠️ [Supabase Delete Santri Error]:', err);
+  }
+}
+
 export async function syncRoomToSupabase(room) {
   // Sync ke Google Firebase Firestore
   syncRoomToFirebase(room);
@@ -372,6 +386,18 @@ export async function syncPermitToSupabase(permit) {
     if (error) console.warn('⚠️ [Supabase Sync Permit]:', error.message);
   } catch (err) {
     console.warn('⚠️ [Supabase Sync Permit Error]:', err);
+  }
+}
+
+export async function deletePermitFromSupabase(permitId) {
+  // Hapus di Google Firebase Firestore
+  deletePermitFromFirebase(permitId);
+
+  try {
+    const { error } = await supabase.from('permits').delete().eq('id', permitId);
+    if (error) console.warn('⚠️ [Supabase Delete Permit]:', error.message);
+  } catch (err) {
+    console.warn('⚠️ [Supabase Delete Permit Error]:', err);
   }
 }
 

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { 
   Users, 
@@ -9,17 +9,40 @@ import {
   ExternalLink,
   ChevronRight,
   ShieldCheck,
-  Radio
+  Radio,
+  Trash2
 } from 'lucide-react';
+import DeleteConfirmModal from '../common/DeleteConfirmModal';
 
 export default function RealtimePermitsTable() {
   const { 
     santriList, 
     permits, 
+    deletePermit,
     highlightedSantriId, 
     processRfidTap,
     lastScannedUid 
   } = useApp();
+
+  const [deletingPermit, setDeletingPermit] = useState(null);
+  const [isDeletingPermit, setIsDeletingPermit] = useState(false);
+
+  const handleDeletePermitConfirm = async () => {
+    if (!deletingPermit) return;
+    setIsDeletingPermit(true);
+    try {
+      const res = await deletePermit(deletingPermit.id);
+      if (res?.success) {
+        setDeletingPermit(null);
+      } else {
+        alert('❌ Gagal menghapus surat izin');
+      }
+    } catch (err) {
+      alert(`❌ Terjadi kesalahan: ${err.message}`);
+    } finally {
+      setIsDeletingPermit(false);
+    }
+  };
 
   // Sort permits so active, approved, and overdue are prioritized at top
   const sortedPermits = [...permits].sort((a, b) => {
@@ -155,20 +178,31 @@ export default function RealtimePermitsTable() {
                     </span>
                   </td>
 
-                  {/* Uji Tap Langsung */}
+                  {/* Aksi & Uji Tap Langsung */}
                   <td className="py-2.5 px-3 text-center">
-                    <button
-                      onClick={() => {
-                        if (santri) {
-                          processRfidTap(santri.rfidUid);
-                        }
-                      }}
-                      className="px-2.5 py-1 bg-slate-800 hover:bg-cyan-900/60 text-cyan-300 border border-cyan-500/30 rounded-lg text-[10px] font-bold font-mono transition inline-flex items-center gap-1"
-                      title={`Simulasikan Tap Kartu RFID ${santri?.nama}`}
-                    >
-                      <Zap className="w-3 h-3 text-cyan-400" />
-                      <span>Tap RFID</span>
-                    </button>
+                    <div className="flex items-center justify-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          if (santri) {
+                            processRfidTap(santri.rfidUid);
+                          }
+                        }}
+                        className="px-2 py-1 bg-slate-800 hover:bg-cyan-900/60 text-cyan-300 border border-cyan-500/30 rounded-lg text-[10px] font-bold font-mono transition inline-flex items-center gap-1"
+                        title={`Simulasikan Tap Kartu RFID ${santri?.nama}`}
+                      >
+                        <Zap className="w-3 h-3 text-cyan-400" />
+                        <span>Tap RFID</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setDeletingPermit(permit)}
+                        className="p-1 bg-slate-800 hover:bg-rose-950/60 text-slate-400 hover:text-rose-400 border border-slate-700 hover:border-rose-700/50 rounded-lg text-[10px] transition inline-flex items-center justify-center"
+                        title="Hapus Surat Izin"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
@@ -176,6 +210,20 @@ export default function RealtimePermitsTable() {
           </tbody>
         </table>
       </div>
+
+      {/* MODAL KONFIRMASI HAPUS PERMIT */}
+      <DeleteConfirmModal
+        isOpen={!!deletingPermit}
+        onClose={() => setDeletingPermit(null)}
+        onConfirm={handleDeletePermitConfirm}
+        title="Hapus Surat Izin Santri"
+        message="Apakah Anda yakin ingin menghapus arsip surat perizinan ini dari sistem?"
+        itemName={deletingPermit ? `${deletingPermit.kategori} - ${deletingPermit.santriNama || 'Santri'}` : ''}
+        itemId={deletingPermit?.id}
+        itemType="Surat Izin (Permit)"
+        warningNote="Data izin santri ini akan dihapus permanen dari Supabase & Firebase."
+        isLoading={isDeletingPermit}
+      />
     </div>
   );
 }
