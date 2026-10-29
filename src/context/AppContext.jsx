@@ -6,6 +6,26 @@ import { DEFAULT_DEEPSEEK_TOKEN, testDeepSeekConnection } from '../utils/deepsee
 import { deleteRoomData } from '../utils/roomService';
 import { supabase } from '../utils/supabaseClient';
 import {
+  fetchAllDataFromSupabase,
+  subscribeToAllTablesRealtime,
+  syncSantriToSupabase,
+  syncRoomToSupabase,
+  deleteRoomFromSupabase,
+  syncPermitToSupabase,
+  syncGateLogToSupabase,
+  syncDisciplineToSupabase,
+  syncMedicalToSupabase,
+  syncRfidTransactionToSupabase,
+  syncMutabaahToSupabase,
+  dbToSantri,
+  dbToRoom,
+  dbToPermit,
+  dbToGateLog,
+  dbToDiscipline,
+  dbToMedical,
+  dbToRfidTransaction
+} from '../utils/supabaseSync';
+import {
   INITIAL_SANTRI,
   INITIAL_PERMITS,
   INITIAL_GATE_LOGS,
@@ -547,6 +567,95 @@ export const AppProvider = ({ children }) => {
     };
   }, [applySyncedData]);
 
+  // --------------------------------------------------------------------------
+  // SUPABASE REALTIME & INITIAL DATA SYNC (Semua Kategori Database)
+  // --------------------------------------------------------------------------
+  useEffect(() => {
+    let isMounted = true;
+
+    // 1. Ambil data awal dari Supabase jika tersedia
+    fetchAllDataFromSupabase()
+      .then((remoteData) => {
+        if (!isMounted || !remoteData) return;
+        if (remoteData.santriList?.length) setSantriList(remoteData.santriList);
+        if (remoteData.rooms?.length) setRooms(remoteData.rooms);
+        if (remoteData.permits?.length) setPermits(remoteData.permits);
+        if (remoteData.gateLogs?.length) setGateLogs(remoteData.gateLogs);
+        if (remoteData.disciplineRecords?.length) setDisciplineRecords(remoteData.disciplineRecords);
+        if (remoteData.medicalRecords?.length) setMedicalRecords(remoteData.medicalRecords);
+        if (remoteData.rfidTransactions?.length) setRfidTransactions(remoteData.rfidTransactions);
+        if (remoteData.mutabaahList?.length) setMutabaahList(remoteData.mutabaahList);
+      })
+      .catch((err) => {
+        console.warn('⚠️ Gagal fetch data awal Supabase (fallback ke cache):', err);
+      });
+
+    // 2. Berlangganan Realtime Postgres Changes seluruh kategori tabel Supabase
+    const unsubscribe = subscribeToAllTablesRealtime({
+      onSantriChange: (payload) => {
+        if (!isMounted) return;
+        if (payload.eventType === 'INSERT' && payload.new) {
+          const item = dbToSantri(payload.new);
+          setSantriList(prev => [item, ...prev.filter(s => s.id !== item.id)]);
+        } else if (payload.eventType === 'UPDATE' && payload.new) {
+          const item = dbToSantri(payload.new);
+          setSantriList(prev => prev.map(s => s.id === item.id ? { ...s, ...item } : s));
+        } else if (payload.eventType === 'DELETE' && payload.old) {
+          setSantriList(prev => prev.filter(s => s.id !== payload.old.id));
+        }
+      },
+      onRoomChange: (payload) => {
+        if (!isMounted) return;
+        if (payload.eventType === 'INSERT' && payload.new) {
+          const item = dbToRoom(payload.new);
+          setRooms(prev => [...prev.filter(r => r.id !== item.id), item]);
+        } else if (payload.eventType === 'UPDATE' && payload.new) {
+          const item = dbToRoom(payload.new);
+          setRooms(prev => prev.map(r => r.id === item.id ? { ...r, ...item } : r));
+        } else if (payload.eventType === 'DELETE' && payload.old) {
+          setRooms(prev => prev.filter(r => r.id !== payload.old.id));
+        }
+      },
+      onPermitChange: (payload) => {
+        if (!isMounted) return;
+        if (payload.eventType === 'INSERT' && payload.new) {
+          const item = dbToPermit(payload.new);
+          setPermits(prev => [item, ...prev.filter(p => p.id !== item.id)]);
+        } else if (payload.eventType === 'UPDATE' && payload.new) {
+          const item = dbToPermit(payload.new);
+          setPermits(prev => prev.map(p => p.id === item.id ? { ...p, ...item } : p));
+        } else if (payload.eventType === 'DELETE' && payload.old) {
+          setPermits(prev => prev.filter(p => p.id !== payload.old.id));
+        }
+      },
+      onGateLogInsert: (row) => {
+        if (!isMounted || !row) return;
+        const item = dbToGateLog(row);
+        setGateLogs(prev => [item, ...prev.filter(g => g.id !== item.id)]);
+      },
+      onDisciplineInsert: (row) => {
+        if (!isMounted || !row) return;
+        const item = dbToDiscipline(row);
+        setDisciplineRecords(prev => [item, ...prev.filter(d => d.id !== item.id)]);
+      },
+      onMedicalInsert: (row) => {
+        if (!isMounted || !row) return;
+        const item = dbToMedical(row);
+        setMedicalRecords(prev => [item, ...prev.filter(m => m.id !== item.id)]);
+      },
+      onRfidTransactionInsert: (row) => {
+        if (!isMounted || !row) return;
+        const item = dbToRfidTransaction(row);
+        setRfidTransactions(prev => [item, ...prev.filter(t => t.id !== item.id)]);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, []);
+
   // Server-side sync via /api/sync (Cross-profile, cross-browser, incognito sync)
   useEffect(() => {
     let isMounted = true;
@@ -897,6 +1006,7 @@ export const AppProvider = ({ children }) => {
     };
 
     setPermits(prev => [newPermit, ...prev]);
+    syncPermitToSupabase(newPermit);
 
     // Push notification to WhatsApp
     sendWhatsAppNotification(
@@ -918,16 +1028,19 @@ export const AppProvider = ({ children }) => {
     if (!permit) return;
     const santri = santriList.find(s => s.id === permit.santriId);
 
+    const updatedPermit = {
+      ...permit,
+      status: 'APPROVED',
+      batasKembali: customBatasKembali || permit.batasKembali,
+      musyrifPenyetuju: 'Ust. M. Syukron, M.Pd.',
+      waktuApproval: getIsoNow(),
+      catatanMusyrif: catatan
+    };
+    syncPermitToSupabase(updatedPermit);
+
     setPermits(prev => prev.map(p => {
       if (p.id === permitId) {
-        return {
-          ...p,
-          status: 'APPROVED',
-          batasKembali: customBatasKembali || p.batasKembali,
-          musyrifPenyetuju: 'Ust. M. Syukron, M.Pd.',
-          waktuApproval: getIsoNow(),
-          catatanMusyrif: catatan
-        };
+        return updatedPermit;
       }
       return p;
     }));
@@ -949,15 +1062,18 @@ export const AppProvider = ({ children }) => {
     if (!permit) return;
     const santri = santriList.find(s => s.id === permit.santriId);
 
+    const updatedPermit = {
+      ...permit,
+      status: 'REJECTED',
+      musyrifPenyetuju: 'Ust. M. Syukron, M.Pd.',
+      waktuApproval: getIsoNow(),
+      catatanMusyrif: `DITOLAK: ${alasan}`
+    };
+    syncPermitToSupabase(updatedPermit);
+
     setPermits(prev => prev.map(p => {
       if (p.id === permitId) {
-        return {
-          ...p,
-          status: 'REJECTED',
-          musyrifPenyetuju: 'Ust. M. Syukron, M.Pd.',
-          waktuApproval: getIsoNow(),
-          catatanMusyrif: `DITOLAK: ${alasan}`
-        };
+        return updatedPermit;
       }
       return p;
     }));
@@ -997,6 +1113,7 @@ export const AppProvider = ({ children }) => {
     };
 
     setPermits(prev => [newPermit, ...prev]);
+    syncPermitToSupabase(newPermit);
 
     if (openGateImmediately) {
       setSantriList(prev => prev.map(s => s.id === santri.id ? { ...s, statusAsrama: 'DI_LUAR' } : s));
@@ -1044,6 +1161,7 @@ export const AppProvider = ({ children }) => {
         snapshotUrl: santri.foto
       };
       setGateLogs(prev => [newLog, ...prev]);
+      syncGateLogToSupabase(newLog);
 
       sendWhatsAppNotification(
         `${santri.wali.nama} (Wali ${santri.nama})`,
@@ -1181,6 +1299,7 @@ export const AppProvider = ({ children }) => {
             snapshotUrl: santri.foto
           };
           setGateLogs(prev => [newLog, ...prev]);
+      syncGateLogToSupabase(newLog);
 
           // WhatsApp to Wali (Automatic Fonnte Notification on RFID Tap Keluar)
           const cardUid = santri.rfidUid || '04:A1:2B:9C';
@@ -1252,6 +1371,7 @@ export const AppProvider = ({ children }) => {
             snapshotUrl: santri.foto
           };
           setGateLogs(prev => [newLog, ...prev]);
+      syncGateLogToSupabase(newLog);
 
           // Automatic WhatsApp Security Alert (Anti-Bypass Lock)
           const jamRealTime = getNowWIB();
@@ -1351,6 +1471,7 @@ export const AppProvider = ({ children }) => {
           snapshotUrl: santri.foto
         };
         setGateLogs(prev => [newLog, ...prev]);
+      syncGateLogToSupabase(newLog);
 
         const jamMasuk = getNowWIB();
         const cardUid = santri.rfidUid || '04:A1:2B:9C';
@@ -1466,6 +1587,7 @@ export const AppProvider = ({ children }) => {
         snapshotUrl: santri ? santri.foto : '/images/avatar_santri_putra.jpg'
       };
       setGateLogs(prev => [newLog, ...prev]);
+      syncGateLogToSupabase(newLog);
 
       // Security Alert to Admin / Wali for Blocked Card
       const santriNama = santri ? santri.nama : `Kartu UID ${cleanUid}`;
@@ -1568,6 +1690,7 @@ export const AppProvider = ({ children }) => {
         snapshotUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'
       };
       setGateLogs(prev => [newLog, ...prev]);
+      syncGateLogToSupabase(newLog);
 
       setTimeout(() => {
         setOledState(STANDBY_OLED);
@@ -1617,6 +1740,7 @@ export const AppProvider = ({ children }) => {
 
     setSantriList(prev => [newSantri, ...prev]);
     setLastScannedUid(formattedUid);
+    syncSantriToSupabase(newSantri);
 
     if (initialPermitStatus && initialPermitStatus !== 'TIDAK_ADA') {
       const isOverdue = initialPermitStatus === 'OVERDUE';
@@ -1639,6 +1763,7 @@ export const AppProvider = ({ children }) => {
         catatanMusyrif: initialPermitStatus === 'REJECTED' ? 'DITOLAK: Masih dalam masa orientasi' : 'Disetujui. Kartu perdana aktif.'
       };
       setPermits(prev => [newPermit, ...prev]);
+    syncPermitToSupabase(newPermit);
     }
     sound.playSuccess();
   };
@@ -1919,6 +2044,14 @@ export const AppProvider = ({ children }) => {
       pencatat: 'Ust. M. Syukron (Musyrif)'
     };
     setDisciplineRecords(prev => [newRecord, ...prev]);
+    syncDisciplineToSupabase(newRecord);
+
+    if (santri) {
+      syncSantriToSupabase({
+        ...santri,
+        poinDisiplin: Math.max(0, Math.min(100, santri.poinDisiplin + parseInt(poin)))
+      });
+    }
 
     setSantriList(prev => prev.map(s => {
       if (s.id === santriId) {
@@ -1950,6 +2083,7 @@ export const AppProvider = ({ children }) => {
       petugasKlinik: 'dr. Nurul Aini (Dokter Poskestren)'
     };
     setMedicalRecords(prev => [newRecord, ...prev]);
+    syncMedicalToSupabase(newRecord);
 
     const santri = santriList.find(s => s.id === recordData.santriId);
     if (santri) {
@@ -1986,6 +2120,7 @@ export const AppProvider = ({ children }) => {
     };
 
     setPermits(prev => [newPermit, ...prev]);
+    syncPermitToSupabase(newPermit);
 
     sendWhatsAppNotification(
       `${santri.wali.nama} (Wali ${santri.nama})`,
@@ -2190,6 +2325,7 @@ export const AppProvider = ({ children }) => {
   };
 
   const updateRoom = (roomId, updatedData) => {
+    syncRoomToSupabase({ id: roomId, ...updatedData });
     setRooms(prev => prev.map(r => {
       if (r.id === roomId) {
         return {
@@ -2206,6 +2342,7 @@ export const AppProvider = ({ children }) => {
   };
 
   const deleteRoom = async (roomId, roomName) => {
+    deleteRoomFromSupabase(roomId);
     const result = await deleteRoomData(roomId, roomName);
     if (result.success) {
       setRooms(prev => prev.filter(r => r.id !== roomId));
@@ -2247,6 +2384,7 @@ export const AppProvider = ({ children }) => {
 
     setSantriList(prev => [newSantri, ...prev]);
     setLastScannedUid(formattedUid);
+    syncSantriToSupabase(newSantri);
 
     // Auto-update room occupancy count
     if (santriData.kamar || santriData.kamarId) {
