@@ -1,4 +1,15 @@
 import { supabase } from './supabaseClient';
+import {
+  syncSantriToFirebase,
+  syncRoomToFirebase,
+  deleteRoomFromFirebase,
+  syncPermitToFirebase,
+  syncGateLogToFirebase,
+  syncDisciplineToFirebase,
+  syncMedicalToFirebase,
+  syncRfidTransactionToFirebase,
+  syncMutabaahToFirebase
+} from './firebaseSync';
 
 /**
  * ============================================================================
@@ -307,10 +318,13 @@ export function dbToMutabaah(row) {
 }
 
 // ----------------------------------------------------------------------------
-// 2. SUPABASE WRITE ACTIONS (UPSERT & INSERT KE DATABASE)
+// 2. SUPABASE & FIREBASE WRITE ACTIONS (DUAL-SYNC DATABASE)
 // ----------------------------------------------------------------------------
 
 export async function syncSantriToSupabase(santri) {
+  // Sync ke Google Firebase Firestore
+  syncSantriToFirebase(santri);
+
   try {
     const payload = santriToDb(santri);
     if (!payload) return;
@@ -322,6 +336,9 @@ export async function syncSantriToSupabase(santri) {
 }
 
 export async function syncRoomToSupabase(room) {
+  // Sync ke Google Firebase Firestore
+  syncRoomToFirebase(room);
+
   try {
     const payload = roomToDb(room);
     if (!payload) return;
@@ -333,6 +350,9 @@ export async function syncRoomToSupabase(room) {
 }
 
 export async function deleteRoomFromSupabase(roomId) {
+  // Hapus di Google Firebase Firestore
+  deleteRoomFromFirebase(roomId);
+
   try {
     const { error } = await supabase.from('rooms').delete().eq('id', roomId);
     if (error) console.warn('⚠️ [Supabase Delete Room]:', error.message);
@@ -342,6 +362,9 @@ export async function deleteRoomFromSupabase(roomId) {
 }
 
 export async function syncPermitToSupabase(permit) {
+  // Sync ke Google Firebase Firestore
+  syncPermitToFirebase(permit);
+
   try {
     const payload = permitToDb(permit);
     if (!payload) return;
@@ -353,6 +376,9 @@ export async function syncPermitToSupabase(permit) {
 }
 
 export async function syncGateLogToSupabase(log) {
+  // Sync ke Google Firebase Firestore
+  syncGateLogToFirebase(log);
+
   try {
     const payload = gateLogToDb(log);
     if (!payload) return;
@@ -364,6 +390,9 @@ export async function syncGateLogToSupabase(log) {
 }
 
 export async function syncDisciplineToSupabase(record) {
+  // Sync ke Google Firebase Firestore
+  syncDisciplineToFirebase(record);
+
   try {
     const payload = disciplineToDb(record);
     if (!payload) return;
@@ -375,6 +404,9 @@ export async function syncDisciplineToSupabase(record) {
 }
 
 export async function syncMedicalToSupabase(record) {
+  // Sync ke Google Firebase Firestore
+  syncMedicalToFirebase(record);
+
   try {
     const payload = medicalToDb(record);
     if (!payload) return;
@@ -386,6 +418,9 @@ export async function syncMedicalToSupabase(record) {
 }
 
 export async function syncRfidTransactionToSupabase(trx) {
+  // Sync ke Google Firebase Firestore
+  syncRfidTransactionToFirebase(trx);
+
   try {
     const payload = rfidTransactionToDb(trx);
     if (!payload) return;
@@ -397,6 +432,9 @@ export async function syncRfidTransactionToSupabase(trx) {
 }
 
 export async function syncMutabaahToSupabase(record) {
+  // Sync ke Google Firebase Firestore
+  syncMutabaahToFirebase(record);
+
   try {
     const payload = mutabaahToDb(record);
     if (!payload) return;

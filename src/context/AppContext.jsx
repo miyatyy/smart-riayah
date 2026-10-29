@@ -5,6 +5,7 @@ import { webSerial } from '../utils/webSerial';
 import { DEFAULT_DEEPSEEK_TOKEN, testDeepSeekConnection } from '../utils/deepseekApi';
 import { deleteRoomData } from '../utils/roomService';
 import { supabase } from '../utils/supabaseClient';
+import { syncRoomToFirebase } from '../utils/firebaseSync';
 import {
   fetchAllDataFromSupabase,
   subscribeToAllTablesRealtime,
@@ -2282,6 +2283,9 @@ export const AppProvider = ({ children }) => {
       catatanInspeksi: roomData.catatanInspeksi || 'Kamar siap huni.'
     };
     setRooms(prev => [...prev, newRoom]);
+
+    // Simpan kamar baru ke Google Firebase Firestore
+    syncRoomToFirebase(newRoom);
 
     // Simpan kamar baru ke database Supabase
     try {
