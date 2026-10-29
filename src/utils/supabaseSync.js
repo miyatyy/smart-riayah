@@ -535,3 +535,4 @@ export function subscribeToAllTablesRealtime(callbacks = {}) {
     supabase.removeChannel(channel);
   };
 }
+
