@@ -2198,6 +2198,7 @@ export const AppProvider = ({ children }) => {
       nama: santriData.nama,
       kelas: santriData.kelas || (gender === 'P' ? '10-B (Putri)' : '10-A (Putra)'),
       gender,
+      kamarId: santriData.kamarId || null,
       kamar: santriData.kamar || (gender === 'P' ? 'Asrama Putri Khadijah 105' : 'Umar bin Khattab 204'),
       rfidUid: formattedUid,
       foto: santriData.foto || defaultAvatar,
@@ -2219,10 +2220,13 @@ export const AppProvider = ({ children }) => {
     setLastScannedUid(formattedUid);
 
     // Auto-update room occupancy count
-    if (santriData.kamar) {
+    if (santriData.kamar || santriData.kamarId) {
       setRooms(prev => prev.map(r => {
-        if (r.nomorKamar.toLowerCase().includes(santriData.kamar.toLowerCase()) || 
-            santriData.kamar.toLowerCase().includes(r.nomorKamar.toLowerCase())) {
+        if ((santriData.kamarId && String(r.id) === String(santriData.kamarId)) ||
+            (santriData.kamar && (
+              r.nomorKamar.toLowerCase().includes(santriData.kamar.toLowerCase()) || 
+              santriData.kamar.toLowerCase().includes(r.nomorKamar.toLowerCase())
+            ))) {
           return { ...r, terisi: Math.min(r.kapasitas, r.terisi + 1) };
         }
         return r;

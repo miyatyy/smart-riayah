@@ -42,6 +42,8 @@ import RealtimeGateLogsManager from '../modules/RealtimeGateLogsManager';
 import FonnteDeviceManager from '../modules/FonnteDeviceManager';
 import SantriActivityAnalytics from '../modules/SantriActivityAnalytics';
 import EditRoomModal from '../modules/EditRoomModal';
+import { supabase } from '../../utils/supabaseClient';
+import { insertSantriToSupabase } from '../../utils/santriService';
 
 export default function AdminRiayahDashboard() {
   const { 
@@ -94,6 +96,7 @@ export default function AdminRiayahDashboard() {
     nis: '',
     gender: 'L',
     kamar: '',
+    kamarId: '',
     rfidUid: '',
     waliNama: '',
     waliHubungan: 'Orang Tua Kandung',
@@ -103,6 +106,7 @@ export default function AdminRiayahDashboard() {
     tahfidzAwal: 1,
     penyakitKhusus: '-'
   });
+  const [isSubmittingOnboarding, setIsSubmittingOnboarding] = useState(false);
 
   // Lost Card Replacement Form
   const [replacementForm, setReplacementForm] = useState({
@@ -200,36 +204,99 @@ export default function AdminRiayahDashboard() {
     return isGenderMatch && (r.terisi < r.kapasitas);
   });
 
-  // Handle Submit Onboarding
-  const handleOnboardingSubmit = (e) => {
+  // Handle Submit Onboarding: Simpan ke tabel santri di Supabase
+  const handleOnboardingSubmit = async (e) => {
     e.preventDefault();
-    if (!onboardingForm.nama || !onboardingForm.waliNama || !onboardingForm.waliTelepon) {
-      alert('Harap isi Nama Santri, Nama Wali, dan Nomor WhatsApp Wali!');
+
+    if (!onboardingForm.nama || !onboardingForm.nama.trim()) {
+      alert('Harap isi Nama Lengkap Santri!');
       return;
     }
 
-    if (!onboardingForm.kamar) {
+    if (!onboardingForm.waliNama || !onboardingForm.waliNama.trim() || !onboardingForm.waliTelepon) {
+      alert('Harap isi Nama Wali dan Nomor WhatsApp Wali!');
+      return;
+    }
+
+    if (!onboardingForm.kamarId && !onboardingForm.kamar) {
       alert('Harap pilih kamar asrama untuk santri baru!');
       return;
     }
 
-    addNewSantri(onboardingForm);
+    if (!onboardingForm.rfidUid || !onboardingForm.rfidUid.trim()) {
+      alert('Harap tempelkan kartu RFID atau masukkan kode UID santri!');
+      return;
+    }
 
-    alert(`Pendaftaran santri baru "${onboardingForm.nama}" BERHASIL! Akun, kartu RFID, dan kamar asrama telah tersinkron.`);
-    setOnboardingForm({
-      nama: '',
-      nis: '',
-      gender: 'L',
-      kamar: '',
-      rfidUid: '',
-      waliNama: '',
-      waliHubungan: 'Orang Tua Kandung',
-      waliTelepon: '',
-      alamat: 'Surabaya',
-      saldoAwal: 100000,
-      tahfidzAwal: 1,
-      penyakitKhusus: '-'
-    });
+    // Payload insert disesuaikan dengan skema kolom tabel santri di Supabase:
+    // - nama_lengkap (string)
+    // - nis (string/number)
+    // - gender (string)
+    // - kamar_id (foreign key / id kamar)
+    // - rfid_uid (string)
+    // - saldo_awal (number)
+    // - nama_wali (string)
+    const payload = {
+      nama_lengkap: onboardingForm.nama.trim(),
+      nis: onboardingForm.nis ? String(onboardingForm.nis).trim() : `${Math.floor(125500 + Math.random() * 900)}`,
+      gender: onboardingForm.gender || 'L',
+      kamar_id: onboardingForm.kamarId || onboardingForm.kamar,
+      rfid_uid: onboardingForm.rfidUid.trim().toUpperCase(),
+      saldo_awal: Number(onboardingForm.saldoAwal) || 0,
+      nama_wali: onboardingForm.waliNama.trim()
+    };
+
+    setIsSubmittingOnboarding(true);
+
+    try {
+      console.log('📡 [Supabase] Mengirim payload pendaftaran santri baru ke tabel santri:', payload);
+
+      const { data, error } = await supabase
+        .from('santri')
+        .insert([payload])
+        .select();
+
+      if (error) {
+        console.error('❌ [Supabase] Gagal menyimpan data santri ke tabel santri:', error);
+        alert(`❌ Gagal menyimpan santri ke database Supabase!\n\nDetail Error: ${error.message || JSON.stringify(error)}`);
+        return;
+      }
+
+      console.log('✅ [Supabase] Berhasil menyimpan santri baru ke tabel santri:', data);
+
+      // Sinkronkan ke context lokal (update state list santri, kamar terisi, confetti, notifikasi WA)
+      addNewSantri({
+        ...onboardingForm,
+        nis: payload.nis,
+        rfidUid: payload.rfid_uid,
+        saldoAwal: payload.saldo_awal,
+        kamarId: payload.kamar_id
+      });
+
+      alert(`✅ Pendaftaran santri baru "${payload.nama_lengkap}" BERHASIL!\nData telah tersimpan di Supabase, kartu RFID aktif, dan kamar asrama telah tersinkron.`);
+
+      // Reset formulir pendaftaran
+      setOnboardingForm({
+        nama: '',
+        nis: '',
+        gender: 'L',
+        kamar: '',
+        kamarId: '',
+        rfidUid: '',
+        waliNama: '',
+        waliHubungan: 'Orang Tua Kandung',
+        waliTelepon: '',
+        alamat: 'Surabaya',
+        saldoAwal: 100000,
+        tahfidzAwal: 1,
+        penyakitKhusus: '-'
+      });
+    } catch (err) {
+      console.error('❌ [Supabase] Exception saat menyimpan data santri ke tabel santri:', err);
+      alert(`❌ Terjadi kesalahan pada sistem saat menyimpan data santri:\n${err?.message || err}`);
+    } finally {
+      setIsSubmittingOnboarding(false);
+    }
   };
 
   // Handle Lost Card Replacement Submit
@@ -630,7 +697,7 @@ export default function AdminRiayahDashboard() {
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       type="button"
-                      onClick={() => setOnboardingForm({ ...onboardingForm, gender: 'L', kamar: '' })}
+                      onClick={() => setOnboardingForm({ ...onboardingForm, gender: 'L', kamar: '', kamarId: '' })}
                       className={`p-3 rounded-2xl border flex items-center gap-3 transition ${
                         onboardingForm.gender === 'L'
                           ? 'bg-emerald-50 border-emerald-400 text-emerald-900 shadow-xs'
@@ -650,7 +717,7 @@ export default function AdminRiayahDashboard() {
 
                     <button
                       type="button"
-                      onClick={() => setOnboardingForm({ ...onboardingForm, gender: 'P', kamar: '' })}
+                      onClick={() => setOnboardingForm({ ...onboardingForm, gender: 'P', kamar: '', kamarId: '' })}
                       className={`p-3 rounded-2xl border flex items-center gap-3 transition ${
                         onboardingForm.gender === 'P'
                           ? 'bg-teal-50 border-teal-400 text-teal-900 shadow-xs'
@@ -674,8 +741,16 @@ export default function AdminRiayahDashboard() {
                 <div>
                   <label className="block text-slate-700 mb-1 font-semibold">Penempatan Kamar Asrama</label>
                   <select
-                    value={onboardingForm.kamar}
-                    onChange={(e) => setOnboardingForm({ ...onboardingForm, kamar: e.target.value })}
+                    value={onboardingForm.kamarId || ''}
+                    onChange={(e) => {
+                      const selectedId = e.target.value;
+                      const selectedRoom = availableRoomsForOnboarding.find(r => String(r.id) === String(selectedId));
+                      setOnboardingForm({ 
+                        ...onboardingForm, 
+                        kamarId: selectedId,
+                        kamar: selectedRoom ? `${selectedRoom.namaGedung} - ${selectedRoom.nomorKamar}` : '' 
+                      });
+                    }}
                     className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600"
                     required
                   >
@@ -683,7 +758,7 @@ export default function AdminRiayahDashboard() {
                     {availableRoomsForOnboarding.map((r) => {
                       const sisa = r.kapasitas - r.terisi;
                       return (
-                        <option key={r.id} value={`${r.namaGedung} - ${r.nomorKamar}`}>
+                        <option key={r.id} value={r.id}>
                           {r.namaGedung} ({r.nomorKamar}) — Sisa Kuota: {sisa} kasur
                         </option>
                       );
@@ -905,10 +980,20 @@ export default function AdminRiayahDashboard() {
             <div className="flex justify-end pt-2">
               <button
                 type="submit"
-                className="px-7 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-xs flex items-center gap-2 transition"
+                disabled={isSubmittingOnboarding}
+                className="px-7 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 disabled:cursor-not-allowed text-white rounded-xl font-bold text-xs shadow-xs flex items-center gap-2 transition"
               >
-                <Check className="w-4 h-4" />
-                <span>Simpan & Daftarkan Santri Baru</span>
+                {isSubmittingOnboarding ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Menyimpan ke Supabase...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>Simpan & Daftarkan Santri Baru</span>
+                  </>
+                )}
               </button>
             </div>
 
