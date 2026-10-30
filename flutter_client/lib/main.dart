@@ -5,21 +5,19 @@ import 'theme/app_theme.dart';
 import 'models/user_session_model.dart';
 import 'services/session_service.dart';
 import 'screens/auth/login_screen.dart';
-import 'screens/admin/admin_dashboard_screen.dart';
-import 'screens/santri/santri_wali_dashboard_screen.dart';
-import 'screens/common/rfid_tap_screen.dart';
+import 'screens/main_dashboard_screen.dart';
 
 /**
  * ============================================================================
- * SMART RI'AYAH MOBILE - MAIN ENTRY POINT
- * Terhubung langsung ke Supabase PostgreSQL, RLS, & Supabase Realtime Listeners
- * Fitur setara dengan versi Web Smart Ri'ayah
+ * SMART RI'AYAH MOBILE - MAIN APPLICATION ENTRY POINT
+ * Terhubung langsung ke Supabase PostgreSQL, RLS & Realtime Listeners
+ * Navigasi Universal Enterprise matching 1:1 Web
  * ============================================================================
  */
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.dark,
@@ -41,26 +39,13 @@ class SmartRiayahApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget homeScreen;
-
-    if (initialSession != null) {
-      final role = initialSession!.role;
-      if (role == AppRole.santri || role == AppRole.wali) {
-        homeScreen = SantriWaliDashboardScreen(session: initialSession!);
-      } else if (role == AppRole.security) {
-        homeScreen = RfidTapScreen(session: initialSession!);
-      } else {
-        homeScreen = AdminDashboardScreen(session: initialSession!);
-      }
-    } else {
-      homeScreen = const LoginScreen();
-    }
-
     return MaterialApp(
       title: 'Smart Ri\'ayah Mobile',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
-      home: homeScreen,
+      home: initialSession != null
+          ? MainDashboardScreen(session: initialSession!)
+          : const LoginScreen(),
     );
   }
 }

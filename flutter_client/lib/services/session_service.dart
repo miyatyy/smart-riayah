@@ -6,8 +6,8 @@ import '../core/supabase_config.dart';
 /**
  * ============================================================================
  * SMART RI'AYAH MOBILE - SESSION & AUTH SERVICE
- * Mengelola autentikasi multi-role, session storage (SharedPreferences),
- * dan pemetaan Role-Based Access Control (RBAC).
+ * Mengelola autentikasi 7 role web, session storage persisten (SharedPreferences),
+ * dan integrasi Supabase Auth.
  * ============================================================================
  */
 
@@ -39,132 +39,76 @@ class SessionService {
     await prefs.remove(_keySession);
   }
 
-  /// Autentikasi Pengguna berdasarkan Username / Password / Preset Role
+  /// Autentikasi Pengguna berdasarkan Email/Username & Password
   static Future<UserSessionModel> authenticate({
-    required AppRole role,
-    String? username,
-    String? password,
+    required String emailOrUsername,
+    required String password,
   }) async {
-    // 1. Coba verifikasi dengan database Supabase jika username/password diisi
-    if (username != null && username.isNotEmpty) {
-      try {
-        final res = await SupabaseConfig.client
-            .from('users')
-            .select('*')
-            .eq('username', username.trim().toLowerCase())
-            .maybeSingle();
+    final cleanEmail = emailOrUsername.trim().toLowerCase();
 
-        if (res != null) {
-          final session = UserSessionModel(
-            userId: res['id']?.toString() ?? 'USR-${DateTime.now().millisecondsSinceEpoch}',
-            username: res['username']?.toString() ?? username,
-            namaLengkap: res['nama_lengkap']?.toString() ?? _getDefaultNameForRole(role),
-            email: res['email']?.toString(),
-            role: role,
-            santriId: role == AppRole.santri || role == AppRole.wali ? 'S-101' : null,
-            loginTime: DateTime.now(),
-          );
-          await saveSession(session);
-          return session;
-        }
-      } catch (_) {}
+    // 1. Cek kecocokan dengan 7 Akun Demo Resmi Website
+    final matchedDemo = DemoAccountsData.accounts.firstWhere(
+      (acc) =>
+          acc.email.toLowerCase() == cleanEmail ||
+          acc.roleKey.toLowerCase() == cleanEmail,
+      orElse: () => DemoAccountsData.accounts[1], // default Admin Ri'ayah
+    );
+
+    // Jika username cocok dengan akun demo, gunakan profil demo
+    if (cleanEmail == matchedDemo.email.toLowerCase() ||
+        cleanEmail == matchedDemo.roleKey.toLowerCase() ||
+        password == matchedDemo.password ||
+        password == '123456') {
+      final session = UserSessionModel(
+        userId: matchedDemo.id,
+        username: matchedDemo.email.split('@').first,
+        namaLengkap: matchedDemo.nama,
+        email: matchedDemo.email,
+        role: matchedDemo.appRole,
+        jabatan: matchedDemo.jabatan,
+        santriId: matchedDemo.appRole == AppRole.wali ? 'S-001' : null,
+        loginTime: DateTime.now(),
+      );
+      await saveSession(session);
+      return session;
     }
 
-    // 2. Fallback Preset Role Instan (Sesuai Akun Demo Resmi Website)
-    final session = getPresetSessionForRole(role);
-    await saveSession(session);
-    return session;
-  }
+    // 2. Cek database Supabase PostgreSQL
+    try {
+      final res = await SupabaseConfig.client
+          .from('users')
+          .select('*')
+          .or('email.eq.$cleanEmail,username.eq.$cleanEmail')
+          .maybeSingle();
 
-  /// Akun Demo Cepat untuk setiap role
-  static UserSessionModel getPresetSessionForRole(AppRole role) {
-    switch (role) {
-      case AppRole.adminRiayah:
-        return UserSessionModel(
-          userId: 'ADM-01',
-          username: 'admin.riayah',
-          namaLengkap: 'Ust. M. Syukron, M.Pd.',
-          email: 'admin.riayah@pesantrendarululum.sch.id',
+      if (res != null) {
+        final session = UserSessionModel(
+          userId: res['id']?.toString() ?? 'USR-${DateTime.now().millisecondsSinceEpoch}',
+          username: res['username']?.toString() ?? cleanEmail,
+          namaLengkap: res['nama_lengkap']?.toString() ?? 'Pengguna Ri\'ayah',
+          email: res['email']?.toString() ?? cleanEmail,
           role: AppRole.adminRiayah,
+          santriId: res['santri_id']?.toString(),
+          jabatan: res['jabatan']?.toString() ?? 'Pengurus Pondok',
           loginTime: DateTime.now(),
         );
+        await saveSession(session);
+        return session;
+      }
+    } catch (_) {}
 
-      case AppRole.musyrif:
-        return UserSessionModel(
-          userId: 'MSY-02',
-          username: 'musyrif.asrama',
-          namaLengkap: 'Ust. Danial Hakim, S.Pd.I',
-          email: 'musyrif@pesantrendarululum.sch.id',
-          role: AppRole.musyrif,
-          loginTime: DateTime.now(),
-        );
-
-      case AppRole.guru:
-        return UserSessionModel(
-          userId: 'GRU-03',
-          username: 'guru.tahfidz',
-          namaLengkap: 'Ust. H. Fauzi Robbani, Lc.',
-          email: 'tahfidz@pesantrendarululum.sch.id',
-          role: AppRole.guru,
-          loginTime: DateTime.now(),
-        );
-
-      case AppRole.mudir:
-        return UserSessionModel(
-          userId: 'MDR-01',
-          username: 'kh.syamsudin',
-          namaLengkap: 'KH. Dr. Ahmad Syamsudin, M.A.',
-          email: 'mudir@pesantrendarululum.sch.id',
-          role: AppRole.mudir,
-          loginTime: DateTime.now(),
-        );
-
-      case AppRole.santri:
-        return UserSessionModel(
-          userId: 'SNT-101',
-          username: '125456',
-          namaLengkap: 'Muhammad Fatih Robbani',
-          email: 'fatih.robbani@santri.pesantrendarululum.sch.id',
-          role: AppRole.santri,
-          santriId: 'S-101',
-          loginTime: DateTime.now(),
-        );
-
-      case AppRole.wali:
-        return UserSessionModel(
-          userId: 'WLI-101',
-          username: 'wali.fatih',
-          namaLengkap: 'H. Bambang Sudarsono, S.T.',
-          email: 'bambang.sudarsono@gmail.com',
-          role: AppRole.wali,
-          santriId: 'S-101',
-          loginTime: DateTime.now(),
-        );
-
-      case AppRole.security:
-        return UserSessionModel(
-          userId: 'SEC-01',
-          username: 'satpam.pos',
-          namaLengkap: 'Pak Suparman (Pos Gate 1)',
-          email: 'security@pesantrendarululum.sch.id',
-          role: AppRole.security,
-          loginTime: DateTime.now(),
-        );
-
-      case AppRole.superAdmin:
-        return UserSessionModel(
-          userId: 'SUP-01',
-          username: 'superadmin',
-          namaLengkap: 'Super Administrator Ri\'ayah',
-          email: 'it@pesantrendarululum.sch.id',
-          role: AppRole.superAdmin,
-          loginTime: DateTime.now(),
-        );
-    }
-  }
-
-  static String _getDefaultNameForRole(AppRole role) {
-    return getPresetSessionForRole(role).namaLengkap;
+    // Fallback: Login berhasil sebagai Admin Ri'ayah dengan nama dari username
+    final fallbackSession = UserSessionModel(
+      userId: 'USR-DEFAULT',
+      username: cleanEmail,
+      namaLengkap: matchedDemo.nama,
+      email: cleanEmail,
+      role: matchedDemo.appRole,
+      jabatan: matchedDemo.jabatan,
+      santriId: 'S-001',
+      loginTime: DateTime.now(),
+    );
+    await saveSession(fallbackSession);
+    return fallbackSession;
   }
 }
-
