@@ -115,21 +115,21 @@ export function dbToRoom(row) {
 export function permitToDb(p) {
   if (!p) return null;
   return {
-    id: p.id,
-    santri_id: p.santriId || p.santri_id,
-    santri_nama: p.santriNama || p.santri_nama || '',
-    kategori: p.kategori || 'Pesiar',
-    keperluan: p.keperluan || '',
-    penjemput: p.penjemput || '',
-    waktu_keluar_rencana: p.waktuKeluarRencana ? new Date(p.waktuKeluarRencana).toISOString() : null,
-    batas_kembali: p.batasKembali ? new Date(p.batasKembali).toISOString() : null,
+    id: p.id || `PRM-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    permit_code: p.permit_code || p.permitCode || p.tokenIzin || p.token_izin || `DU-${p.santriId || Date.now()}`,
+    santri_id: p.santri_id || p.santriId || '',
+    santri_name: p.santri_name || p.santriNama || p.santriName || '',
+    room_name: p.room_name || p.roomName || p.kamar || '',
+    reason: p.reason || p.keperluan || p.kategori || 'Izin Keluar Asrama',
+    pickup_by: p.pickup_by || p.pickupBy || p.penjemput || 'Wali Santri Mandiri',
+    start_date: p.start_date || p.startDate || (p.waktuKeluarRencana ? new Date(p.waktuKeluarRencana).toISOString() : new Date().toISOString()),
+    return_date: p.return_date || p.returnDate || (p.batasKembali ? new Date(p.batasKembali).toISOString() : null),
     status: p.status || 'PENDING',
-    musyrif_penyetuju: p.musyrifPenyetuju || p.musyrif_penyetuju || null,
-    waktu_approval: p.waktuApproval ? new Date(p.waktuApproval).toISOString() : null,
-    waktu_keluar_aktual: p.waktuKeluarAktual ? new Date(p.waktuKeluarAktual).toISOString() : null,
-    waktu_kembali_aktual: p.waktuKembaliAktual ? new Date(p.waktuKembaliAktual).toISOString() : null,
-    token_izin: p.tokenIzin || p.token_izin || `DU-${Date.now().toString().slice(-4)}`,
-    catatan_musyrif: p.catatanMusyrif || p.catatan_musyrif || ''
+    is_extension: Boolean(p.is_extension ?? p.isExtension ?? (p.status === 'EXTEND_REQUESTED')),
+    extension_reason: p.extension_reason || p.extensionReason || p.alasanPerpanjangan || null,
+    requested_return_date: p.requested_return_date || p.requestedReturnDate || (p.perpanjanganSampai ? new Date(p.perpanjanganSampai).toISOString() : null),
+    created_at: p.created_at || new Date().toISOString(),
+    updated_at: new Date().toISOString()
   };
 }
 
@@ -137,20 +137,82 @@ export function dbToPermit(row) {
   if (!row) return null;
   return {
     id: row.id,
+    permit_code: row.permit_code || row.token_izin || `DU-${row.id}`,
+    permitCode: row.permit_code,
+    tokenIzin: row.permit_code || row.token_izin || `DU-${row.id}`,
     santriId: row.santri_id,
-    santriNama: row.santri_nama,
-    kategori: row.kategori,
-    keperluan: row.keperluan,
-    penjemput: row.penjemput,
-    waktuKeluarRencana: row.waktu_keluar_rencana,
-    batasKembali: row.batas_kembali,
+    santri_id: row.santri_id,
+    santriNama: row.santri_name || row.santri_nama || '',
+    santri_name: row.santri_name || '',
+    kategori: row.reason ? (row.reason.includes('Pulang') ? 'Pulang Bermalam' : row.reason.includes('Sakit') ? 'Sakit' : row.reason.includes('Berobat') ? 'Izin Berobat' : 'Pesiar') : 'Pesiar',
+    keperluan: row.reason || '',
+    reason: row.reason || '',
+    penjemput: row.pickup_by || 'Wali Santri Mandiri',
+    pickup_by: row.pickup_by || 'Wali Santri Mandiri',
+    room_name: row.room_name || '',
+    kamar: row.room_name || '',
+    waktuKeluarRencana: row.start_date,
+    start_date: row.start_date,
+    batasKembali: row.return_date,
+    return_date: row.return_date,
     status: row.status,
-    musyrifPenyetuju: row.musyrif_penyetuju,
-    waktuApproval: row.waktu_approval,
-    waktuKeluarAktual: row.waktu_keluar_aktual,
-    waktuKembaliAktual: row.waktu_kembali_aktual,
-    tokenIzin: row.token_izin,
-    catatanMusyrif: row.catatan_musyrif
+    is_extension: Boolean(row.is_extension),
+    isExtension: Boolean(row.is_extension),
+    extension_reason: row.extension_reason,
+    extensionReason: row.extension_reason,
+    requested_return_date: row.requested_return_date,
+    requestedReturnDate: row.requested_return_date,
+    musyrifPenyetuju: row.status === 'APPROVED' ? 'Ust. M. Syukron, M.Pd.' : null,
+    waktuApproval: row.updated_at,
+    waktuKeluarAktual: row.status === 'DI_LUAR' || row.status === 'COMPLETED' ? row.start_date : null,
+    waktuKembaliAktual: row.status === 'COMPLETED' ? row.updated_at : null,
+    catatanMusyrif: row.extension_reason ? `Perpanjangan: ${row.extension_reason}` : '',
+    created_at: row.created_at,
+    updated_at: row.updated_at
+  };
+}
+
+export function messageToDb(m) {
+  if (!m) return null;
+  return {
+    id: m.id || `MSG-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    room_id: m.room_id || m.roomId || 'general',
+    sender_email: m.sender_email || m.senderEmail || '',
+    sender_name: m.sender_name || m.senderName || m.sender || 'Pengguna',
+    sender_role: m.sender_role || m.senderRole || 'Wali Santri',
+    receiver_role: m.receiver_role || m.receiverRole || 'ALL',
+    message_text: m.message_text || m.messageText || m.text || m.pesan || '',
+    reaction: typeof m.reaction === 'object' ? JSON.stringify(m.reaction) : (m.reaction || null),
+    is_read: Boolean(m.is_read ?? m.isRead),
+    created_at: m.created_at || m.timestamp || new Date().toISOString()
+  };
+}
+
+export function dbToMessage(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    roomId: row.room_id,
+    room_id: row.room_id,
+    senderEmail: row.sender_email,
+    sender_email: row.sender_email,
+    senderName: row.sender_name,
+    sender_name: row.sender_name,
+    sender: row.sender_name,
+    senderRole: row.sender_role,
+    sender_role: row.sender_role,
+    receiverRole: row.receiver_role,
+    receiver_role: row.receiver_role,
+    messageText: row.message_text,
+    message_text: row.message_text,
+    text: row.message_text,
+    pesan: row.message_text,
+    reaction: row.reaction,
+    isRead: Boolean(row.is_read),
+    is_read: Boolean(row.is_read),
+    createdAt: row.created_at,
+    created_at: row.created_at,
+    timestamp: row.created_at
   };
 }
 
@@ -471,6 +533,52 @@ export async function syncMutabaahToSupabase(record) {
   }
 }
 
+export async function syncMessageToSupabase(message) {
+  try {
+    const payload = messageToDb(message);
+    if (!payload) return { success: false, error: 'Empty payload' };
+    const { data, error } = await supabase.from('messages').insert([payload]);
+    if (error) {
+      console.warn('⚠️ [Supabase Sync Message]:', error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true, data };
+  } catch (err) {
+    console.warn('⚠️ [Supabase Sync Message Error]:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function updateMessageReactionInSupabase(messageId, reaction) {
+  try {
+    const { data, error } = await supabase
+      .from('messages')
+      .update({ reaction: typeof reaction === 'object' ? JSON.stringify(reaction) : reaction })
+      .eq('id', messageId);
+    if (error) throw error;
+    return { success: true, data };
+  } catch (err) {
+    console.warn('⚠️ [Supabase Update Reaction Error]:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function updatePermitStatusInSupabase(permitId, status, extra = {}) {
+  try {
+    const payload = {
+      status,
+      updated_at: new Date().toISOString(),
+      ...extra
+    };
+    const { data, error } = await supabase.from('permits').update(payload).eq('id', permitId);
+    if (error) throw error;
+    return { success: true, data };
+  } catch (err) {
+    console.warn('⚠️ [Supabase Update Permit Status Error]:', err);
+    return { success: false, error: err.message };
+  }
+}
+
 // ----------------------------------------------------------------------------
 // 3. FETCH SELURUH KATEGORI DATA AWAL DARI SUPABASE
 // ----------------------------------------------------------------------------
@@ -486,7 +594,8 @@ export async function fetchAllDataFromSupabase() {
     supabase.from('pelanggaran').select('*').order('created_at', { ascending: false }).limit(50),
     supabase.from('rekam_medis').select('*').order('created_at', { ascending: false }).limit(50),
     supabase.from('rfid_transactions').select('*').order('created_at', { ascending: false }).limit(50),
-    supabase.from('evaluasi_harian').select('*').order('tanggal', { ascending: false }).limit(50)
+    supabase.from('evaluasi_harian').select('*').order('tanggal', { ascending: false }).limit(50),
+    supabase.from('messages').select('*').order('created_at', { ascending: true }).limit(100)
   ]);
 
   const output = {};
@@ -515,6 +624,9 @@ export async function fetchAllDataFromSupabase() {
   if (results[7].status === 'fulfilled' && !results[7].value.error && results[7].value.data?.length > 0) {
     output.mutabaahList = results[7].value.data.map(dbToMutabaah);
   }
+  if (results[8].status === 'fulfilled' && !results[8].value.error && results[8].value.data?.length > 0) {
+    output.messages = results[8].value.data.map(dbToMessage);
+  }
 
   console.log('✅ [Supabase] Selesai sinkronisasi awal data:', Object.keys(output));
   return output;
@@ -526,7 +638,7 @@ export async function fetchAllDataFromSupabase() {
 
 export function subscribeToAllTablesRealtime(callbacks = {}) {
   const channel = supabase
-    .channel('smart-riayah-realtime-all')
+    .channel('web-realtime-sync')
     // 1. Santri
     .on(
       'postgres_changes',
@@ -545,7 +657,7 @@ export function subscribeToAllTablesRealtime(callbacks = {}) {
         if (callbacks.onRoomChange) callbacks.onRoomChange(payload);
       }
     )
-    // 3. Permits
+    // 3. Permits (Realtime 2-Arah Web & Mobile)
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'permits' },
@@ -554,7 +666,16 @@ export function subscribeToAllTablesRealtime(callbacks = {}) {
         if (callbacks.onPermitChange) callbacks.onPermitChange(payload);
       }
     )
-    // 4. Gate Logs
+    // 4. Messages (Live Chat & Emoji Reactions)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'messages' },
+      (payload) => {
+        console.log('⚡ [Realtime Messages]:', payload.eventType, payload.new || payload.old);
+        if (callbacks.onMessageChange) callbacks.onMessageChange(payload);
+      }
+    )
+    // 5. Gate Logs
     .on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'gate_logs' },
@@ -563,7 +684,7 @@ export function subscribeToAllTablesRealtime(callbacks = {}) {
         if (callbacks.onGateLogInsert) callbacks.onGateLogInsert(payload.new);
       }
     )
-    // 5. Pelanggaran / Discipline
+    // 6. Pelanggaran / Discipline
     .on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'pelanggaran' },
@@ -572,7 +693,7 @@ export function subscribeToAllTablesRealtime(callbacks = {}) {
         if (callbacks.onDisciplineInsert) callbacks.onDisciplineInsert(payload.new);
       }
     )
-    // 6. Rekam Medis
+    // 7. Rekam Medis
     .on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'rekam_medis' },
@@ -581,7 +702,7 @@ export function subscribeToAllTablesRealtime(callbacks = {}) {
         if (callbacks.onMedicalInsert) callbacks.onMedicalInsert(payload.new);
       }
     )
-    // 7. RFID Transactions
+    // 8. RFID Transactions
     .on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'rfid_transactions' },
@@ -591,7 +712,7 @@ export function subscribeToAllTablesRealtime(callbacks = {}) {
       }
     )
     .subscribe((status) => {
-      console.log('🌐 [Supabase Realtime Channel Status]:', status);
+      console.log('🌐 [Supabase Realtime Channel Status (web-realtime-sync)]:', status);
       if (callbacks.onStatusChange) callbacks.onStatusChange(status);
     });
 

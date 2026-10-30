@@ -222,9 +222,11 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
         _loadAllData();
         final newRecord = payload.newRecord;
         if (newRecord.isNotEmpty) {
-          final santriNama = newRecord['santri_nama']?.toString() ?? 'Santri';
+          final santriNama = newRecord['santri_name']?.toString() ??
+              newRecord['santri_nama']?.toString() ??
+              'Santri';
           final status = newRecord['status']?.toString() ?? '';
-          final catatan = newRecord['catatan_musyrif']?.toString() ?? '';
+          final isExtension = newRecord['is_extension'] == true;
           final role = widget.session.role;
 
           if (payload.eventType == PostgresChangeEvent.insert) {
@@ -235,26 +237,21 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
               );
             }
           } else if (payload.eventType == PostgresChangeEvent.update) {
-            if (catatan.contains('[PERPANJANGAN: PENDING]') &&
+            if ((status == 'EXTEND_REQUESTED' || isExtension) &&
                 (role == AppRole.musyrif || role == AppRole.adminRiayah || role == AppRole.superAdmin)) {
               NotificationService.showNotification(
                 title: '⏳ Permohonan Perpanjangan Izin',
-                body: 'Wali santri mengajukan perpanjangan izin untuk $santriNama.',
-              );
-            } else if (catatan.contains('[PERPANJANGAN: APPROVED]') && role == AppRole.wali) {
-              NotificationService.showNotification(
-                title: '✅ Perpanjangan Izin Disetujui',
-                body: 'Permohonan perpanjangan izin ananda $santriNama telah disetujui.',
-              );
-            } else if (catatan.contains('[PERPANJANGAN: REJECTED]') && role == AppRole.wali) {
-              NotificationService.showNotification(
-                title: '❌ Perpanjangan Izin Ditolak',
-                body: 'Permohonan perpanjangan izin ananda $santriNama tidak disetujui.',
+                body: 'Wali santri mengajukan perpanjangan masa izin untuk $santriNama.',
               );
             } else if (status == 'APPROVED' && role == AppRole.wali) {
               NotificationService.showNotification(
-                title: '✅ Izin Disetujui',
-                body: 'Surat izin ananda $santriNama telah disetujui oleh Musyrif.',
+                title: '✅ Izin / Perpanjangan Disetujui',
+                body: 'Permohonan izin / perpanjangan ananda $santriNama telah disetujui.',
+              );
+            } else if (status == 'REJECTED' && role == AppRole.wali) {
+              NotificationService.showNotification(
+                title: '❌ Izin / Perpanjangan Ditolak',
+                body: 'Permohonan izin / perpanjangan ananda $santriNama ditolak.',
               );
             }
           }
@@ -409,7 +406,7 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
   // ─── PERMIT APPROVAL ACTIONS (ADMIN & MUSYRIF) ─────────────────────────────
   Future<void> _updatePermitApproval(PermitModel permit, String newStatus) async {
     try {
-      final success = await SupabaseService.updatePermitStatus(
+      final res = await SupabaseService.updatePermitStatus(
         permitId: permit.id,
         status: newStatus,
         approverName: widget.session.namaLengkap,
@@ -431,7 +428,7 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
       );
 
       if (mounted) {
-        if (success) {
+        if (res['success'] == true) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Surat izin ${permit.santriNama} berhasil ditandai: $newStatus'),
@@ -439,9 +436,22 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
             ),
           );
           _loadAllData();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Gagal mengubah status izin: ${res['error'] ?? 'Terjadi kesalahan'}'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal memperbarui izin: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    }
   }
 
   // ─── PERMIT EXTENSION (PERPANJANGAN MASA IZIN/LIBURAN) ──────────────────────
@@ -592,14 +602,14 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
                           return;
                         }
                         Navigator.pop(ctx);
-                        final success = await SupabaseService.requestPermitExtension(
+                        final res = await SupabaseService.requestPermitExtension(
                           permitId: permit.id,
                           perpanjanganSampai: proposedDate,
                           alasan: reasonCtrl.text.trim(),
                           santriNama: permit.santriNama,
                         );
                         if (mounted) {
-                          if (success) {
+                          if (res['success'] == true) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                 content: Text('Permohonan perpanjangan berhasil diajukan ke pengurus asrama.'),
@@ -609,8 +619,8 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
                             _loadAllData();
                           } else {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Gagal mengajukan perpanjangan izin.'),
+                              SnackBar(
+                                content: Text('Gagal mengajukan perpanjangan izin: ${res['error'] ?? 'Terjadi kesalahan'}'),
                                 backgroundColor: Colors.redAccent,
                               ),
                             );
@@ -636,20 +646,29 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
 
   Future<void> _approveExtension(PermitModel permit) async {
     final newDate = permit.perpanjanganSampai ?? DateTime.now().add(const Duration(days: 1));
-    final success = await SupabaseService.approvePermitExtension(
+    final res = await SupabaseService.approvePermitExtension(
       permitId: permit.id,
       perpanjanganSampai: newDate,
       approverName: widget.session.namaLengkap,
       santriNama: permit.santriNama,
     );
-    if (mounted && success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Perpanjangan masa izin santri ${permit.santriNama} disetujui!'),
-          backgroundColor: const Color(0xFF047857),
-        ),
-      );
-      _loadAllData();
+    if (mounted) {
+      if (res['success'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Perpanjangan masa izin santri ${permit.santriNama} disetujui!'),
+            backgroundColor: const Color(0xFF047857),
+          ),
+        );
+        _loadAllData();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal menyetujui perpanjangan: ${res['error'] ?? 'Terjadi kesalahan'}'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     }
   }
 
@@ -684,20 +703,29 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
     );
 
     if (confirm == true) {
-      final success = await SupabaseService.rejectPermitExtension(
+      final res = await SupabaseService.rejectPermitExtension(
         permitId: permit.id,
         rejectReason: reasonCtrl.text.trim(),
         rejecterName: widget.session.namaLengkap,
         santriNama: permit.santriNama,
       );
-      if (mounted && success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Perpanjangan izin untuk ${permit.santriNama} ditolak.'),
-            backgroundColor: const Color(0xFFDC2626),
-          ),
-        );
-        _loadAllData();
+      if (mounted) {
+        if (res['success'] == true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Perpanjangan izin untuk ${permit.santriNama} ditolak.'),
+              backgroundColor: const Color(0xFFDC2626),
+            ),
+          );
+          _loadAllData();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Gagal menolak perpanjangan: ${res['error'] ?? 'Terjadi kesalahan'}'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
       }
     }
   }
@@ -717,28 +745,36 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
     final santriId = child?.id ?? 'S-001';
     final santriNama = child?.namaLengkap ?? 'Ahmad Fauzi';
 
-    final success = await SupabaseService.submitPermit(
+    final res = await SupabaseService.submitPermit(
       santriId: santriId,
       santriNama: santriNama,
       kategori: _permitKategoriCtrl.text,
       keperluan: _permitKeperluanCtrl.text.trim(),
       penjemput: _permitPenjemputCtrl.text.trim(),
       batasKembali: DateTime.now().add(const Duration(days: 2)),
+      roomName: child?.kamar ?? 'Asrama Putra',
     );
 
     if (!mounted) return;
     setState(() => _isSubmittingPermit = false);
 
-    if (success) {
+    if (res['success'] == true) {
       _permitKeperluanCtrl.clear();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Pengajuan izin digital berhasil dikirimkan ke Musyrif Asrama!'),
-          backgroundColor: Color(0xFF047857),
+        SnackBar(
+          content: Text('Pengajuan izin digital (${res['permitCode'] ?? 'DU-PERMIT'}) berhasil dikirimkan ke Musyrif Asrama!'),
+          backgroundColor: const Color(0xFF047857),
         ),
       );
       _loadAllData();
       setState(() => _activeMenuKey = 'dashboard');
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal mengajukan izin: ${res['error'] ?? 'Terjadi kesalahan'}'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
     }
   }
 

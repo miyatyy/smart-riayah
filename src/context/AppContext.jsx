@@ -28,7 +28,9 @@ import {
   dbToGateLog,
   dbToDiscipline,
   dbToMedical,
-  dbToRfidTransaction
+  dbToRfidTransaction,
+  dbToMessage,
+  syncMessageToSupabase
 } from '../utils/supabaseSync';
 import {
   INITIAL_SANTRI,
@@ -590,6 +592,22 @@ export const AppProvider = ({ children }) => {
         if (remoteData.medicalRecords?.length) setMedicalRecords(remoteData.medicalRecords);
         if (remoteData.rfidTransactions?.length) setRfidTransactions(remoteData.rfidTransactions);
         if (remoteData.mutabaahList?.length) setMutabaahList(remoteData.mutabaahList);
+        if (remoteData.messages?.length) {
+          const formatted = remoteData.messages.map(msg => ({
+            id: msg.id,
+            penerima: msg.receiverRole || 'Pesantren Darul Ulum',
+            nomor: msg.senderEmail || 'Mobile App',
+            tipe: 'LIVE_CHAT',
+            pesan: `${msg.senderName} (${msg.senderRole}): ${msg.messageText}`,
+            status: msg.isRead ? 'DELIVERED' : 'SENT',
+            waktu: new Date(msg.createdAt).toLocaleTimeString('id-ID'),
+            reaction: msg.reaction
+          }));
+          setWhatsappLogs(prev => {
+            const existingIds = new Set(formatted.map(f => f.id));
+            return [...formatted, ...prev.filter(p => !existingIds.has(p.id))];
+          });
+        }
       })
       .catch((err) => {
         console.warn('⚠️ Gagal fetch data awal Supabase (fallback ke cache):', err);
@@ -631,6 +649,29 @@ export const AppProvider = ({ children }) => {
           setPermits(prev => prev.map(p => p.id === item.id ? { ...p, ...item } : p));
         } else if (payload.eventType === 'DELETE' && payload.old) {
           setPermits(prev => prev.filter(p => p.id !== payload.old.id));
+        }
+      },
+      onMessageChange: (payload) => {
+        if (!isMounted) return;
+        if (payload.eventType === 'INSERT' && payload.new) {
+          const msg = dbToMessage(payload.new);
+          sound.playWhatsApp();
+          setWhatsappLogs(prev => [
+            {
+              id: msg.id,
+              penerima: msg.receiverRole || 'Pesantren Modern Darul Ulum',
+              nomor: msg.senderEmail || 'Mobile App',
+              tipe: 'LIVE_CHAT',
+              pesan: `${msg.senderName} (${msg.senderRole}): ${msg.messageText}`,
+              status: msg.isRead ? 'DELIVERED' : 'SENT',
+              waktu: new Date(msg.createdAt).toLocaleTimeString('id-ID'),
+              reaction: msg.reaction
+            },
+            ...prev.filter(m => m.id !== msg.id)
+          ]);
+        } else if (payload.eventType === 'UPDATE' && payload.new) {
+          const msg = dbToMessage(payload.new);
+          setWhatsappLogs(prev => prev.map(m => m.id === msg.id ? { ...m, reaction: msg.reaction, status: msg.isRead ? 'READ' : m.status } : m));
         }
       },
       onGateLogInsert: (row) => {
@@ -1087,7 +1128,7 @@ export const AppProvider = ({ children }) => {
     );
   };
 
-  // 2. Approve Permit (Role: Musyrif)
+  // 2. Approve Permit (Role: Musyrif & Admin)
   const approvePermit = (permitId, catatan = 'Disetujui. Harap jaga adab santri selama di luar pondok.', customBatasKembali = null) => {
     sound.playSuccess();
     try {
@@ -1098,10 +1139,16 @@ export const AppProvider = ({ children }) => {
     if (!permit) return;
     const santri = santriList.find(s => s.id === permit.santriId);
 
+    const isExtension = permit.status === 'EXTEND_REQUESTED' || permit.is_extension || permit.isExtension;
+    const finalBatasKembali = customBatasKembali || permit.requested_return_date || permit.requestedReturnDate || permit.batasKembali;
+
     const updatedPermit = {
       ...permit,
       status: 'APPROVED',
-      batasKembali: customBatasKembali || permit.batasKembali,
+      is_extension: false,
+      isExtension: false,
+      batasKembali: finalBatasKembali,
+      return_date: finalBatasKembali,
       musyrifPenyetuju: 'Ust. M. Syukron, M.Pd.',
       waktuApproval: getIsoNow(),
       catatanMusyrif: catatan
@@ -1116,11 +1163,14 @@ export const AppProvider = ({ children }) => {
     }));
 
     if (santri) {
+      const notifPesan = isExtension
+        ? `🕌 *[SMART PERMIT DARUL ULUM - PERPANJANGAN DISETUJUI]*\nAssalamu'alaikum Wali dari *${santri.nama}*, permohonan perpanjangan izin telah *DISETUJUI* sampai batas waktu baru: ${finalBatasKembali ? new Date(finalBatasKembali).toLocaleString('id-ID') : '-'}.`
+        : `🕌 *[SMART PERMIT DARUL ULUM - IZIN DISETUJUI]*\nAssalamu'alaikum Wali dari *${santri.nama}* (${santri.kelas || 'Santri'} / ${santri.kamar || 'Asrama'}), permohonan izin *${permit.kategori || permit.reason}* untuk keperluan *${permit.keperluan || permit.reason}* telah *DISETUJUI* oleh Musyrif. Santri sudah dapat melakukan Tap Kartu RFID di Smart Gate.`;
       sendWhatsAppNotification(
         `${santri.wali?.nama || 'Wali Santri'} (Wali ${santri.nama})`,
         santri.wali?.telepon || fonnteTargetNumber,
         'PERMIT_APPROVED',
-        `🕌 *[SMART PERMIT DARUL ULUM - IZIN DISETUJUI]*\nAssalamu'alaikum Wali dari *${santri.nama}* (${santri.kelas || 'Santri'} / ${santri.kamar || 'Asrama'}), permohonan izin *${permit.kategori}* untuk keperluan *${permit.keperluan}* telah *DISETUJUI* oleh Musyrif. Santri sudah dapat melakukan Tap Kartu RFID di Smart Gate.`
+        notifPesan
       );
     }
   };

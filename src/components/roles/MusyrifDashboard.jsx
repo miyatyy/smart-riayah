@@ -58,7 +58,7 @@ export default function MusyrifDashboard() {
     deskripsi: ''
   });
 
-  const pendingPermits = permits.filter(p => p.status === 'PENDING');
+  const pendingPermits = permits.filter(p => p.status === 'PENDING' || p.status === 'EXTEND_REQUESTED');
   const activePermits = permits.filter(p => p.status === 'ACTIVE' || p.status === 'APPROVED' || p.status === 'OVERDUE');
 
   // Calculate santri nearing return deadline (H-X minutes)

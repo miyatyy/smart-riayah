@@ -235,7 +235,7 @@ class SupabaseService {
 
   // ─── 3. PERMITS (PERIZINAN SANTRI) OPERATIONS ──────────────────────────────
 
-  /// Mengambil perizinan santri
+  /// Mengambil perizinan santri dari tabel public.permits
   static Future<List<PermitModel>> getPermitsList({String? santriId}) async {
     try {
       var query = _client.from('permits').select('*');
@@ -251,43 +251,48 @@ class SupabaseService {
     }
   }
 
-  /// Mengajukan izin baru
-  static Future<bool> submitPermit({
+  /// Mengajukan izin baru ke tabel public.permits
+  static Future<Map<String, dynamic>> submitPermit({
     required String santriId,
     required String santriNama,
     required String kategori,
     required String keperluan,
     required String penjemput,
     required DateTime batasKembali,
+    String roomName = '',
   }) async {
     try {
-      final id = 'PRM-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}';
-      final token = 'DU-PERMIT-${DateTime.now().millisecondsSinceEpoch.toString().substring(9)}';
+      final id = 'PRM-${DateTime.now().millisecondsSinceEpoch}';
+      final permitCode = 'DU-PERMIT-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
 
       final payload = {
         'id': id,
+        'permit_code': permitCode,
         'santri_id': santriId,
-        'santri_nama': santriNama,
-        'kategori': kategori,
-        'keperluan': keperluan,
-        'penjemput': penjemput,
-        'batas_kembali': batasKembali.toIso8601String(),
+        'santri_name': santriNama,
+        'room_name': roomName,
+        'reason': '$kategori: $keperluan',
+        'pickup_by': penjemput,
+        'start_date': DateTime.now().toIso8601String(),
+        'return_date': batasKembali.toIso8601String(),
         'status': 'PENDING',
-        'token_izin': token,
+        'is_extension': false,
+        'extension_reason': null,
+        'requested_return_date': null,
         'created_at': DateTime.now().toIso8601String(),
         'updated_at': DateTime.now().toIso8601String(),
       };
 
       await _client.from('permits').insert(payload);
-      return true;
+      return {'success': true, 'id': id, 'permitCode': permitCode};
     } catch (e) {
       print('❌ [SupabaseService submitPermit] Error: $e');
-      return false;
+      return {'success': false, 'error': e.toString()};
     }
   }
 
-  /// Memperbarui status izin santri (APPROVED, REJECTED, ACTIVE, COMPLETED, dll)
-  static Future<bool> updatePermitStatus({
+  /// Memperbarui status izin santri (APPROVED, REJECTED, DI_LUAR, COMPLETED, dll)
+  static Future<Map<String, dynamic>> updatePermitStatus({
     required String permitId,
     required String status,
     String? approverName,
@@ -296,36 +301,33 @@ class SupabaseService {
     try {
       final Map<String, dynamic> payload = {
         'status': status.toUpperCase(),
+        'is_extension': false,
         'updated_at': DateTime.now().toIso8601String(),
       };
-      if (approverName != null) {
-        payload['musyrif_penyetuju'] = approverName;
-        payload['waktu_approval'] = DateTime.now().toIso8601String();
-      }
-      if (catatan != null) {
-        payload['catatan_musyrif'] = catatan;
-      }
       await _client.from('permits').update(payload).eq('id', permitId);
-      return true;
+      return {'success': true};
     } catch (e) {
       print('❌ [SupabaseService updatePermitStatus] Error: $e');
-      return false;
+      return {'success': false, 'error': e.toString()};
     }
   }
 
   /// Mengajukan perpanjangan masa izin / liburan oleh Wali Santri
-  static Future<bool> requestPermitExtension({
+  static Future<Map<String, dynamic>> requestPermitExtension({
     required String permitId,
     required DateTime perpanjanganSampai,
     required String alasan,
     String? santriNama,
   }) async {
     try {
-      final note = '[PERPANJANGAN: PENDING] Sampai: ${perpanjanganSampai.toIso8601String()} | Alasan: $alasan';
-      await _client.from('permits').update({
-        'catatan_musyrif': note,
+      final payload = {
+        'status': 'EXTEND_REQUESTED',
+        'is_extension': true,
+        'extension_reason': alasan,
+        'requested_return_date': perpanjanganSampai.toIso8601String(),
         'updated_at': DateTime.now().toIso8601String(),
-      }).eq('id', permitId);
+      };
+      await _client.from('permits').update(payload).eq('id', permitId);
 
       // Broadcast notifikasi via Realtime Channel 'whatsapp-room'
       await sendRealtimeBroadcast(
@@ -341,28 +343,28 @@ class SupabaseService {
         },
       );
 
-      return true;
+      return {'success': true};
     } catch (e) {
       print('❌ [SupabaseService requestPermitExtension] Error: $e');
-      return false;
+      return {'success': false, 'error': e.toString()};
     }
   }
 
   /// Menyetujui perpanjangan masa izin / liburan (Musyrif / Admin / Super Admin)
-  static Future<bool> approvePermitExtension({
+  static Future<Map<String, dynamic>> approvePermitExtension({
     required String permitId,
     required DateTime perpanjanganSampai,
     required String approverName,
     String? santriNama,
   }) async {
     try {
-      final note = '[PERPANJANGAN: APPROVED] Disetujui sampai: ${perpanjanganSampai.toIso8601String()} oleh $approverName';
-      await _client.from('permits').update({
-        'batas_kembali': perpanjanganSampai.toIso8601String(),
-        'catatan_musyrif': note,
-        'musyrif_penyetuju': approverName,
+      final payload = {
+        'status': 'APPROVED',
+        'is_extension': false,
+        'return_date': perpanjanganSampai.toIso8601String(),
         'updated_at': DateTime.now().toIso8601String(),
-      }).eq('id', permitId);
+      };
+      await _client.from('permits').update(payload).eq('id', permitId);
 
       // Broadcast notifikasi
       await sendRealtimeBroadcast(
@@ -378,26 +380,28 @@ class SupabaseService {
         },
       );
 
-      return true;
+      return {'success': true};
     } catch (e) {
       print('❌ [SupabaseService approvePermitExtension] Error: $e');
-      return false;
+      return {'success': false, 'error': e.toString()};
     }
   }
 
   /// Menolak perpanjangan masa izin / liburan
-  static Future<bool> rejectPermitExtension({
+  static Future<Map<String, dynamic>> rejectPermitExtension({
     required String permitId,
     required String rejectReason,
     required String rejecterName,
     String? santriNama,
   }) async {
     try {
-      final note = '[PERPANJANGAN: REJECTED] Ditolak oleh $rejecterName. Catatan: $rejectReason';
-      await _client.from('permits').update({
-        'catatan_musyrif': note,
+      final payload = {
+        'status': 'APPROVED', // Tetap approved sebelumnya, status perpanjangan selesai
+        'is_extension': false,
+        'extension_reason': 'Ditolak: $rejectReason',
         'updated_at': DateTime.now().toIso8601String(),
-      }).eq('id', permitId);
+      };
+      await _client.from('permits').update(payload).eq('id', permitId);
 
       // Broadcast notifikasi
       await sendRealtimeBroadcast(
@@ -413,10 +417,10 @@ class SupabaseService {
         },
       );
 
-      return true;
+      return {'success': true};
     } catch (e) {
       print('❌ [SupabaseService rejectPermitExtension] Error: $e');
-      return false;
+      return {'success': false, 'error': e.toString()};
     }
   }
 
@@ -458,7 +462,24 @@ class SupabaseService {
         'updated_at': DateTime.now().toIso8601String(),
       }).eq('id', santriId);
 
-      // 4. Catat ke tabel gate_logs
+      // 4. Update status izin di public.permits
+      if (isExiting) {
+        try {
+          await _client.from('permits').update({
+            'status': 'DI_LUAR',
+            'updated_at': DateTime.now().toIso8601String(),
+          }).eq('santri_id', santriId).eq('status', 'APPROVED');
+        } catch (_) {}
+      } else {
+        try {
+          await _client.from('permits').update({
+            'status': 'COMPLETED',
+            'updated_at': DateTime.now().toIso8601String(),
+          }).eq('santri_id', santriId).inFilter('status', ['DI_LUAR', 'APPROVED', 'EXTEND_REQUESTED']);
+        } catch (_) {}
+      }
+
+      // 5. Catat ke tabel gate_logs
       final logId = 'LOG-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}';
       await _client.from('gate_logs').insert({
         'id': logId,
@@ -491,7 +512,73 @@ class SupabaseService {
     }
   }
 
-  // ─── 5. SUPABASE REALTIME SUBSCRIPTIONS ─────────────────────────────────────
+  // ─── 5. MESSAGES (LIVE CHAT & EMOJI REACTIONS) ─────────────────────────────
+
+  /// Mengambil riwayat pesan dari tabel public.messages
+  static Future<List<Map<String, dynamic>>> getMessagesList({String roomId = 'general'}) async {
+    try {
+      final response = await _client
+          .from('messages')
+          .select('*')
+          .eq('room_id', roomId)
+          .order('created_at', ascending: true)
+          .limit(100);
+      final List<dynamic> data = response as List<dynamic>;
+      return data.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+    } catch (e) {
+      print('❌ [SupabaseService getMessagesList] Error: $e');
+      return [];
+    }
+  }
+
+  /// Mengirim pesan baru ke tabel public.messages
+  static Future<Map<String, dynamic>> sendMessage({
+    required String text,
+    required String senderEmail,
+    required String senderName,
+    required String senderRole,
+    String roomId = 'general',
+    String receiverRole = 'ALL',
+  }) async {
+    try {
+      final id = 'MSG-${DateTime.now().millisecondsSinceEpoch}-${(100 + (DateTime.now().microsecond % 900))}';
+      final payload = {
+        'id': id,
+        'room_id': roomId,
+        'sender_email': senderEmail,
+        'sender_name': senderName,
+        'sender_role': senderRole,
+        'receiver_role': receiverRole,
+        'message_text': text,
+        'reaction': null,
+        'is_read': false,
+        'created_at': DateTime.now().toIso8601String(),
+      };
+      await _client.from('messages').insert(payload);
+      return {'success': true, 'id': id};
+    } catch (e) {
+      print('❌ [SupabaseService sendMessage] Error: $e');
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  /// Memperbarui reaksi emoji pesan di tabel public.messages
+  static Future<Map<String, dynamic>> updateMessageReaction({
+    required String messageId,
+    required String reaction,
+  }) async {
+    try {
+      await _client.from('messages').update({
+        'reaction': reaction,
+      }).eq('id', messageId);
+      return {'success': true};
+    } catch (e) {
+      print('❌ [SupabaseService updateMessageReaction] Error: $e');
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  // ─── 6. SUPABASE REALTIME SUBSCRIPTIONS ─────────────────────────────────────
 
   /// Berlangganan perubahan data tabel secara Realtime
   static RealtimeChannel subscribeTableChanges({

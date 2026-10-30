@@ -4,13 +4,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/supabase_config.dart';
 import '../models/user_session_model.dart';
 import '../services/notification_service.dart';
+import '../services/supabase_service.dart';
 
 /**
  * ============================================================================
  * SMART RI'AYAH MOBILE - WHATSAPP-STYLE LIVE CHAT WEBSOCKET COMPONENT
  * Channel Realtime Supabase: 'whatsapp-room' (Broadcast & Postgres Changes)
  * Fitur:
- * 1. Pesan Instan Real-Time (WebSocket Channel Broadcast)
+ * 1. Pesan Instan Real-Time (WebSocket Channel Broadcast & PostgreSQL Changes)
  * 2. Indikator Sent (✓) & Read (✓✓)
  * 3. Indikator "Sedang mengetik..." (Typing indicator via WebSocket)
  * 4. Emoji Reactions Bar (👍, ❤️, 🙏, 😢, ✅, 🤲) dengan counter di bubble
@@ -40,33 +41,38 @@ class ChatMessageItem {
     Map<String, int>? reactions,
   }) : reactions = reactions ?? {};
 
-  factory ChatMessageItem.fromMap(Map<String, dynamic> map, String currentUserName) {
-    final senderName = map['sender']?.toString() ?? 'Pengguna';
-    final isMe = senderName.trim().toLowerCase() == currentUserName.trim().toLowerCase();
+  factory ChatMessageItem.fromMap(Map<String, dynamic> map, String currentUserName, {String? currentEmail}) {
+    final senderEmail = map['sender_email']?.toString();
+    final senderName = map['sender_name']?.toString() ?? map['sender']?.toString() ?? 'Pengguna';
+    final isMe = (currentEmail != null && senderEmail != null && senderEmail.toLowerCase() == currentEmail.toLowerCase()) ||
+                 (senderName.trim().toLowerCase() == currentUserName.trim().toLowerCase());
     
     DateTime time;
-    if (map['timestamp'] != null) {
+    if (map['created_at'] != null) {
+      time = DateTime.tryParse(map['created_at'].toString()) ?? DateTime.now();
+    } else if (map['timestamp'] != null) {
       time = DateTime.tryParse(map['timestamp'].toString()) ?? DateTime.now();
     } else {
       time = DateTime.now();
     }
 
-    final rawReactions = map['reactions'];
     final Map<String, int> reactionMap = {};
-    if (rawReactions is Map) {
-      rawReactions.forEach((k, v) {
+    if (map['reactions'] is Map) {
+      (map['reactions'] as Map).forEach((k, v) {
         reactionMap[k.toString()] = int.tryParse(v.toString()) ?? 1;
       });
+    } else if (map['reaction'] != null && map['reaction'].toString().isNotEmpty && map['reaction'] != 'null') {
+      reactionMap[map['reaction'].toString()] = 1;
     }
 
     return ChatMessageItem(
       id: map['id']?.toString() ?? 'MSG-${DateTime.now().millisecondsSinceEpoch}',
       sender: senderName,
-      senderRole: map['senderRole']?.toString() ?? 'Wali Santri',
-      text: map['text']?.toString() ?? '',
+      senderRole: map['sender_role']?.toString() ?? map['senderRole']?.toString() ?? 'Wali Santri',
+      text: map['message_text']?.toString() ?? map['text']?.toString() ?? '',
       timestamp: time,
       isMe: isMe,
-      isRead: map['isRead'] == true || isMe,
+      isRead: map['is_read'] == true || map['isRead'] == true || isMe,
       reactions: reactionMap,
     );
   }
@@ -122,7 +128,29 @@ class _WhatsAppLiveChatViewState extends State<WhatsAppLiveChatView> {
   void initState() {
     super.initState();
     _initDefaultConversation();
+    _loadInitialMessages();
     _connectRealtimeChat();
+  }
+
+  Future<void> _loadInitialMessages() async {
+    try {
+      final dbMsgs = await SupabaseService.getMessagesList();
+      if (mounted && dbMsgs.isNotEmpty) {
+        setState(() {
+          _messages.clear();
+          for (final row in dbMsgs) {
+            _messages.add(ChatMessageItem.fromMap(
+              row,
+              widget.session.namaLengkap,
+              currentEmail: widget.session.email,
+            ));
+          }
+        });
+        _scrollToBottom();
+      }
+    } catch (e) {
+      print('❌ [WhatsAppLiveChatView] Gagal mengambil riwayat pesan: $e');
+    }
   }
 
   void _initDefaultConversation() {
@@ -178,31 +206,34 @@ class _WhatsAppLiveChatViewState extends State<WhatsAppLiveChatView> {
     }
   }
 
-  /// Menghubungkan ke Supabase Realtime Channel: 'whatsapp-room'
+  /// Menghubungkan ke Supabase Realtime Channel: 'whatsapp-room' & tabel 'messages'
   void _connectRealtimeChat() {
     try {
       _chatChannel = SupabaseConfig.client.channel('whatsapp-room');
 
-      // 1. Dengarkan Pesan Masuk Realtime
+      // 1. Dengarkan Pesan Masuk Realtime via Broadcast
       _chatChannel?.onBroadcast(
         event: 'whatsapp.incoming',
         callback: (payload) {
           if (!mounted) return;
-          final msg = ChatMessageItem.fromMap(payload, widget.session.namaLengkap);
+          final msg = ChatMessageItem.fromMap(payload, widget.session.namaLengkap, currentEmail: widget.session.email);
 
-          // Cek jika pesan bukan dari kita sendiri
+          // Cek jika pesan bukan dari kita sendiri dan belum ada di list
           if (!msg.isMe) {
-            setState(() {
-              _messages.add(msg);
-            });
-            _scrollToBottom();
+            final exists = _messages.any((m) => m.id == msg.id);
+            if (!exists) {
+              setState(() {
+                _messages.add(msg);
+              });
+              _scrollToBottom();
 
-            // Picu Push Notification lokal (Heads-up banner)
-            NotificationService.showNotification(
-              title: '💬 Pesan dari ${msg.sender} (${msg.senderRole})',
-              body: msg.text,
-              payload: 'chat:${msg.id}',
-            );
+              // Picu Push Notification lokal (Heads-up banner)
+              NotificationService.showNotification(
+                title: '💬 Pesan dari ${msg.sender} (${msg.senderRole})',
+                body: msg.text,
+                payload: 'chat:${msg.id}',
+              );
+            }
           }
         },
       );
@@ -231,7 +262,7 @@ class _WhatsAppLiveChatViewState extends State<WhatsAppLiveChatView> {
         },
       );
 
-      // 3. Dengarkan Reaksi Emoji Pesan Realtime
+      // 3. Dengarkan Reaksi Emoji Pesan Realtime via Broadcast
       _chatChannel?.onBroadcast(
         event: 'whatsapp.reaction',
         callback: (payload) {
@@ -260,8 +291,63 @@ class _WhatsAppLiveChatViewState extends State<WhatsAppLiveChatView> {
         },
       );
 
+      // 4. Dengarkan Perubahan Database PostgreSQL tabel public.messages
+      _chatChannel?.onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'messages',
+        callback: (payload) {
+          if (!mounted) return;
+          final newRecord = payload.newRecord;
+          if (newRecord.isEmpty) return;
+
+          final msgId = newRecord['id']?.toString();
+          if (payload.eventType == PostgresChangeEvent.insert) {
+            final msg = ChatMessageItem.fromMap(
+              newRecord,
+              widget.session.namaLengkap,
+              currentEmail: widget.session.email,
+            );
+            final existingIdx = _messages.indexWhere((m) => m.id == msg.id);
+            if (existingIdx == -1) {
+              setState(() {
+                _messages.add(msg);
+              });
+              _scrollToBottom();
+
+              if (!msg.isMe) {
+                NotificationService.showNotification(
+                  title: '💬 Pesan dari ${msg.sender} (${msg.senderRole})',
+                  body: msg.text,
+                  payload: 'chat:${msg.id}',
+                );
+              }
+            }
+          } else if (payload.eventType == PostgresChangeEvent.update) {
+            final existingIdx = _messages.indexWhere((m) => m.id == msgId);
+            final reaction = newRecord['reaction']?.toString();
+            final isRead = newRecord['is_read'] == true;
+            if (existingIdx != -1) {
+              setState(() {
+                if (reaction != null && reaction.isNotEmpty && reaction != 'null') {
+                  _messages[existingIdx].reactions[reaction] = (_messages[existingIdx].reactions[reaction] ?? 0) + 1;
+                }
+                _messages[existingIdx].isRead = isRead || _messages[existingIdx].isMe;
+              });
+
+              if (_messages[existingIdx].isMe && reaction != null && reaction.isNotEmpty && reaction != 'null') {
+                NotificationService.showNotification(
+                  title: '✨ Reaksi Pesan Baru',
+                  body: 'Seseorang memberikan reaksi $reaction pada pesan Anda: "${_messages[existingIdx].text}"',
+                );
+              }
+            }
+          }
+        },
+      );
+
       _chatChannel?.subscribe();
-      print('✅ [WhatsAppLiveChatView] Terhubung ke Supabase Realtime whatsapp-room.');
+      print('✅ [WhatsAppLiveChatView] Terhubung ke Supabase Realtime whatsapp-room & tabel messages.');
     } catch (e) {
       print('❌ [WhatsAppLiveChatView] Gagal subscribe realtime chat: $e');
     }
@@ -291,12 +377,12 @@ class _WhatsAppLiveChatViewState extends State<WhatsAppLiveChatView> {
     });
   }
 
-  /// Mengirim pesan chat instan via WebSocket Broadcast
+  /// Mengirim pesan chat instan via Database PostgreSQL & WebSocket Broadcast
   void _sendMessage([String? prefilledText]) {
     final text = prefilledText ?? _textCtrl.text.trim();
     if (text.isEmpty) return;
 
-    final newId = 'MSG-${DateTime.now().millisecondsSinceEpoch}';
+    final newId = 'MSG-${DateTime.now().millisecondsSinceEpoch}-${100 + (DateTime.now().microsecond % 900)}';
     final now = DateTime.now();
 
     final newMsg = ChatMessageItem(
@@ -316,13 +402,21 @@ class _WhatsAppLiveChatViewState extends State<WhatsAppLiveChatView> {
 
     _scrollToBottom();
 
-    // Broadcast pesan via Supabase Realtime ke seluruh subscriber (Web & Mobile)
+    // 1. Simpan langsung ke PostgreSQL tabel public.messages
+    SupabaseService.sendMessage(
+      text: text,
+      senderEmail: widget.session.email ?? '${widget.session.username}@pesantren.id',
+      senderName: widget.session.namaLengkap,
+      senderRole: widget.session.role.title,
+    );
+
+    // 2. Broadcast pesan via Supabase Realtime ke seluruh subscriber (Web & Mobile)
     _chatChannel?.sendBroadcastMessage(
       event: 'whatsapp.incoming',
       payload: newMsg.toMap(),
     );
 
-    // Stop status typing
+    // 3. Stop status typing
     _chatChannel?.sendBroadcastMessage(
       event: 'whatsapp.typing',
       payload: {
@@ -348,7 +442,13 @@ class _WhatsAppLiveChatViewState extends State<WhatsAppLiveChatView> {
       msg.reactions[emoji] = currentCount + 1;
     });
 
-    // Broadcast reaksi via WebSocket Realtime
+    // 1. Simpan reaksi ke tabel public.messages Supabase
+    SupabaseService.updateMessageReaction(
+      messageId: msg.id,
+      reaction: emoji,
+    );
+
+    // 2. Broadcast reaksi via WebSocket Realtime
     _chatChannel?.sendBroadcastMessage(
       event: 'whatsapp.reaction',
       payload: {
@@ -538,7 +638,7 @@ class _WhatsAppLiveChatViewState extends State<WhatsAppLiveChatView> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Text(
-                    'WebSocket Live',
+                    'Aktif',
                     style: TextStyle(
                       fontSize: 9.5,
                       fontWeight: FontWeight.bold,
