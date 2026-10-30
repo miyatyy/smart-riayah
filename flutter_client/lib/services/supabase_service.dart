@@ -286,6 +286,144 @@ class SupabaseService {
     }
   }
 
+  /// Memperbarui status izin santri (APPROVED, REJECTED, ACTIVE, COMPLETED, dll)
+  static Future<bool> updatePermitStatus({
+    required String permitId,
+    required String status,
+    String? approverName,
+    String? catatan,
+  }) async {
+    try {
+      final Map<String, dynamic> payload = {
+        'status': status.toUpperCase(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      if (approverName != null) {
+        payload['musyrif_penyetuju'] = approverName;
+        payload['waktu_approval'] = DateTime.now().toIso8601String();
+      }
+      if (catatan != null) {
+        payload['catatan_musyrif'] = catatan;
+      }
+      await _client.from('permits').update(payload).eq('id', permitId);
+      return true;
+    } catch (e) {
+      print('❌ [SupabaseService updatePermitStatus] Error: $e');
+      return false;
+    }
+  }
+
+  /// Mengajukan perpanjangan masa izin / liburan oleh Wali Santri
+  static Future<bool> requestPermitExtension({
+    required String permitId,
+    required DateTime perpanjanganSampai,
+    required String alasan,
+    String? santriNama,
+  }) async {
+    try {
+      final note = '[PERPANJANGAN: PENDING] Sampai: ${perpanjanganSampai.toIso8601String()} | Alasan: $alasan';
+      await _client.from('permits').update({
+        'catatan_musyrif': note,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', permitId);
+
+      // Broadcast notifikasi via Realtime Channel 'whatsapp-room'
+      await sendRealtimeBroadcast(
+        channelName: 'whatsapp-room',
+        event: 'whatsapp.notification',
+        payload: {
+          'id': 'NOTIF-${DateTime.now().millisecondsSinceEpoch}',
+          'title': 'Permohonan Perpanjangan Izin',
+          'message': 'Wali dari ${santriNama ?? "Santri"} mengajukan perpanjangan izin sampai ${_formatDate(perpanjanganSampai)}: $alasan',
+          'type': 'EXTENSION_REQUEST',
+          'permitId': permitId,
+          'timestamp': DateTime.now().toIso8601String(),
+        },
+      );
+
+      return true;
+    } catch (e) {
+      print('❌ [SupabaseService requestPermitExtension] Error: $e');
+      return false;
+    }
+  }
+
+  /// Menyetujui perpanjangan masa izin / liburan (Musyrif / Admin / Super Admin)
+  static Future<bool> approvePermitExtension({
+    required String permitId,
+    required DateTime perpanjanganSampai,
+    required String approverName,
+    String? santriNama,
+  }) async {
+    try {
+      final note = '[PERPANJANGAN: APPROVED] Disetujui sampai: ${perpanjanganSampai.toIso8601String()} oleh $approverName';
+      await _client.from('permits').update({
+        'batas_kembali': perpanjanganSampai.toIso8601String(),
+        'catatan_musyrif': note,
+        'musyrif_penyetuju': approverName,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', permitId);
+
+      // Broadcast notifikasi
+      await sendRealtimeBroadcast(
+        channelName: 'whatsapp-room',
+        event: 'whatsapp.notification',
+        payload: {
+          'id': 'NOTIF-${DateTime.now().millisecondsSinceEpoch}',
+          'title': 'Perpanjangan Izin Disetujui',
+          'message': 'Permohonan perpanjangan izin santri ${santriNama ?? ""} telah disetujui sampai ${_formatDate(perpanjanganSampai)} oleh $approverName.',
+          'type': 'EXTENSION_APPROVED',
+          'permitId': permitId,
+          'timestamp': DateTime.now().toIso8601String(),
+        },
+      );
+
+      return true;
+    } catch (e) {
+      print('❌ [SupabaseService approvePermitExtension] Error: $e');
+      return false;
+    }
+  }
+
+  /// Menolak perpanjangan masa izin / liburan
+  static Future<bool> rejectPermitExtension({
+    required String permitId,
+    required String rejectReason,
+    required String rejecterName,
+    String? santriNama,
+  }) async {
+    try {
+      final note = '[PERPANJANGAN: REJECTED] Ditolak oleh $rejecterName. Catatan: $rejectReason';
+      await _client.from('permits').update({
+        'catatan_musyrif': note,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', permitId);
+
+      // Broadcast notifikasi
+      await sendRealtimeBroadcast(
+        channelName: 'whatsapp-room',
+        event: 'whatsapp.notification',
+        payload: {
+          'id': 'NOTIF-${DateTime.now().millisecondsSinceEpoch}',
+          'title': 'Perpanjangan Izin Ditolak',
+          'message': 'Permohonan perpanjangan izin santri ${santriNama ?? ""} ditolak oleh $rejecterName: $rejectReason',
+          'type': 'EXTENSION_REJECTED',
+          'permitId': permitId,
+          'timestamp': DateTime.now().toIso8601String(),
+        },
+      );
+
+      return true;
+    } catch (e) {
+      print('❌ [SupabaseService rejectPermitExtension] Error: $e');
+      return false;
+    }
+  }
+
+  static String _formatDate(DateTime dt) {
+    return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
   // ─── 4. RFID GATE SIMULATION & LOGGING ──────────────────────────────────────
 
   /// Mencatat event tap kartu RFID di gerbang
@@ -371,6 +509,25 @@ class SupabaseService {
     );
     channel.subscribe();
     return channel;
+  }
+
+  /// Mengirimkan pesan broadcast ke Supabase Realtime Channel
+  static Future<bool> sendRealtimeBroadcast({
+    required String channelName,
+    required String event,
+    required Map<String, dynamic> payload,
+  }) async {
+    try {
+      final channel = _client.channel(channelName);
+      await channel.sendBroadcastMessage(
+        event: event,
+        payload: payload,
+      );
+      return true;
+    } catch (e) {
+      print('❌ [SupabaseService sendRealtimeBroadcast] Error: $e');
+      return false;
+    }
   }
 }
 

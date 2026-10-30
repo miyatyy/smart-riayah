@@ -478,25 +478,29 @@ class AppDrawer extends StatelessWidget {
                     ),
                   ],
                   const SizedBox(height: 10),
-                  // Supabase Realtime Live Indicator
+                  // Clean Enterprise Account Status
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFECFDF5),
+                      color: const Color(0xFFF1F5F9),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFA7F3D0)),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        CircleAvatar(radius: 3.5, backgroundColor: Color(0xFF10B981)),
-                        SizedBox(width: 6),
-                        Text(
-                          'Supabase Realtime • RBAC Aktif',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF065F46),
+                        const CircleAvatar(radius: 3.5, backgroundColor: Color(0xFF10B981)),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            session.email ?? 'Aktif Terhubung',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF475569),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],

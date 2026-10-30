@@ -16,6 +16,8 @@ import '../widgets/mudir_charts.dart';
 import 'admin/onboarding_santri_screen.dart';
 import 'admin/manage_rooms_screen.dart';
 import 'auth/login_screen.dart';
+import '../widgets/whatsapp_live_chat_view.dart';
+import '../services/notification_service.dart';
 
 /**
  * ============================================================================
@@ -63,6 +65,7 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
   RealtimeChannel? _roomsChannel;
   RealtimeChannel? _santriChannel;
   RealtimeChannel? _permitsChannel;
+  RealtimeChannel? _notificationBroadcastChannel;
 
   // AI Assistant Chat State
   final TextEditingController _aiPromptCtrl = TextEditingController();
@@ -103,6 +106,9 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
     _roomsChannel?.unsubscribe();
     _santriChannel?.unsubscribe();
     _permitsChannel?.unsubscribe();
+    if (_notificationBroadcastChannel != null) {
+      SupabaseConfig.client.removeChannel(_notificationBroadcastChannel!);
+    }
     _aiPromptCtrl.dispose();
     _chatMsgCtrl.dispose();
     _permitKategoriCtrl.dispose();
@@ -212,8 +218,66 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
     );
     _permitsChannel = SupabaseService.subscribeTableChanges(
       tableName: 'permits',
-      onChange: (_) => _loadAllData(),
+      onChange: (payload) {
+        _loadAllData();
+        final newRecord = payload.newRecord;
+        if (newRecord.isNotEmpty) {
+          final santriNama = newRecord['santri_nama']?.toString() ?? 'Santri';
+          final status = newRecord['status']?.toString() ?? '';
+          final catatan = newRecord['catatan_musyrif']?.toString() ?? '';
+          final role = widget.session.role;
+
+          if (payload.eventType == PostgresChangeEvent.insert) {
+            if (role == AppRole.musyrif || role == AppRole.adminRiayah || role == AppRole.superAdmin) {
+              NotificationService.showNotification(
+                title: '📋 Pengajuan Izin Baru',
+                body: 'Surat izin baru diajukan untuk $santriNama ($status).',
+              );
+            }
+          } else if (payload.eventType == PostgresChangeEvent.update) {
+            if (catatan.contains('[PERPANJANGAN: PENDING]') &&
+                (role == AppRole.musyrif || role == AppRole.adminRiayah || role == AppRole.superAdmin)) {
+              NotificationService.showNotification(
+                title: '⏳ Permohonan Perpanjangan Izin',
+                body: 'Wali santri mengajukan perpanjangan izin untuk $santriNama.',
+              );
+            } else if (catatan.contains('[PERPANJANGAN: APPROVED]') && role == AppRole.wali) {
+              NotificationService.showNotification(
+                title: '✅ Perpanjangan Izin Disetujui',
+                body: 'Permohonan perpanjangan izin ananda $santriNama telah disetujui.',
+              );
+            } else if (catatan.contains('[PERPANJANGAN: REJECTED]') && role == AppRole.wali) {
+              NotificationService.showNotification(
+                title: '❌ Perpanjangan Izin Ditolak',
+                body: 'Permohonan perpanjangan izin ananda $santriNama tidak disetujui.',
+              );
+            } else if (status == 'APPROVED' && role == AppRole.wali) {
+              NotificationService.showNotification(
+                title: '✅ Izin Disetujui',
+                body: 'Surat izin ananda $santriNama telah disetujui oleh Musyrif.',
+              );
+            }
+          }
+        }
+      },
     );
+
+    // Channel Broadcast 'whatsapp-room' untuk Live Push Notifications
+    try {
+      _notificationBroadcastChannel = SupabaseConfig.client.channel('whatsapp-room');
+      _notificationBroadcastChannel?.onBroadcast(
+        event: 'whatsapp.notification',
+        callback: (payload) {
+          final title = payload['title']?.toString() ?? 'Pemberitahuan Ri\'ayah';
+          final message = payload['message']?.toString() ?? '';
+          NotificationService.showNotification(
+            title: title,
+            body: message,
+          );
+        },
+      );
+      _notificationBroadcastChannel?.subscribe();
+    } catch (_) {}
   }
 
   /// Mengambil santri milik wali santri yang sedang login
@@ -345,21 +409,297 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
   // ─── PERMIT APPROVAL ACTIONS (ADMIN & MUSYRIF) ─────────────────────────────
   Future<void> _updatePermitApproval(PermitModel permit, String newStatus) async {
     try {
-      await SupabaseConfig.client.from('permits').update({
-        'status': newStatus,
-        'updated_at': DateTime.now().toIso8601String(),
-      }).eq('id', permit.id);
+      final success = await SupabaseService.updatePermitStatus(
+        permitId: permit.id,
+        status: newStatus,
+        approverName: widget.session.namaLengkap,
+        catatan: newStatus == 'APPROVED' ? 'Disetujui oleh ${widget.session.namaLengkap}' : 'Ditolak oleh ${widget.session.namaLengkap}',
+      );
+
+      // Broadcast notifikasi via Realtime
+      await SupabaseService.sendRealtimeBroadcast(
+        channelName: 'whatsapp-room',
+        event: 'whatsapp.notification',
+        payload: {
+          'id': 'NOTIF-${DateTime.now().millisecondsSinceEpoch}',
+          'title': newStatus == 'APPROVED' ? '✅ Surat Izin Disetujui' : '❌ Surat Izin Ditolak',
+          'message': 'Surat izin ${permit.santriNama} telah $newStatus oleh ${widget.session.namaLengkap}.',
+          'type': 'PERMIT_APPROVAL',
+          'permitId': permit.id,
+          'timestamp': DateTime.now().toIso8601String(),
+        },
+      );
 
       if (mounted) {
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Surat izin ${permit.santriNama} berhasil ditandai: $newStatus'),
+              backgroundColor: newStatus == 'APPROVED' ? const Color(0xFF047857) : const Color(0xFFDC2626),
+            ),
+          );
+          _loadAllData();
+        }
+      }
+    } catch (_) {}
+  }
+
+  // ─── PERMIT EXTENSION (PERPANJANGAN MASA IZIN/LIBURAN) ──────────────────────
+  void _showExtensionRequestModal(BuildContext context, PermitModel permit) {
+    DateTime proposedDate = (permit.batasKembali ?? DateTime.now()).add(const Duration(days: 1));
+    final reasonCtrl = TextEditingController(text: 'Pemulihan pasca sakit / hajatan keluarga');
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (modalCtx, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(modalCtx).viewInsets.bottom + 20,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFECFDF5),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.schedule_rounded, color: Color(0xFF047857), size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Ajukan Perpanjangan Masa Izin / Liburan',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                            ),
+                            Text(
+                              'Permohonan langsung ke Musyrif & Pengurus Asrama',
+                              style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 24),
+
+                  Text('Santri: ${permit.santriNama} (${permit.tokenIzin})',
+                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Batas Kembali Semula: ${permit.batasKembali != null ? DateFormat('dd MMM yyyy, HH:mm').format(permit.batasKembali!) : "-"}',
+                    style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                  ),
+                  const SizedBox(height: 14),
+
+                  const Text('Pilih Tanggal & Jam Kembali Baru (Perpanjangan):',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  InkWell(
+                    onTap: () async {
+                      final pickedDate = await showDatePicker(
+                        context: modalCtx,
+                        initialDate: proposedDate,
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 30)),
+                      );
+                      if (pickedDate != null) {
+                        final pickedTime = await showTimePicker(
+                          context: modalCtx,
+                          initialTime: TimeOfDay.fromDateTime(proposedDate),
+                        );
+                        if (pickedTime != null) {
+                          setModalState(() {
+                            proposedDate = DateTime(
+                              pickedDate.year,
+                              pickedDate.month,
+                              pickedDate.day,
+                              pickedTime.hour,
+                              pickedTime.minute,
+                            );
+                          });
+                        }
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFCBD5E1)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.calendar_month_rounded, size: 18, color: Color(0xFF047857)),
+                          const SizedBox(width: 10),
+                          Text(
+                            DateFormat('EEEE, dd MMM yyyy - HH:mm').format(proposedDate),
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                          ),
+                          const Spacer(),
+                          const Text('Ganti', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF047857))),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  const Text('Alasan Perpanjangan (Wajib Diisi):',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: reasonCtrl,
+                    maxLines: 2,
+                    decoration: InputDecoration(
+                      hintText: 'Contoh: Santri masih kontrol medis / ada keperluan mendesak keluarga...',
+                      hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                      filled: true,
+                      fillColor: const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 46,
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        if (reasonCtrl.text.trim().isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Alasan perpanjangan wajib diisi!')),
+                          );
+                          return;
+                        }
+                        Navigator.pop(ctx);
+                        final success = await SupabaseService.requestPermitExtension(
+                          permitId: permit.id,
+                          perpanjanganSampai: proposedDate,
+                          alasan: reasonCtrl.text.trim(),
+                          santriNama: permit.santriNama,
+                        );
+                        if (mounted) {
+                          if (success) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Permohonan perpanjangan berhasil diajukan ke pengurus asrama.'),
+                                backgroundColor: Color(0xFF047857),
+                              ),
+                            );
+                            _loadAllData();
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Gagal mengajukan perpanjangan izin.'),
+                                backgroundColor: Colors.redAccent,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF047857),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('Kirim Permohonan Perpanjangan', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _approveExtension(PermitModel permit) async {
+    final newDate = permit.perpanjanganSampai ?? DateTime.now().add(const Duration(days: 1));
+    final success = await SupabaseService.approvePermitExtension(
+      permitId: permit.id,
+      perpanjanganSampai: newDate,
+      approverName: widget.session.namaLengkap,
+      santriNama: permit.santriNama,
+    );
+    if (mounted && success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Perpanjangan masa izin santri ${permit.santriNama} disetujui!'),
+          backgroundColor: const Color(0xFF047857),
+        ),
+      );
+      _loadAllData();
+    }
+  }
+
+  Future<void> _rejectExtension(PermitModel permit) async {
+    final reasonCtrl = TextEditingController(text: 'Waktu liburan telah selesai dan jadwal santri dimulai');
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('Tolak Perpanjangan Izin', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Apakah Anda yakin menolak permohonan perpanjangan izin untuk ${permit.santriNama}?'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonCtrl,
+              decoration: const InputDecoration(labelText: 'Catatan Penolakan'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+            child: const Text('Tolak'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      final success = await SupabaseService.rejectPermitExtension(
+        permitId: permit.id,
+        rejectReason: reasonCtrl.text.trim(),
+        rejecterName: widget.session.namaLengkap,
+        santriNama: permit.santriNama,
+      );
+      if (mounted && success) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Surat izin ${permit.santriNama} ditandai sebagai: $newStatus'),
-            backgroundColor: newStatus == 'APPROVED' ? const Color(0xFF047857) : const Color(0xFFDC2626),
+            content: Text('Perpanjangan izin untuk ${permit.santriNama} ditolak.'),
+            backgroundColor: const Color(0xFFDC2626),
           ),
         );
         _loadAllData();
       }
-    } catch (_) {}
+    }
   }
 
   // ─── SUBMIT PERMIT FORM (WALI & SANTRI) ────────────────────────────────────
@@ -443,8 +783,8 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
             '• Santri istirahat/rawat UKS saat ini: $sakit santri\n'
             '• Stok obat umum (paracetamol, antasida, vitamin) dalam kondisi aman.';
       } else {
-        reply = 'Analisis AI: Sistem Smart Ri\'ayah sinkron dengan Supabase. '
-            'Total santri: ${_santriList.length}, Total kamar: ${_roomsList.length}. Semua modul IoT Gate dan presensi online.';
+        reply = 'Analisis AI: Sistem Smart Ri\'ayah terhubung aktif. '
+            'Total santri: ${_santriList.length}, Total kamar: ${_roomsList.length}. Semua modul gerbang dan presensi siap.';
       }
 
       setState(() {
@@ -515,10 +855,10 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
             Row(
               children: [
                 CircleAvatar(radius: 3, backgroundColor: primaryColor),
-                const SizedBox(width: 4),
+                const SizedBox(width: 5),
                 Text(
-                  '${role.title} • Live Sync',
-                  style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+                  role.title,
+                  style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
                 ),
               ],
             ),
@@ -1539,27 +1879,55 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
       );
     }
 
-    // Jika Admin atau Musyrif: Tampilkan Antrean Verifikasi / Approval Izin
+    // Jika Admin atau Musyrif: Tampilkan Antrean Verifikasi & Perpanjangan Izin
+    final pendingExtensions = _permitsList.where((p) => p.hasPendingExtension).toList();
     final pendingPermits = _permitsList.where((p) => p.isPending).toList();
 
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       children: [
+        // ─── SEKSI 1: PERMOHONAN PERPANJANGAN MASA IZIN/LIBURAN ─────────────
+        if (pendingExtensions.isNotEmpty) ...[
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.hourglass_top_rounded, color: Color(0xFFD97706), size: 18),
+                  SizedBox(width: 6),
+                  Text('Permohonan Perpanjangan Masa Izin', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900, color: Color(0xFF92400E))),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(8)),
+                child: Text('${pendingExtensions.length} Perlu Konfirmasi', style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFFB45309))),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ...pendingExtensions.map((p) => _buildPermitCard(p)),
+          const SizedBox(height: 18),
+          const Divider(),
+          const SizedBox(height: 10),
+        ],
+
+        // ─── SEKSI 2: ANTREAN SURAT IZIN BARU ──────────────────────────────
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text('Antrean Verifikasi Surat Izin', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+            const Text('Antrean Surat Izin Baru', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(8)),
-              child: Text('${pendingPermits.length} Menunggu', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFD97706))),
+              decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(8)),
+              child: Text('${pendingPermits.length} Menunggu', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF047857))),
             ),
           ],
         ),
         const SizedBox(height: 12),
 
-        if (pendingPermits.isEmpty)
-          const Padding(padding: EdgeInsets.all(32), child: Center(child: Text('Tidak ada surat izin yang menunggu persetujuan.')))
+        if (pendingPermits.isEmpty && pendingExtensions.isEmpty)
+          const Padding(padding: EdgeInsets.all(32), child: Center(child: Text('Tidak ada surat izin atau perpanjangan yang menunggu persetujuan.')))
         else
           ...pendingPermits.map((permit) {
             return Container(
@@ -1724,62 +2092,10 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 8. LIVE CHAT VIEW
+  // 8. LIVE CHAT VIEW (WHATSAPP WEBSOCKET + EMOJI REACTIONS)
   // ═══════════════════════════════════════════════════════════════════════════
   Widget _buildLiveChatView() {
-    return Column(
-      children: [
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            itemCount: _chatMessages.length,
-            itemBuilder: (ctx, idx) {
-              final msg = _chatMessages[idx];
-              final isMe = msg['isMe'] == true;
-              return Align(
-                alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: isMe ? const Color(0xFF047857) : Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    border: isMe ? null : Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                    children: [
-                      Text(msg['sender'] ?? '', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: isMe ? Colors.white70 : const Color(0xFF047857))),
-                      const SizedBox(height: 2),
-                      Text(msg['text'] ?? '', style: TextStyle(fontSize: 12.5, color: isMe ? Colors.white : const Color(0xFF0F172A))),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          color: Colors.white,
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _chatMsgCtrl,
-                  decoration: const InputDecoration(hintText: 'Ketik pesan...', border: InputBorder.none),
-                  onSubmitted: (_) => _sendLiveChatMessage(),
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.send_rounded, color: Color(0xFF047857)),
-                onPressed: _sendLiveChatMessage,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
+    return WhatsAppLiveChatView(session: widget.session);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1916,7 +2232,7 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
     await DeleteConfirmDialog.show(
       context,
       title: 'Hapus Kamar Asrama?',
-      message: 'Seluruh alokasi kasur kamar ini akan dihapus dari Supabase.',
+      message: 'Seluruh alokasi kasur kamar ini akan dihapus secara permanen dari sistem.',
       itemName: '${room.namaGedung} - Kamar ${room.nomorKamar}',
       itemId: room.id,
       itemType: 'Kamar',
@@ -1932,7 +2248,7 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
     await DeleteConfirmDialog.show(
       context,
       title: 'Hapus Data Santri?',
-      message: 'Data santri dan kuota kamar terkait akan otomatis diperbarui di Supabase.',
+      message: 'Data santri dan kuota kamar terkait akan otomatis diperbarui di sistem.',
       itemName: santri.namaLengkap,
       itemId: santri.id,
       itemType: 'Santri',
@@ -1945,23 +2261,200 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
   }
 
   Widget _buildPermitCard(PermitModel permit) {
+    final role = widget.session.role;
+    final isWali = role == AppRole.wali;
+    final isAdminOrMusyrif = role == AppRole.musyrif || role == AppRole.adminRiayah || role == AppRole.superAdmin;
+    final canExtend = (permit.isApproved || permit.isActive) && !permit.hasPendingExtension;
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFE2E8F0))),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: permit.hasPendingExtension ? const Color(0xFFFCD34D) : const Color(0xFFE2E8F0),
+          width: permit.hasPendingExtension ? 1.5 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(permit.tokenIzin, style: const TextStyle(fontFamily: 'monospace', fontSize: 10, color: Colors.grey)),
-              Text(permit.statusLabel, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: permit.statusColor)),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  permit.tokenIzin,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF475569)),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: permit.statusColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  permit.statusLabel,
+                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: permit.statusColor),
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(permit.santriNama, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
-          Text('${permit.kategori} • ${permit.keperluan} • Penjemput: ${permit.penjemput}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+          const SizedBox(height: 8),
+          Text(
+            permit.santriNama,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            '${permit.kategori} • ${permit.keperluan}',
+            style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569)),
+          ),
+          Text(
+            'Penjemput: ${permit.penjemput}',
+            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+          ),
+          if (permit.batasKembali != null) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                const Icon(Icons.timer_outlined, size: 13, color: Color(0xFF047857)),
+                const SizedBox(width: 4),
+                Text(
+                  'Batas Kembali: ${DateFormat('dd MMM yyyy, HH:mm').format(permit.batasKembali!)} WIB',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF047857)),
+                ),
+              ],
+            ),
+          ],
+
+          // ─── STATUS PERPANJANGAN BADGE ───────────────────────────────────
+          if (permit.hasPendingExtension) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFBEB),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFFDE68A)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.hourglass_top_rounded, size: 14, color: Color(0xFFD97706)),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Menunggu Persetujuan Perpanjangan s/d ${permit.perpanjanganSampai != null ? DateFormat('dd MMM yyyy, HH:mm').format(permit.perpanjanganSampai!) : "-"}',
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFB45309)),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (permit.alasanPerpanjangan != null) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      'Alasan: ${permit.alasanPerpanjangan}',
+                      style: const TextStyle(fontSize: 10.5, color: Color(0xFF78350F)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ] else if (permit.isExtensionApproved) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFECFDF5),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFA7F3D0)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.check_circle_rounded, size: 13, color: Color(0xFF047857)),
+                  SizedBox(width: 4),
+                  Text(
+                    'Perpanjangan Liburan Telah Disetujui',
+                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF065F46)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          // ─── ACTION TOMBOL WALI SANTRI ─────────────────────────────────────
+          if (isWali && canExtend) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _showExtensionRequestModal(context, permit),
+                icon: const Icon(Icons.schedule_send_rounded, size: 16, color: Color(0xFF047857)),
+                label: const Text(
+                  'Ajukan Perpanjangan Masa Izin / Liburan',
+                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF047857)),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFF047857)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                ),
+              ),
+            ),
+          ],
+
+          // ─── ACTION TOMBOL ADMIN/MUSYRIF UNTUK PERPANJANGAN PENDING ───────
+          if (isAdminOrMusyrif && permit.hasPendingExtension) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _approveExtension(permit),
+                    icon: const Icon(Icons.check_rounded, size: 15),
+                    label: const Text('Terima Perpanjangan', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF047857),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _rejectExtension(permit),
+                    icon: const Icon(Icons.close_rounded, size: 15, color: Color(0xFFDC2626)),
+                    label: const Text('Tolak', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFDC2626))),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFFDC2626)),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

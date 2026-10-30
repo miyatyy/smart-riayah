@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
 /**
+ * ============================================================================
  * Model Data Surat Izin Santri (Permits)
  * Kolom tabel Supabase: 'permits'
+ * Dilengkapi Sistem Perpanjangan Masa Izin / Liburan (Extension Approval System)
+ * ============================================================================
  */
 class PermitModel {
   final String id;
@@ -14,6 +17,10 @@ class PermitModel {
   final DateTime? batasKembali;
   final String status; // 'PENDING', 'APPROVED', 'ACTIVE', 'OVERDUE', 'REJECTED', 'COMPLETED'
   final String tokenIzin;
+  final DateTime? perpanjanganSampai;
+  final String? alasanPerpanjangan;
+  final String? statusPerpanjangan; // 'PENDING', 'APPROVED', 'REJECTED'
+  final String? catatanMusyrif;
 
   PermitModel({
     required this.id,
@@ -25,12 +32,19 @@ class PermitModel {
     this.batasKembali,
     required this.status,
     required this.tokenIzin,
+    this.perpanjanganSampai,
+    this.alasanPerpanjangan,
+    this.statusPerpanjangan,
+    this.catatanMusyrif,
   });
 
   bool get isApproved => status == 'APPROVED';
   bool get isActive => status == 'ACTIVE';
   bool get isOverdue => status == 'OVERDUE';
   bool get isPending => status == 'PENDING';
+  bool get hasPendingExtension => statusPerpanjangan == 'PENDING';
+  bool get isExtensionApproved => statusPerpanjangan == 'APPROVED';
+  bool get isExtensionRejected => statusPerpanjangan == 'REJECTED';
 
   Color get statusColor {
     switch (status.toUpperCase()) {
@@ -72,6 +86,34 @@ class PermitModel {
       batas = DateTime.tryParse(map['batas_kembali'].toString());
     }
 
+    DateTime? perpanjangan;
+    if (map['perpanjangan_sampai'] != null) {
+      perpanjangan = DateTime.tryParse(map['perpanjangan_sampai'].toString());
+    }
+
+    String? alasanPerp = map['alasan_perpanjangan']?.toString();
+    String? statusPerp = map['status_perpanjangan']?.toString();
+    String? catatan = map['catatan_musyrif']?.toString();
+
+    // Fallback parser jika perpanjangan disimpan terstruktur di catatan_musyrif
+    if (statusPerp == null && catatan != null && catatan.contains('[PERPANJANGAN:')) {
+      final regStatus = RegExp(r'\[PERPANJANGAN:\s*([A-Z_]+)\]');
+      final matchStatus = regStatus.firstMatch(catatan);
+      if (matchStatus != null) {
+        statusPerp = matchStatus.group(1);
+      }
+      final regSampai = RegExp(r'Sampai:\s*([^\s|]+)');
+      final matchSampai = regSampai.firstMatch(catatan);
+      if (matchSampai != null) {
+        perpanjangan = DateTime.tryParse(matchSampai.group(1)!);
+      }
+      final regAlasan = RegExp(r'Alasan:\s*([^|\]]+)');
+      final matchAlasan = regAlasan.firstMatch(catatan);
+      if (matchAlasan != null) {
+        alasanPerp = matchAlasan.group(1)?.trim();
+      }
+    }
+
     return PermitModel(
       id: map['id']?.toString() ?? '',
       santriId: map['santri_id']?.toString() ?? '',
@@ -82,6 +124,10 @@ class PermitModel {
       batasKembali: batas,
       status: map['status']?.toString() ?? 'PENDING',
       tokenIzin: map['token_izin']?.toString() ?? 'TOKEN-${map['id']}',
+      perpanjanganSampai: perpanjangan,
+      alasanPerpanjangan: alasanPerp,
+      statusPerpanjangan: statusPerp,
+      catatanMusyrif: catatan,
     );
   }
 
@@ -96,7 +142,10 @@ class PermitModel {
       'batas_kembali': batasKembali?.toIso8601String(),
       'status': status,
       'token_izin': tokenIzin,
+      'perpanjangan_sampai': perpanjanganSampai?.toIso8601String(),
+      'alasan_perpanjangan': alasanPerpanjangan,
+      'status_perpanjangan': statusPerpanjangan,
+      'catatan_musyrif': catatanMusyrif,
     };
   }
 }
-

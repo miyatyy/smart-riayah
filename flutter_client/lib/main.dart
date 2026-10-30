@@ -6,6 +6,7 @@ import 'models/user_session_model.dart';
 import 'services/session_service.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/main_dashboard_screen.dart';
+import 'services/notification_service.dart';
 
 /**
  * ============================================================================
@@ -26,7 +27,10 @@ void main() async {
   // 1. Inisialisasi Supabase SDK
   await SupabaseConfig.initialize();
 
-  // 2. Cek apakah ada sesi login pengguna tersimpan
+  // 2. Inisialisasi Local Push Notifications & Heads-Up Banner
+  await NotificationService.initialize();
+
+  // 3. Cek apakah ada sesi login pengguna tersimpan
   final savedSession = await SessionService.getSession();
 
   runApp(SmartRiayahApp(initialSession: savedSession));
