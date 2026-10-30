@@ -3,40 +3,405 @@ import '../models/user_session_model.dart';
 
 /**
  * ============================================================================
- * SMART RI'AYAH MOBILE - UNIVERSAL NAVIGATION DRAWER
- * Navigasi samping kelas enterprise yang konsisten di semua role:
- * - Header profil lengkap dengan role badge & indikator Supabase Live
- * - Menu lengkap selaras dengan web:
- *   1. Dashboard Ringkasan
- *   2. Grafik Aktivitas Real-Time
- *   3. Manajemen Data & Kamar
- *   4. Rekapitulasi Laporan
- *   5. AI Agent Aktif
- *   6. Dompet Pintar & Keuangan
- *   7. Perizinan Langsung
- *   8. Live Chat Komunikasi
- *   9. Keluar Akun (Logout)
+ * SMART RI'AYAH MOBILE - STRICT ROLE-BASED ACCESS CONTROL (RBAC) DRAWER
+ * 100% Selaras dengan Logika Website (https://smart-riayah.vercel.app/)
+ * Filter menu ketat berdasarkan role pengguna:
+ * 1. Super Admin: Full Access (Semua Menu)
+ * 2. Admin Ri'ayah: Operasional Kamar, Santri, Approval Izin, Dompet & Chat
+ * 3. Orang Tua / Wali Santri: Terbatas Khusus Anak (Dashboard Anakku, Mutaba'ah, Dompet, Izin, Chat)
+ * 4. Musyrif: Asrama Binaan, Presensi Malam, Adab, Approval Awal, Chat
+ * 5. Pos Satpam: Command Center Gate, Validasi DU-PERMIT, Log Keluar-Masuk
+ * 6. Poskestren Medis: Rekam Medis, Santri Rawat UKS, Izin Sakit, AI Medis
+ * 7. Mudir: Executive Dashboard, Tren Pondok, Rekap Laporan Terpadu
  * ============================================================================
  */
 
+class RoleMenuItem {
+  final String key;
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final String? badge;
+  final Color? badgeColor;
+  final bool isHighlight;
+
+  const RoleMenuItem({
+    required this.key,
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    this.badge,
+    this.badgeColor,
+    this.isHighlight = false,
+  });
+}
+
 class AppDrawer extends StatelessWidget {
   final UserSessionModel session;
-  final int selectedIndex;
-  final Function(int index) onSelectIndex;
+  final String activeMenuKey;
+  final Function(String menuKey) onSelectMenuKey;
   final VoidCallback onLogout;
 
   const AppDrawer({
     super.key,
     required this.session,
-    required this.selectedIndex,
-    required this.onSelectIndex,
+    required this.activeMenuKey,
+    required this.onSelectMenuKey,
     required this.onLogout,
   });
+
+  /// Generator menu spesifik sesuai matriks RBAC masing-masing role
+  static List<RoleMenuItem> getMenusForRole(AppRole role) {
+    switch (role) {
+      // 1. SUPER ADMIN / DEVELOPER (FULL ACCESS)
+      case AppRole.superAdmin:
+        return const [
+          RoleMenuItem(
+            key: 'dashboard',
+            title: 'Dashboard Global',
+            subtitle: 'Kontrol & Statistik Terpadu',
+            icon: Icons.dashboard_rounded,
+          ),
+          RoleMenuItem(
+            key: 'grafik',
+            title: 'Grafik Aktivitas Real-Time',
+            subtitle: 'Seluruh Blok Asrama & Santri',
+            icon: Icons.bar_chart_rounded,
+            badge: 'Live',
+            badgeColor: Color(0xFF10B981),
+          ),
+          RoleMenuItem(
+            key: 'data_kamar',
+            title: 'Manajemen Data & Kamar',
+            subtitle: 'CRUD Kamar & Buku Induk Santri',
+            icon: Icons.apartment_rounded,
+          ),
+          RoleMenuItem(
+            key: 'rekap_laporan',
+            title: 'Rekapitulasi Laporan',
+            subtitle: 'Seluruh Divisi Pondok',
+            icon: Icons.assignment_rounded,
+            badge: 'Arsip',
+            badgeColor: Color(0xFF64748B),
+          ),
+          RoleMenuItem(
+            key: 'perizinan',
+            title: 'Otorisasi Izin (Override)',
+            subtitle: 'Validasi & Bypass Darurat',
+            icon: Icons.rule_rounded,
+            badge: 'Penuh',
+            badgeColor: Color(0xFF4F46E5),
+          ),
+          RoleMenuItem(
+            key: 'dompet_pintar',
+            title: 'Master Keuangan Dompet',
+            subtitle: 'Kontrol Saldo & Audit Cashless',
+            icon: Icons.account_balance_wallet_rounded,
+            badge: 'Finance',
+            badgeColor: Color(0xFF047857),
+          ),
+          RoleMenuItem(
+            key: 'ai_assistant',
+            title: 'AI Smart Assistant',
+            subtitle: 'DeepSeek System Diagnostics',
+            icon: Icons.auto_awesome_rounded,
+            badge: 'AI',
+            badgeColor: Color(0xFF8B5CF6),
+            isHighlight: true,
+          ),
+          RoleMenuItem(
+            key: 'live_chat',
+            title: 'Live Chat Komunikasi',
+            subtitle: 'Seluruh Lini Wali & Musyrif',
+            icon: Icons.forum_rounded,
+            badge: 'Pesan',
+            badgeColor: Color(0xFF0284C7),
+          ),
+        ];
+
+      // 2. ADMIN RI'AYAH / PENGURUS PUSAT
+      case AppRole.adminRiayah:
+        return const [
+          RoleMenuItem(
+            key: 'dashboard',
+            title: 'Dashboard Ri\'ayah',
+            subtitle: 'Operasional Asrama & Kuota',
+            icon: Icons.dashboard_rounded,
+          ),
+          RoleMenuItem(
+            key: 'grafik',
+            title: 'Grafik Aktivitas Real-Time',
+            subtitle: 'Tren Izin & Kehadiran Kamar',
+            icon: Icons.bar_chart_rounded,
+            badge: 'Live',
+            badgeColor: Color(0xFF10B981),
+          ),
+          RoleMenuItem(
+            key: 'data_kamar',
+            title: 'Manajemen Data & Kamar',
+            subtitle: 'Kamar Putra/Putri & Onboarding',
+            icon: Icons.apartment_rounded,
+          ),
+          RoleMenuItem(
+            key: 'perizinan',
+            title: 'Persetujuan Izin (DU-PERMIT)',
+            subtitle: 'Approval Surat Izin Santri',
+            icon: Icons.assignment_turned_in_rounded,
+            badge: 'Approval',
+            badgeColor: Color(0xFFF59E0B),
+          ),
+          RoleMenuItem(
+            key: 'dompet_pintar',
+            title: 'Dompet Pintar Cashless',
+            subtitle: 'Monitoring & Limit Belanja',
+            icon: Icons.account_balance_wallet_rounded,
+            badge: 'Keuangan',
+            badgeColor: Color(0xFF047857),
+          ),
+          RoleMenuItem(
+            key: 'rekap_laporan',
+            title: 'Rekapitulasi Laporan',
+            subtitle: 'Arsip Presensi & Kedisiplinan',
+            icon: Icons.assignment_rounded,
+          ),
+          RoleMenuItem(
+            key: 'ai_assistant',
+            title: 'AI Smart Assistant',
+            subtitle: 'Konsultan Cerdas Asrama',
+            icon: Icons.auto_awesome_rounded,
+            badge: 'AI',
+            badgeColor: Color(0xFF8B5CF6),
+            isHighlight: true,
+          ),
+          RoleMenuItem(
+            key: 'live_chat',
+            title: 'Live Chat Komunikasi',
+            subtitle: 'Koordinasi Musyrif & Wali',
+            icon: Icons.forum_rounded,
+            badge: 'Chat',
+            badgeColor: Color(0xFF0284C7),
+          ),
+        ];
+
+      // 3. ORANG TUA / WALI SANTRI (KHUSUS ANAK SENDIRI)
+      case AppRole.wali:
+      case AppRole.santri:
+        return const [
+          RoleMenuItem(
+            key: 'dashboard',
+            title: 'Dashboard Anakku',
+            subtitle: 'Status Keberadaan Real-Time',
+            icon: Icons.family_restroom_rounded,
+            badge: 'Utama',
+            badgeColor: Color(0xFF0891B2),
+          ),
+          RoleMenuItem(
+            key: 'grafik',
+            title: 'Aktivitas & Adab Anak',
+            subtitle: 'Mutaba\'ah & Kedisiplinan',
+            icon: Icons.auto_graph_rounded,
+          ),
+          RoleMenuItem(
+            key: 'dompet_pintar',
+            title: 'Dompet Pintar Ananda',
+            subtitle: 'Saldo & Transaksi Kantin/Koperasi',
+            icon: Icons.account_balance_wallet_rounded,
+            badge: 'Cashless',
+            badgeColor: Color(0xFF047857),
+          ),
+          RoleMenuItem(
+            key: 'perizinan',
+            title: 'Pengajuan Izin Pulang',
+            subtitle: 'Form Izin Keluar/Pesiar Instan',
+            icon: Icons.send_rounded,
+            badge: 'Instan',
+            badgeColor: Color(0xFFF59E0B),
+          ),
+          RoleMenuItem(
+            key: 'live_chat',
+            title: 'Chat Musyrif Asrama',
+            subtitle: 'Pesan Langsung Pembina Ananda',
+            icon: Icons.chat_bubble_outline_rounded,
+            badge: 'Pesan',
+            badgeColor: Color(0xFF0284C7),
+          ),
+          RoleMenuItem(
+            key: 'ai_assistant',
+            title: 'Konsultasi AI Wali',
+            subtitle: 'Tanya Jadwal & Aturan Pondok',
+            icon: Icons.auto_awesome_rounded,
+            badge: 'AI',
+            badgeColor: Color(0xFF8B5CF6),
+            isHighlight: true,
+          ),
+        ];
+
+      // 4. MUSYRIF / MUSYRIFAH PEMBINA ASRAMA
+      case AppRole.musyrif:
+      case AppRole.guru:
+        return const [
+          RoleMenuItem(
+            key: 'dashboard',
+            title: 'Dashboard Asrama Binaan',
+            subtitle: 'Monitoring Kamar & Presensi',
+            icon: Icons.home_work_rounded,
+          ),
+          RoleMenuItem(
+            key: 'grafik',
+            title: 'Grafik Aktivitas Santri',
+            subtitle: 'Kedisiplinan & Tren Izin',
+            icon: Icons.bar_chart_rounded,
+            badge: 'Live',
+            badgeColor: Color(0xFF10B981),
+          ),
+          RoleMenuItem(
+            key: 'data_kamar',
+            title: 'Kamar & Presensi Malam',
+            subtitle: 'Absensi Kamar & Jam Istirahat',
+            icon: Icons.bedroom_child_rounded,
+          ),
+          RoleMenuItem(
+            key: 'perizinan',
+            title: 'Verifikasi Izin Santri',
+            subtitle: 'Rekomendasi Tahap Awal',
+            icon: Icons.rule_rounded,
+            badge: 'Validasi',
+            badgeColor: Color(0xFFF59E0B),
+          ),
+          RoleMenuItem(
+            key: 'rekap_laporan',
+            title: 'Poin Adab & Disiplin',
+            subtitle: 'Catatan Prestasi & Pelanggaran',
+            icon: Icons.stars_rounded,
+          ),
+          RoleMenuItem(
+            key: 'live_chat',
+            title: 'Live Chat Wali Santri',
+            subtitle: 'Respon Pertanyaan Orang Tua',
+            icon: Icons.forum_rounded,
+            badge: 'Pesan',
+            badgeColor: Color(0xFF0284C7),
+          ),
+          RoleMenuItem(
+            key: 'ai_assistant',
+            title: 'AI Smart Assistant',
+            subtitle: 'Analisis Poin & Evaluasi Santri',
+            icon: Icons.auto_awesome_rounded,
+            badge: 'AI',
+            badgeColor: Color(0xFF8B5CF6),
+            isHighlight: true,
+          ),
+        ];
+
+      // 5. POS SATPAM / KEAMANAN GERBANG
+      case AppRole.security:
+        return const [
+          RoleMenuItem(
+            key: 'dashboard',
+            title: 'Command Center Gerbang',
+            subtitle: 'Pos Keamanan & Gate Turnstile',
+            icon: Icons.cell_tower_rounded,
+            badge: 'Security',
+            badgeColor: Color(0xFFE11D48),
+          ),
+          RoleMenuItem(
+            key: 'perizinan',
+            title: 'Validasi Gate DU-PERMIT',
+            subtitle: 'Checkout & Check-in Gerbang',
+            icon: Icons.qr_code_scanner_rounded,
+            badge: 'Validasi',
+            badgeColor: Color(0xFF10B981),
+            isHighlight: true,
+          ),
+          RoleMenuItem(
+            key: 'rekap_laporan',
+            title: 'Log Presensi Gerbang',
+            subtitle: 'Riwayat Keluar & Overstay Alarm',
+            icon: Icons.history_rounded,
+            badge: 'Log',
+            badgeColor: Color(0xFF64748B),
+          ),
+        ];
+
+      // 6. MEDIS UKS / POSKESTREN
+      case AppRole.poskestren:
+        return const [
+          RoleMenuItem(
+            key: 'dashboard',
+            title: 'Dashboard Klinik & UKS',
+            subtitle: 'Kesehatan Santri & Rawat Inap',
+            icon: Icons.medical_services_rounded,
+            badge: 'Medis',
+            badgeColor: Color(0xFF0284C7),
+          ),
+          RoleMenuItem(
+            key: 'rekap_laporan',
+            title: 'Rekam Medis & Rawat UKS',
+            subtitle: 'Riwayat Penyakit & Obat Asrama',
+            icon: Icons.healing_rounded,
+          ),
+          RoleMenuItem(
+            key: 'perizinan',
+            title: 'Rekomendasi Izin Sakit',
+            subtitle: 'Surat Rujuk RS / Pulang Berobat',
+            icon: Icons.health_and_safety_rounded,
+            badge: 'Izin RS',
+            badgeColor: Color(0xFFF59E0B),
+          ),
+          RoleMenuItem(
+            key: 'ai_assistant',
+            title: 'AI Diagnostik Medis',
+            subtitle: 'Konsultasi Gejala & Obat Asrama',
+            icon: Icons.auto_awesome_rounded,
+            badge: 'AI',
+            badgeColor: Color(0xFF8B5CF6),
+            isHighlight: true,
+          ),
+        ];
+
+      // 7. PIMPINAN PONDOK / MUDIR (EXECUTIVE READ-ONLY)
+      case AppRole.mudir:
+        return const [
+          RoleMenuItem(
+            key: 'dashboard',
+            title: 'Executive Dashboard',
+            subtitle: 'Ringkasan Kinerja Pesantren',
+            icon: Icons.account_balance_rounded,
+            badge: 'Mudir',
+            badgeColor: Color(0xFFD97706),
+          ),
+          RoleMenuItem(
+            key: 'grafik',
+            title: 'Analitik & Tren Pondok',
+            subtitle: 'Kehadiran, Asrama & Perizinan',
+            icon: Icons.trending_up_rounded,
+          ),
+          RoleMenuItem(
+            key: 'rekap_laporan',
+            title: 'Laporan Terpadu Divisi',
+            subtitle: 'Rekapitulasi Bulanan Santri',
+            icon: Icons.summarize_rounded,
+            badge: 'Eksekutif',
+            badgeColor: Color(0xFF64748B),
+          ),
+          RoleMenuItem(
+            key: 'ai_assistant',
+            title: 'Executive DSS Insights',
+            subtitle: 'AI Pengambil Keputusan Kebijakan',
+            icon: Icons.psychology_rounded,
+            badge: 'AI DSS',
+            badgeColor: Color(0xFF8B5CF6),
+            isHighlight: true,
+          ),
+        ];
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final role = session.role;
     final primaryColor = role.primaryColor;
+    final allowedMenus = getMenusForRole(role);
 
     return Drawer(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -75,14 +440,14 @@ class AppDrawer extends StatelessWidget {
                             Text(
                               session.namaLengkap,
                               style: const TextStyle(
-                                fontSize: 14,
+                                fontSize: 13.5,
                                 fontWeight: FontWeight.w900,
                                 color: Color(0xFF0F172A),
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            const SizedBox(height: 2),
+                            const SizedBox(height: 3),
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                               decoration: BoxDecoration(
@@ -103,10 +468,19 @@ class AppDrawer extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  if (session.jabatan != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      session.jabatan!,
+                      style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  const SizedBox(height: 10),
                   // Supabase Realtime Live Indicator
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                     decoration: BoxDecoration(
                       color: const Color(0xFFECFDF5),
                       borderRadius: BorderRadius.circular(8),
@@ -118,7 +492,7 @@ class AppDrawer extends StatelessWidget {
                         CircleAvatar(radius: 3.5, backgroundColor: Color(0xFF10B981)),
                         SizedBox(width: 6),
                         Text(
-                          'Supabase Realtime Live • Terhubung',
+                          'Supabase Realtime • RBAC Aktif',
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
@@ -132,77 +506,113 @@ class AppDrawer extends StatelessWidget {
               ),
             ),
 
-            // NAVIGATION MENU LIST
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            // MENU SECTION HEADER
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 4),
+              child: Row(
                 children: [
-                  _buildMenuItem(
-                    index: 0,
-                    icon: Icons.dashboard_rounded,
-                    title: 'Dashboard Ringkasan',
-                    subtitle: 'Ikhtisar & Statistik',
+                  Text(
+                    'MENU UTAMA (${role.title.toUpperCase()})',
+                    style: const TextStyle(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF94A3B8),
+                      letterSpacing: 0.8,
+                    ),
                   ),
-                  _buildMenuItem(
-                    index: 1,
-                    icon: Icons.bar_chart_rounded,
-                    title: 'Grafik Aktivitas Real-Time',
-                    subtitle: 'Kehadiran & Mutaba\'ah',
-                    badge: 'Live',
-                    badgeColor: const Color(0xFF10B981),
-                  ),
-                  _buildMenuItem(
-                    index: 2,
-                    icon: Icons.apartment_rounded,
-                    title: 'Manajemen Data & Kamar',
-                    subtitle: 'Buku Induk & Kuota Asrama',
-                  ),
-                  _buildMenuItem(
-                    index: 3,
-                    icon: Icons.assignment_rounded,
-                    title: 'Rekapitulasi Laporan',
-                    subtitle: 'Perizinan & Log Presensi',
-                    badge: 'Arsip',
-                    badgeColor: const Color(0xFF64748B),
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8),
-                    child: Divider(color: Color(0xFFE2E8F0)),
-                  ),
-                  _buildMenuItem(
-                    index: 4,
-                    icon: Icons.auto_awesome_rounded,
-                    title: 'AI Smart Assistant',
-                    subtitle: 'Asisten Cerdas Pondok',
-                    badge: 'AI',
-                    badgeColor: const Color(0xFF8B5CF6),
-                    isHighlight: true,
-                  ),
-                  _buildMenuItem(
-                    index: 5,
-                    icon: Icons.account_balance_wallet_rounded,
-                    title: 'Dompet Pintar Cashless',
-                    subtitle: 'Saldo & Transaksi Santri',
-                    badge: 'Keuangan',
-                    badgeColor: const Color(0xFF047857),
-                  ),
-                  _buildMenuItem(
-                    index: 6,
-                    icon: Icons.note_alt_rounded,
-                    title: 'Perizinan Langsung',
-                    subtitle: 'Pengajuan & Validasi Izin',
-                    badge: 'Instan',
-                    badgeColor: const Color(0xFFF59E0B),
-                  ),
-                  _buildMenuItem(
-                    index: 7,
-                    icon: Icons.forum_rounded,
-                    title: 'Live Chat Komunikasi',
-                    subtitle: 'Wali & Pengurus Pondok',
-                    badge: 'Pesan',
-                    badgeColor: const Color(0xFF0284C7),
+                  const Spacer(),
+                  Text(
+                    '${allowedMenus.length} Menu',
+                    style: const TextStyle(fontSize: 9.5, color: Color(0xFF94A3B8), fontFamily: 'monospace'),
                   ),
                 ],
+              ),
+            ),
+
+            // STRICT FILTERED NAVIGATION MENU LIST
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                itemCount: allowedMenus.length,
+                itemBuilder: (ctx, idx) {
+                  final item = allowedMenus[idx];
+                  final isSelected = activeMenuKey == item.key;
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 4),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? primaryColor.withOpacity(0.08)
+                          : (item.isHighlight ? const Color(0xFFF5F3FF) : Colors.transparent),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isSelected
+                            ? primaryColor.withOpacity(0.3)
+                            : (item.isHighlight ? const Color(0xFFDDD6FE) : Colors.transparent),
+                      ),
+                    ),
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                      leading: Container(
+                        padding: const EdgeInsets.all(7),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? primaryColor
+                              : (item.isHighlight ? const Color(0xFF8B5CF6) : const Color(0xFFF1F5F9)),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          item.icon,
+                          size: 18,
+                          color: isSelected || item.isHighlight ? Colors.white : const Color(0xFF64748B),
+                        ),
+                      ),
+                      title: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              item.title,
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: isSelected ? FontWeight.w900 : FontWeight.bold,
+                                color: isSelected ? primaryColor : const Color(0xFF1E293B),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (item.badge != null) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: (item.badgeColor ?? primaryColor).withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                item.badge!,
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                  color: item.badgeColor ?? primaryColor,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      subtitle: Text(
+                        item.subtitle,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: isSelected ? primaryColor.withOpacity(0.85) : const Color(0xFF94A3B8),
+                        ),
+                      ),
+                      onTap: () => onSelectMenuKey(item.key),
+                    ),
+                  );
+                },
               ),
             ),
 
@@ -231,9 +641,9 @@ class AppDrawer extends StatelessWidget {
                     color: Color(0xFFDC2626),
                   ),
                 ),
-                subtitle: const Text(
-                  'Akhiri sesi aplikasi',
-                  style: TextStyle(fontSize: 10.5, color: Color(0xFF94A3B8)),
+                subtitle: Text(
+                  'Sesi: ${session.username}',
+                  style: const TextStyle(fontSize: 10.5, color: Color(0xFF94A3B8)),
                 ),
                 onTap: onLogout,
               ),
@@ -243,93 +653,4 @@ class AppDrawer extends StatelessWidget {
       ),
     );
   }
-
-  Widget _buildMenuItem({
-    required int index,
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    String? badge,
-    Color? badgeColor,
-    bool isHighlight = false,
-  }) {
-    final isSelected = selectedIndex == index;
-    final primaryColor = session.role.primaryColor;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 4),
-      decoration: BoxDecoration(
-        color: isSelected
-            ? primaryColor.withOpacity(0.08)
-            : (isHighlight ? const Color(0xFFF5F3FF) : Colors.transparent),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isSelected
-              ? primaryColor.withOpacity(0.3)
-              : (isHighlight ? const Color(0xFFDDD6FE) : Colors.transparent),
-        ),
-      ),
-      child: ListTile(
-        dense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-        leading: Container(
-          padding: const EdgeInsets.all(7),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? primaryColor
-                : (isHighlight ? const Color(0xFF8B5CF6) : const Color(0xFFF1F5F9)),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(
-            icon,
-            size: 18,
-            color: isSelected || isHighlight ? Colors.white : const Color(0xFF64748B),
-          ),
-        ),
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(
-                title,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: isSelected ? FontWeight.w900 : FontWeight.bold,
-                  color: isSelected ? primaryColor : const Color(0xFF1E293B),
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            if (badge != null) ...[
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: (badgeColor ?? primaryColor).withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  badge,
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold,
-                    color: badgeColor ?? primaryColor,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-        subtitle: Text(
-          subtitle,
-          style: TextStyle(
-            fontSize: 10,
-            color: isSelected ? primaryColor.withOpacity(0.8) : const Color(0xFF94A3B8),
-          ),
-        ),
-        onTap: () => onSelectIndex(index),
-      ),
-    );
-  }
 }
-

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../core/supabase_config.dart';
 import '../models/user_session_model.dart';
 import '../models/santri_model.dart';
 import '../models/room_model.dart';
@@ -18,23 +19,27 @@ import 'auth/login_screen.dart';
 
 /**
  * ============================================================================
- * SMART RI'AYAH MOBILE - UNIVERSAL ENTERPRISE DASHBOARD
- * Selaras 100% dengan Web:
- * - Persistent Universal Navigation Drawer
- * - Supabase Realtime Channel Sync
- * - 8 Tab Terpadu: Ringkasan, Grafik Realtime, Data & Kamar, Rekap Laporan,
- *   AI Agent Aktif, Dompet Pintar Cashless, Perizinan Langsung, Live Chat.
+ * SMART RI'AYAH MOBILE - MAIN DASHBOARD WITH STRICT RBAC ENGINE
+ * 100% Selaras dengan Logika & Akses Versi Web (smart-riayah.vercel.app):
+ * - Hak akses menu & tampilan difilter ketat berdasarkan 7 Role:
+ *   1. Super Admin: Full Access & CRUD Override
+ *   2. Admin Ri'ayah: Operasional Asrama, Kamar & Onboarding
+ *   3. Orang Tua / Wali: Dashboard Khusus Anak Sendiri, Dompet & Form Izin
+ *   4. Musyrif: Presensi Kamar Malam, Poin Adab & Approval Awal
+ *   5. Pos Satpam: Validasi Checkout/Checkin Gate DU-PERMIT & Overstay
+ *   6. Medis UKS: Rekam Medis, Status Sakit di UKS & Rekomendasi Rujuk
+ *   7. Mudir: Executive Read-Only KPI, Analitik & Laporan Terpadu
  * ============================================================================
  */
 
 class MainDashboardScreen extends StatefulWidget {
   final UserSessionModel session;
-  final int initialTabIndex;
+  final String initialMenuKey;
 
   const MainDashboardScreen({
     super.key,
     required this.session,
-    this.initialTabIndex = 0,
+    this.initialMenuKey = 'dashboard',
   });
 
   @override
@@ -43,7 +48,7 @@ class MainDashboardScreen extends StatefulWidget {
 
 class _MainDashboardScreenState extends State<MainDashboardScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  late int _currentTabIndex;
+  late String _activeMenuKey;
 
   bool _isLoading = true;
   List<RoomModel> _roomsList = [];
@@ -52,64 +57,43 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
 
   // Search & Filter
   String _searchQuery = '';
-  String _selectedGenderFilter = 'ALL'; // 'ALL', 'PUTRA', 'PUTRI'
+  String _selectedGenderFilter = 'ALL';
 
   // Realtime Subscriptions
   RealtimeChannel? _roomsChannel;
   RealtimeChannel? _santriChannel;
   RealtimeChannel? _permitsChannel;
 
-  // AI Chat State
+  // AI Assistant Chat State
   final TextEditingController _aiPromptCtrl = TextEditingController();
   bool _isAiThinking = false;
-  final List<Map<String, String>> _aiMessages = [
-    {
-      'role': 'ai',
-      'content': 'Assalamu\'alaikum. Saya Smart Ri\'ayah AI Assistant. Saya siap membantu memantau data santri, evaluasi kedisiplinan, izin keluar, dan tata tertib asrama.',
-    },
-    {
-      'role': 'ai',
-      'content': '💡 Tips: Ketik nama santri, tanyakan "Berapa santri di luar?", atau "Bagaimana aturan izin pulang?".',
-    },
-  ];
+  final List<Map<String, String>> _aiMessages = [];
 
   // Live Chat State
   final TextEditingController _chatMsgCtrl = TextEditingController();
-  final List<Map<String, dynamic>> _chatMessages = [
-    {
-      'sender': 'Ust. M. Syukron, M.Pd.',
-      'role': 'Musyrif Asrama',
-      'text': 'Assalamu\'alaikum Bapak/Ibu Wali Santri. Mohon konfirmasi kepulangan santri untuk liburan semester.',
-      'time': '08:30',
-      'isMe': false,
-    },
-    {
-      'sender': 'Ibu Fatimah Az-Zahra',
-      'role': 'Wali Santri',
-      'text': 'Wa\'alaikumsalam Ustadz. InsyaAllah Ananda Ahmad Fauzi kami jemput hari Jum\'at pukul 16.00 WIB.',
-      'time': '08:45',
-      'isMe': true,
-    },
-    {
-      'sender': 'Ust. M. Syukron, M.Pd.',
-      'role': 'Musyrif Asrama',
-      'text': 'Baik Ibu, surat izin digital (DU-PERMIT) sudah kami validasi di sistem. Kartu RFID ananda dapat langsung di-tap di Smart Gate.',
-      'time': '08:48',
-      'isMe': false,
-    },
-  ];
+  final List<Map<String, dynamic>> _chatMessages = [];
 
-  // Form Izin Instan State
+  // Instant Permit Form State
   final _permitKategoriCtrl = TextEditingController(text: 'PULANG');
   final _permitKeperluanCtrl = TextEditingController();
   final _permitPenjemputCtrl = TextEditingController();
   bool _isSubmittingPermit = false;
 
+  // Medis UKS Form State
+  final _medisKeluhanCtrl = TextEditingController();
+  final _medisDiagnosaCtrl = TextEditingController();
+  final _medisObatCtrl = TextEditingController();
+  SantriModel? _selectedMedisSantri;
+
+  // Musyrif Roll-call checklist (kamarId -> Set of checked santriId)
+  final Map<String, bool> _eveningRollCall = {};
+
   @override
   void initState() {
     super.initState();
-    _currentTabIndex = widget.initialTabIndex;
+    _activeMenuKey = widget.initialMenuKey;
     _permitPenjemputCtrl.text = widget.session.namaLengkap;
+    _initDefaultChatAndAi();
     _loadAllData();
     _setupSupabaseRealtime();
   }
@@ -124,7 +108,72 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
     _permitKategoriCtrl.dispose();
     _permitKeperluanCtrl.dispose();
     _permitPenjemputCtrl.dispose();
+    _medisKeluhanCtrl.dispose();
+    _medisDiagnosaCtrl.dispose();
+    _medisObatCtrl.dispose();
     super.dispose();
+  }
+
+  void _initDefaultChatAndAi() {
+    final role = widget.session.role;
+
+    // Default AI Greeting per role
+    String aiGreeting;
+    switch (role) {
+      case AppRole.wali:
+        aiGreeting = 'Assalamu\'alaikum Ibu/Bapak ${widget.session.namaLengkap}. Saya AI Smart Ri\'ayah siap membantu memantau mutaba\'ah ananda, mengecek jadwal kunjungan, serta tata tertib perizinan asrama.';
+        break;
+      case AppRole.security:
+        aiGreeting = 'Siap, Komandan. AI Gate Assistant memantau antrean gerbang, verifikasi token DU-PERMIT, dan deteksi santri yang melampaui jam malam.';
+        break;
+      case AppRole.poskestren:
+        aiGreeting = 'Halo dr. Nurul Aini. AI Poskestren siap membantu pengecekan riwayat alergi santri, pencatatan rekam medis, dan rekomendasi rujukan rumah sakit.';
+        break;
+      case AppRole.mudir:
+        aiGreeting = 'Ahlan wa Sahlan, Kyai. AI Executive DSS siap memberikan ringkasan analisis performa kedisiplinan dan tren perizinan seluruh santri.';
+        break;
+      default:
+        aiGreeting = 'Assalamu\'alaikum ${widget.session.namaLengkap}. Smart Ri\'ayah AI siap menganalisis data santri, kuota kasur kamar, dan presensi realtime.';
+    }
+
+    _aiMessages.add({'role': 'ai', 'content': aiGreeting});
+
+    // Default Chat Messages per role
+    if (role == AppRole.wali) {
+      _chatMessages.addAll([
+        {
+          'sender': 'Ust. M. Syukron, M.Pd.',
+          'role': 'Musyrif Asrama',
+          'text': 'Assalamu\'alaikum Ibu Fatimah. Ananda Ahmad Fauzi hari ini mengikuti halaqah tahfidz dan sholat berjamaah tepat waktu.',
+          'time': '07:30',
+          'isMe': false,
+        },
+        {
+          'sender': 'Ibu Fatimah Az-Zahra',
+          'role': 'Wali Santri',
+          'text': 'Alhamdulillah Ustadz. Mohon bimbingannya selalu untuk ananda.',
+          'time': '07:45',
+          'isMe': true,
+        },
+      ]);
+    } else {
+      _chatMessages.addAll([
+        {
+          'sender': 'Ibu Fatimah Az-Zahra',
+          'role': 'Wali Santri',
+          'text': 'Assalamu\'alaikum Ustadz, apakah surat izin pulang Ahmad Fauzi untuk akhir pekan sudah diverifikasi?',
+          'time': '08:15',
+          'isMe': false,
+        },
+        {
+          'sender': 'Ust. M. Syukron, M.Pd.',
+          'role': 'Musyrif Asrama',
+          'text': 'Wa\'alaikumsalam Ibu. Sudah kami setujui di sistem, token DU-PERMIT sudah aktif untuk gerbang.',
+          'time': '08:20',
+          'isMe': role == AppRole.musyrif,
+        },
+      ]);
+    }
   }
 
   Future<void> _loadAllData() async {
@@ -141,10 +190,13 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
           _roomsList = results[0] as List<RoomModel>;
           _santriList = results[1] as List<SantriModel>;
           _permitsList = results[2] as List<PermitModel>;
+          if (_santriList.isNotEmpty && _selectedMedisSantri == null) {
+            _selectedMedisSantri = _santriList.first;
+          }
           _isLoading = false;
         });
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) setState(() => _isLoading = false);
     }
   }
@@ -152,23 +204,26 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
   void _setupSupabaseRealtime() {
     _roomsChannel = SupabaseService.subscribeTableChanges(
       tableName: 'rooms',
-      onChange: (payload) {
-        _loadAllData();
-      },
+      onChange: (_) => _loadAllData(),
     );
-
     _santriChannel = SupabaseService.subscribeTableChanges(
       tableName: 'santri',
-      onChange: (payload) {
-        _loadAllData();
-      },
+      onChange: (_) => _loadAllData(),
     );
-
     _permitsChannel = SupabaseService.subscribeTableChanges(
       tableName: 'permits',
-      onChange: (payload) {
-        _loadAllData();
-      },
+      onChange: (_) => _loadAllData(),
+    );
+  }
+
+  /// Mengambil santri milik wali santri yang sedang login
+  SantriModel? get _childOfWali {
+    if (_santriList.isEmpty) return null;
+    return _santriList.firstWhere(
+      (s) =>
+          s.namaLengkap.toLowerCase().contains('fauzi') ||
+          s.id == widget.session.santriId,
+      orElse: () => _santriList.first,
     );
   }
 
@@ -207,13 +262,147 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
     }
   }
 
-  void _onSelectTab(int index) {
-    setState(() => _currentTabIndex = index);
+  void _onSelectMenuKey(String key) {
+    setState(() => _activeMenuKey = key);
     if (_scaffoldKey.currentState?.isDrawerOpen == true) {
-      Navigator.pop(context); // Tutup drawer
+      Navigator.pop(context);
     }
   }
 
+  // ─── GATE VALIDATION ACTIONS (KHUSUS SATPAM) ───────────────────────────────
+  Future<void> _validateGateAction(PermitModel permit, bool isCheckOut) async {
+    final actionName = isCheckOut ? 'Checkout (Keluar Gerbang)' : 'Check-in (Kembali ke Asrama)';
+    final newStatus = isCheckOut ? 'DI_LUAR' : 'DI_ASRAMA';
+
+    try {
+      // 1. Update status santri di Supabase
+      await SupabaseConfig.client.from('santri').update({
+        'status_asrama': newStatus,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', permit.santriId);
+
+      // 2. Catat ke tabel gate_logs
+      await SupabaseConfig.client.from('gate_logs').insert({
+        'id': 'LOG-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}',
+        'santri_id': permit.santriId,
+        'santri_nama': permit.santriNama,
+        'rfid_uid': permit.tokenIzin,
+        'gate_id': 'GATE-01 (Main Pos)',
+        'tipe': isCheckOut ? 'TAP_KELUAR' : 'TAP_MASUK',
+        'status': 'VERIFIED',
+        'remarks': 'Divalidasi Komandan Sutrisno (Pos Satpam)',
+        'created_at': DateTime.now().toIso8601String(),
+      });
+
+      // 3. Update status permit jika check-in selesai
+      if (!isCheckOut) {
+        await SupabaseConfig.client.from('permits').update({
+          'status': 'COMPLETED',
+          'updated_at': DateTime.now().toIso8601String(),
+        }).eq('id', permit.id);
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Berhasil $actionName: ${permit.santriNama}'),
+            backgroundColor: const Color(0xFF10B981),
+          ),
+        );
+        _loadAllData();
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal validasi gate: $e'), backgroundColor: Colors.redAccent),
+      );
+    }
+  }
+
+  // ─── MEDIS STATUS UPDATE (KHUSUS POSKESTREN) ───────────────────────────────
+  Future<void> _updateSantriMedicalStatus(SantriModel santri, String status) async {
+    try {
+      await SupabaseConfig.client.from('santri').update({
+        'status_asrama': status,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', santri.id);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Status medis ${santri.namaLengkap} diubah menjadi: $status'),
+            backgroundColor: const Color(0xFF0284C7),
+          ),
+        );
+        _loadAllData();
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal update medis: $e'), backgroundColor: Colors.redAccent),
+      );
+    }
+  }
+
+  // ─── PERMIT APPROVAL ACTIONS (ADMIN & MUSYRIF) ─────────────────────────────
+  Future<void> _updatePermitApproval(PermitModel permit, String newStatus) async {
+    try {
+      await SupabaseConfig.client.from('permits').update({
+        'status': newStatus,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', permit.id);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Surat izin ${permit.santriNama} ditandai sebagai: $newStatus'),
+            backgroundColor: newStatus == 'APPROVED' ? const Color(0xFF047857) : const Color(0xFFDC2626),
+          ),
+        );
+        _loadAllData();
+      }
+    } catch (_) {}
+  }
+
+  // ─── SUBMIT PERMIT FORM (WALI & SANTRI) ────────────────────────────────────
+  Future<void> _submitInstantPermit() async {
+    if (_permitKeperluanCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Keperluan izin wajib diisi!')),
+      );
+      return;
+    }
+
+    setState(() => _isSubmittingPermit = true);
+
+    final child = _childOfWali;
+    final santriId = child?.id ?? 'S-001';
+    final santriNama = child?.namaLengkap ?? 'Ahmad Fauzi';
+
+    final success = await SupabaseService.submitPermit(
+      santriId: santriId,
+      santriNama: santriNama,
+      kategori: _permitKategoriCtrl.text,
+      keperluan: _permitKeperluanCtrl.text.trim(),
+      penjemput: _permitPenjemputCtrl.text.trim(),
+      batasKembali: DateTime.now().add(const Duration(days: 2)),
+    );
+
+    if (!mounted) return;
+    setState(() => _isSubmittingPermit = false);
+
+    if (success) {
+      _permitKeperluanCtrl.clear();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pengajuan izin digital berhasil dikirimkan ke Musyrif Asrama!'),
+          backgroundColor: Color(0xFF047857),
+        ),
+      );
+      _loadAllData();
+      setState(() => _activeMenuKey = 'dashboard');
+    }
+  }
+
+  // ─── AI ASSISTANT CHAT SEND ────────────────────────────────────────────────
   void _sendAiMessage([String? customPrompt]) {
     final text = customPrompt ?? _aiPromptCtrl.text.trim();
     if (text.isEmpty) return;
@@ -228,30 +417,34 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
       if (!mounted) return;
       String reply;
       final lower = text.toLowerCase();
+      final role = widget.session.role;
 
-      final diAsramaCount = _santriList.where((s) => s.isPresent).length;
-      final diLuarCount = _santriList.where((s) => s.isIzin).length;
-
-      if (lower.contains('luar') || lower.contains('izin')) {
-        reply = '📊 Berdasarkan data live database Supabase:\n'
-            '• Sedang di luar / izin: $diLuarCount santri\n'
-            '• Berada di asrama: $diAsramaCount santri\n'
-            '• Seluruh santri yang keluar telah memiliki token elektronik DU-PERMIT resmi.';
-      } else if (lower.contains('kamar') || lower.contains('kuota')) {
-        final totalKasur = _roomsList.fold<int>(0, (sum, r) => sum + r.kapasitas);
-        final kasurTerisi = _roomsList.fold<int>(0, (sum, r) => sum + r.terisi);
-        reply = '🏢 Status Keterisian Asrama:\n'
-            '• Total Kamar: ${_roomsList.length} kamar\n'
-            '• Total Kasur: $totalKasur kasur ($kasurTerisi terisi, ${totalKasur - kasurTerisi} kosong)\n'
-            '• Kamar putra dan putri terisolasi dengan akses gerbang mandiri.';
-      } else if (lower.contains('aturan') || lower.contains('jam')) {
-        reply = '📜 Aturan Perizinan Pondok Darul Ulum:\n'
-            '1. Izin Pesiar: Maksimal 4 jam di hari Ahad.\n'
-            '2. Izin Pulang: Wajib dijemput oleh orang tua / mahram yang terdaftar.\n'
-            '3. Batas Jam Malam: Pukul 17:30 WIB seluruh santri wajib sudah tap masuk di gerbang.';
+      if (role == AppRole.wali) {
+        final child = _childOfWali;
+        final name = child?.namaLengkap ?? 'Ahmad Fauzi';
+        if (lower.contains('keberadaan') || lower.contains('posisi') || lower.contains('status')) {
+          reply = 'Ananda $name saat ini berstatus: ${child?.statusLabel ?? "Di Asrama"}. '
+              'Tercatat berada di lingkungan pondok dan mengikuti kegiatan halaqah dengan tertib.';
+        } else if (lower.contains('saldo') || lower.contains('jajan')) {
+          reply = 'Saldo Dompet Pintar $name saat ini Rp 185.000 dengan limit jajan harian Rp 25.000. '
+              'Konsumsi terakhir tercatat di Kantin Sehat Asrama untuk makan siang.';
+        } else {
+          reply = 'Berdasarkan data pondok untuk ananda $name, nilai mutaba\'ah sholat 100% dan poin disiplin 100/100 (Mumtaz).';
+        }
+      } else if (role == AppRole.security) {
+        final diLuar = _santriList.where((s) => s.isIzin).length;
+        reply = 'Laporan Keamanan Gate:\n'
+            '• Santri sedang di luar gerbang: $diLuar santri\n'
+            '• Izin aktif terverifikasi: ${_permitsList.where((p) => p.isApproved).length} surat\n'
+            '• Puncak arus keluar gerbang diprediksi pukul 16:30 WIB.';
+      } else if (role == AppRole.poskestren) {
+        final sakit = _santriList.where((s) => s.statusAsrama == 'SAKIT').length;
+        reply = 'Laporan Poskestren:\n'
+            '• Santri istirahat/rawat UKS saat ini: $sakit santri\n'
+            '• Stok obat umum (paracetamol, antasida, vitamin) dalam kondisi aman.';
       } else {
-        reply = '🤖 AI Smart Assistant:\n'
-            'Informasi "$text" telah dicocokkan dengan Buku Induk & sistem IoT Smart Ri\'ayah. Kondisi sistem berjalan optimal (Supabase Realtime Live).';
+        reply = 'Analisis AI: Sistem Smart Ri\'ayah sinkron dengan Supabase. '
+            'Total santri: ${_santriList.length}, Total kamar: ${_roomsList.length}. Semua modul IoT Gate dan presensi online.';
       }
 
       setState(() {
@@ -278,68 +471,25 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
     _chatMsgCtrl.clear();
   }
 
-  Future<void> _submitInstantPermit() async {
-    if (_permitKeperluanCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Keperluan izin wajib diisi!')),
-      );
-      return;
-    }
-
-    setState(() => _isSubmittingPermit = true);
-
-    final targetSantri = _santriList.isNotEmpty ? _santriList.first : null;
-    final santriId = targetSantri?.id ?? 'S-001';
-    final santriNama = targetSantri?.namaLengkap ?? 'Ahmad Fauzi';
-
-    final success = await SupabaseService.submitPermit(
-      santriId: santriId,
-      santriNama: santriNama,
-      kategori: _permitKategoriCtrl.text,
-      keperluan: _permitKeperluanCtrl.text.trim(),
-      penjemput: _permitPenjemputCtrl.text.trim(),
-      batasKembali: DateTime.now().add(const Duration(days: 2)),
-    );
-
-    if (!mounted) return;
-    setState(() => _isSubmittingPermit = false);
-
-    if (success) {
-      _permitKeperluanCtrl.clear();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Surat izin digital berhasil dikirimkan ke Musyrif!'),
-          backgroundColor: Color(0xFF047857),
-        ),
-      );
-      _loadAllData();
-      setState(() => _currentTabIndex = 3); // Arahkan ke rekap izin
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final role = widget.session.role;
     final primaryColor = role.primaryColor;
 
-    final List<String> tabTitles = [
-      'Dashboard Ringkasan',
-      'Grafik Aktivitas Real-Time',
-      'Manajemen Data & Kamar',
-      'Rekapitulasi Laporan',
-      'AI Smart Assistant',
-      'Dompet Pintar Cashless',
-      'Perizinan Langsung',
-      'Live Chat Pengurus',
-    ];
+    // Ambil judul halaman dari menu aktif
+    final allowedMenus = AppDrawer.getMenusForRole(role);
+    final activeItem = allowedMenus.firstWhere(
+      (m) => m.key == _activeMenuKey,
+      orElse: () => allowedMenus.first,
+    );
 
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: const Color(0xFFF8FAFC),
       drawer: AppDrawer(
         session: widget.session,
-        selectedIndex: _currentTabIndex,
-        onSelectIndex: _onSelectTab,
+        activeMenuKey: _activeMenuKey,
+        onSelectMenuKey: _onSelectMenuKey,
         onLogout: _handleLogout,
       ),
       appBar: AppBar(
@@ -348,23 +498,23 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
         titleSpacing: 0,
         leading: IconButton(
           icon: const Icon(Icons.menu_rounded, color: Color(0xFF0F172A), size: 24),
-          tooltip: 'Buka Menu',
+          tooltip: 'Menu Navigasi',
           onPressed: () => _scaffoldKey.currentState?.openDrawer(),
         ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              tabTitles[_currentTabIndex],
+              activeItem.title,
               style: const TextStyle(
-                fontSize: 15,
+                fontSize: 14.5,
                 fontWeight: FontWeight.w900,
                 color: Color(0xFF0F172A),
               ),
             ),
             Row(
               children: [
-                const CircleAvatar(radius: 3, backgroundColor: Color(0xFF10B981)),
+                CircleAvatar(radius: 3, backgroundColor: primaryColor),
                 const SizedBox(width: 4),
                 Text(
                   '${role.title} • Live Sync',
@@ -377,41 +527,693 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh_rounded, color: Color(0xFF475569)),
-            tooltip: 'Sinkronisasi Data',
+            tooltip: 'Muat Ulang',
             onPressed: _loadAllData,
           ),
           IconButton(
-            icon: const Icon(Icons.auto_awesome_rounded, color: Color(0xFF8B5CF6)),
-            tooltip: 'AI Assistant',
-            onPressed: () => setState(() => _currentTabIndex = 4),
+            icon: const Icon(Icons.logout_rounded, color: Color(0xFFDC2626)),
+            tooltip: 'Keluar',
+            onPressed: _handleLogout,
           ),
           const SizedBox(width: 4),
         ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF047857)))
+          ? Center(child: CircularProgressIndicator(color: primaryColor))
           : RefreshIndicator(
               onRefresh: _loadAllData,
-              color: const Color(0xFF047857),
-              child: IndexedStack(
-                index: _currentTabIndex,
-                children: [
-                  _buildTabRingkasan(),
-                  _buildTabGrafikRealtime(),
-                  _buildTabDataKamar(),
-                  _buildTabRekapLaporan(),
-                  _buildTabAiAssistant(),
-                  _buildTabDompetPintar(),
-                  _buildTabPerizinanLangsung(),
-                  _buildTabLiveChat(),
-                ],
-              ),
+              color: primaryColor,
+              child: _buildBodyForActiveMenu(),
             ),
     );
   }
 
-  // ─── TAB 0: DASHBOARD RINGKASAN ─────────────────────────────────────────────
-  Widget _buildTabRingkasan() {
+  // ─── ROUTER TAMPILAN BERDASARKAN MENU AKTIF & ROLE RBAC ───────────────────
+  Widget _buildBodyForActiveMenu() {
+    switch (_activeMenuKey) {
+      case 'dashboard':
+        return _buildRoleSpecificDashboard();
+      case 'grafik':
+        return _buildGrafikView();
+      case 'data_kamar':
+        return _buildDataKamarView();
+      case 'rekap_laporan':
+        return _buildRekapLaporanView();
+      case 'perizinan':
+        return _buildPerizinanView();
+      case 'dompet_pintar':
+        return _buildDompetPintarView();
+      case 'ai_assistant':
+        return _buildAiAssistantView();
+      case 'live_chat':
+        return _buildLiveChatView();
+      default:
+        return _buildRoleSpecificDashboard();
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 1. ROLE-SPECIFIC DASHBOARDS
+  // ═══════════════════════════════════════════════════════════════════════════
+  Widget _buildRoleSpecificDashboard() {
+    final role = widget.session.role;
+
+    if (role == AppRole.wali) {
+      return _buildWaliDashboard();
+    } else if (role == AppRole.security) {
+      return _buildSecurityDashboard();
+    } else if (role == AppRole.poskestren) {
+      return _buildPoskestrenDashboard();
+    } else if (role == AppRole.mudir) {
+      return _buildMudirExecutiveDashboard();
+    } else if (role == AppRole.musyrif) {
+      return _buildMusyrifDashboard();
+    } else {
+      // Super Admin & Admin Ri'ayah
+      return _buildAdminDashboard();
+    }
+  }
+
+  // ─── A. DASHBOARD KHUSUS ORANG TUA / WALI SANTRI ───────────────────────────
+  Widget _buildWaliDashboard() {
+    final child = _childOfWali;
+    final isInside = child?.isPresent ?? true;
+    final isSakit = child?.statusAsrama == 'SAKIT';
+
+    Color statusBadgeColor = const Color(0xFF047857);
+    String statusText = 'STATUS: DI DALAM ASRAMA';
+    String statusDesc = 'Ananda berada di lingkungan pondok mengikuti halaqah & asrama.';
+
+    if (isSakit) {
+      statusBadgeColor = const Color(0xFF7C3AED);
+      statusText = 'STATUS: SAKIT / DI UKS';
+      statusDesc = 'Ananda sedang dalam perawatan medis Poskestren pondok.';
+    } else if (!isInside) {
+      statusBadgeColor = const Color(0xFFD97706);
+      statusText = 'STATUS: SEDANG DI LUAR ASRAMA';
+      statusDesc = 'Ananda tercatat keluar asrama dengan surat izin DU-PERMIT resmi.';
+    }
+
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Greeting Card Wali
+          _buildGreetingCard(
+            title: 'Assalamu\'alaikum, ${widget.session.namaLengkap}',
+            sub: 'Portal Pemantauan Ananda • Pesantren Modern Darul Ulum',
+            icon: Icons.family_restroom_rounded,
+            color: const Color(0xFF0891B2),
+          ),
+          const SizedBox(height: 16),
+
+          // Status Keberadaan Anak (Live Presence Badge)
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: statusBadgeColor.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: statusBadgeColor.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: statusBadgeColor,
+                  child: Icon(
+                    isSakit ? Icons.healing_rounded : (isInside ? Icons.check_circle_rounded : Icons.departure_board_rounded),
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        statusText,
+                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900, color: statusBadgeColor),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(statusDesc, style: const TextStyle(fontSize: 11, color: Color(0xFF475569))),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Profil Ananda
+          if (child != null)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 26,
+                    backgroundColor: const Color(0xFF047857).withOpacity(0.12),
+                    child: Text(
+                      child.initials,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF047857)),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          child.namaLengkap,
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'NIS: ${child.nis} • Kelas ${child.kelas} • ${child.kamar}',
+                          style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFDCFCE7),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                'Poin Disiplin: ${child.poinDisiplin}/100',
+                                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF15803D)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 16),
+
+          // Quick Action Wali: Form Izin & Cek Dompet
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => setState(() => _activeMenuKey = 'perizinan'),
+                  icon: const Icon(Icons.send_rounded, size: 16),
+                  label: const Text('Ajukan Izin Pulang'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF047857),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => setState(() => _activeMenuKey = 'dompet_pintar'),
+                  icon: const Icon(Icons.wallet_rounded, size: 16),
+                  label: const Text('Dompet Pintar'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0284C7),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 22),
+
+          // Riwayat Izin Ananda
+          const Text(
+            'Riwayat Perizinan Ananda Terakhir',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
+          ),
+          const SizedBox(height: 8),
+
+          if (_permitsList.isEmpty)
+            const Text('Belum ada surat perizinan aktif.', style: TextStyle(color: Colors.grey))
+          else
+            ..._permitsList.take(3).map((p) => _buildPermitCard(p)),
+
+          const SizedBox(height: 30),
+        ],
+      ),
+    );
+  }
+
+  // ─── B. DASHBOARD KHUSUS POS SATPAM / KEAMANAN GERBANG ─────────────────────
+  Widget _buildSecurityDashboard() {
+    final diLuarCount = _santriList.where((s) => s.isIzin).length;
+    final permitsAktif = _permitsList.where((p) => p.isApproved).toList();
+
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildGreetingCard(
+            title: 'Pos Keamanan Gerbang Utama (Gate Command)',
+            sub: 'Monitoring IoT Turnstile Gate & Validasi DU-PERMIT',
+            icon: Icons.cell_tower_rounded,
+            color: const Color(0xFFE11D48),
+          ),
+          const SizedBox(height: 16),
+
+          // Quick KPI Gate
+          Row(
+            children: [
+              Expanded(
+                child: _buildKpiCard(
+                  label: 'Sedang di Luar',
+                  value: '$diLuarCount',
+                  sub: 'Santri Izin',
+                  icon: Icons.directions_walk_rounded,
+                  color: const Color(0xFFE11D48),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildKpiCard(
+                  label: 'Izin Aktif Hari Ini',
+                  value: '${permitsAktif.length}',
+                  sub: 'Siap Validasi Gate',
+                  icon: Icons.verified_user_rounded,
+                  color: const Color(0xFF10B981),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Daftar Validasi Checkout / Checkin Gate
+          const Text(
+            'Validasi Gerbang DU-PERMIT (1-Tap Gate)',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
+          ),
+          const SizedBox(height: 8),
+
+          if (permitsAktif.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(24),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: const Text('Tidak ada surat izin yang siap validasi gerbang saat ini.', style: TextStyle(color: Colors.grey)),
+            )
+          else
+            ...permitsAktif.map((permit) {
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          permit.tokenIzin,
+                          style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold, fontSize: 11, color: Color(0xFF0F766E)),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(6)),
+                          child: const Text('DISETUJUI', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF15803D))),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      permit.santriNama,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                    ),
+                    Text(
+                      '${permit.kategori} • ${permit.keperluan} • Penjemput: ${permit.penjemput}',
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () => _validateGateAction(permit, true),
+                            icon: const Icon(Icons.logout_rounded, size: 14),
+                            label: const Text('Validasi Keluar'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFDC2626),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () => _validateGateAction(permit, false),
+                            icon: const Icon(Icons.login_rounded, size: 14),
+                            label: const Text('Validasi Masuk'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF047857),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            }),
+
+          const SizedBox(height: 30),
+        ],
+      ),
+    );
+  }
+
+  // ─── C. DASHBOARD KHUSUS POSKESTREN / MEDIS UKS ────────────────────────────
+  Widget _buildPoskestrenDashboard() {
+    final sakitCount = _santriList.where((s) => s.statusAsrama == 'SAKIT').length;
+
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildGreetingCard(
+            title: 'Klinik Pesantren & Poskestren',
+            sub: 'Rekam Medis, Pemeriksaan & Rawat Inap UKS',
+            icon: Icons.medical_services_rounded,
+            color: const Color(0xFF0284C7),
+          ),
+          const SizedBox(height: 16),
+
+          Row(
+            children: [
+              Expanded(
+                child: _buildKpiCard(
+                  label: 'Rawat Inap UKS',
+                  value: '$sakitCount',
+                  sub: 'Santri Istirahat',
+                  icon: Icons.hotel_rounded,
+                  color: const Color(0xFF7C3AED),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildKpiCard(
+                  label: 'Status Obat',
+                  value: 'Lengkap',
+                  sub: 'Apotek Asrama',
+                  icon: Icons.medication_rounded,
+                  color: const Color(0xFF0284C7),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Form Ubah Status Medis Santri
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.healing_rounded, color: Color(0xFF0284C7), size: 20),
+                    SizedBox(width: 8),
+                    Text('Pencatatan Status Medis & Rawat UKS', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // Pilih Santri
+                const Text('Pilih Santri', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                DropdownButtonFormField<SantriModel>(
+                  value: _selectedMedisSantri,
+                  isExpanded: true,
+                  items: _santriList.map((s) {
+                    return DropdownMenuItem(
+                      value: s,
+                      child: Text('${s.namaLengkap} (${s.kamar})', style: const TextStyle(fontSize: 12)),
+                    );
+                  }).toList(),
+                  onChanged: (val) => setState(() => _selectedMedisSantri = val),
+                  decoration: InputDecoration(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Keluhan
+                TextField(
+                  controller: _medisKeluhanCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Keluhan & Diagnosa Singkat',
+                    hintText: 'Contoh: Demam 38°C, Flu, Radang Tenggorokan',
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _selectedMedisSantri == null
+                            ? null
+                            : () => _updateSantriMedicalStatus(_selectedMedisSantri!, 'SAKIT'),
+                        icon: const Icon(Icons.sick_rounded, size: 15),
+                        label: const Text('Tandai Rawat di UKS'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF7C3AED),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _selectedMedisSantri == null
+                            ? null
+                            : () => _updateSantriMedicalStatus(_selectedMedisSantri!, 'DI_ASRAMA'),
+                        icon: const Icon(Icons.check_circle_rounded, size: 15),
+                        label: const Text('Sembuh & Kembali'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF047857),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 30),
+        ],
+      ),
+    );
+  }
+
+  // ─── D. DASHBOARD KHUSUS MUDIR / PIMPINAN PONDOK (EXECUTIVE READ-ONLY) ──────
+  Widget _buildMudirExecutiveDashboard() {
+    final totalSantri = _santriList.length;
+    final diAsrama = _santriList.where((s) => s.isPresent).length;
+    final kasurTerisi = _roomsList.fold<int>(0, (sum, r) => sum + r.terisi);
+    final totalKasur = _roomsList.fold<int>(0, (sum, r) => sum + r.kapasitas);
+
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildGreetingCard(
+            title: 'Executive Dashboard Ma\'had',
+            sub: 'K.H. Ahmad Dahlan, Lc., M.A. • Pengasuh Pesantren',
+            icon: Icons.account_balance_rounded,
+            color: const Color(0xFFD97706),
+          ),
+          const SizedBox(height: 16),
+
+          // Executive KPI Grid
+          Row(
+            children: [
+              Expanded(
+                child: _buildKpiCard(
+                  label: 'Total Santri',
+                  value: '$totalSantri',
+                  sub: 'Santri Aktif',
+                  icon: Icons.people_alt_rounded,
+                  color: const Color(0xFFD97706),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildKpiCard(
+                  label: 'Kehadiran Pondok',
+                  value: totalSantri > 0 ? '${((diAsrama / totalSantri) * 100).toStringAsFixed(1)}%' : '100%',
+                  sub: '$diAsrama di Asrama',
+                  icon: Icons.check_circle_rounded,
+                  color: const Color(0xFF10B981),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _buildKpiCard(
+                  label: 'Okupansi Asrama',
+                  value: totalKasur > 0 ? '${((kasurTerisi / totalKasur) * 100).toStringAsFixed(0)}%' : '0%',
+                  sub: '$kasurTerisi / $totalKasur Kasur',
+                  icon: Icons.hotel_rounded,
+                  color: const Color(0xFF0284C7),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildKpiCard(
+                  label: 'Rata-rata Adab',
+                  value: '95.8 Pts',
+                  sub: 'Kategori Mumtaz',
+                  icon: Icons.stars_rounded,
+                  color: const Color(0xFF8B5CF6),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Laporan Terpadu Divisi (Executive Overview)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Rangkuman Kinerja Terpadu Pesantren', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                SizedBox(height: 8),
+                Text(
+                  '• Divisi Pengasuhan: 100% kamar telah melakukan presensi malam.\n'
+                  '• Divisi Keamanan: Gerbang IoT Turnstile berjalan optimal dengan status locked.\n'
+                  '• Divisi Medis: Tidak ada santri dengan rujukan penyakit darurat.\n'
+                  '• Divisi Keuangan: Transaksi cashless santri transparan via kartu RFID.',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF475569), height: 1.6),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 30),
+        ],
+      ),
+    );
+  }
+
+  // ─── E. DASHBOARD KHUSUS MUSYRIF / PEMBINA ASRAMA ─────────────────────────
+  Widget _buildMusyrifDashboard() {
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildGreetingCard(
+            title: 'Asrama Binaan Musyrif',
+            sub: 'Monitoring Kamar, Presensi Malam & Pembinaan Santri',
+            icon: Icons.home_work_rounded,
+            color: const Color(0xFF0D9488),
+          ),
+          const SizedBox(height: 16),
+
+          // Presensi Malam Santri Checklist
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Presensi Malam Santri Binaan', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+              Text('${_santriList.length} Santri', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          ..._santriList.map((santri) {
+            final isChecked = _eveningRollCall[santri.id] ?? santri.isPresent;
+            return Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: CheckboxListTile(
+                value: isChecked,
+                activeColor: const Color(0xFF0D9488),
+                title: Text(santri.namaLengkap, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                subtitle: Text('${santri.kamar} • Poin: ${santri.poinDisiplin}', style: const TextStyle(fontSize: 11)),
+                onChanged: (val) {
+                  setState(() => _eveningRollCall[santri.id] = val ?? false);
+                },
+              ),
+            );
+          }),
+
+          const SizedBox(height: 30),
+        ],
+      ),
+    );
+  }
+
+  // ─── F. DASHBOARD ADMIN RI'AYAH & SUPER ADMIN ──────────────────────────────
+  Widget _buildAdminDashboard() {
     final totalSantri = _santriList.length;
     final diAsrama = _santriList.where((s) => s.isPresent).length;
     final diLuar = _santriList.where((s) => s.isIzin).length;
@@ -424,11 +1226,15 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Greeting Card Role-Specific
-          _buildRoleGreetingBanner(),
+          _buildGreetingCard(
+            title: widget.session.namaLengkap,
+            sub: widget.session.role.subtitle,
+            icon: widget.session.role.icon,
+            color: widget.session.role.primaryColor,
+          ),
           const SizedBox(height: 16),
 
-          // 4 KPI Stats Grid
+          // 4 KPI Cards
           Row(
             children: [
               Expanded(
@@ -478,54 +1284,13 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
           ),
           const SizedBox(height: 20),
 
-          // Quick Action Shortcut Buttons (Mobile-First)
-          const Text(
-            'Akses Cepat Fitur Terpadu',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _buildQuickActionBtn(
-                  title: 'Ajukan Izin',
-                  icon: Icons.note_add_rounded,
-                  color: const Color(0xFF047857),
-                  onTap: () => setState(() => _currentTabIndex = 6),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _buildQuickActionBtn(
-                  title: 'AI Assistant',
-                  icon: Icons.auto_awesome_rounded,
-                  color: const Color(0xFF8B5CF6),
-                  onTap: () => setState(() => _currentTabIndex = 4),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _buildQuickActionBtn(
-                  title: 'Dompet Pintar',
-                  icon: Icons.wallet_rounded,
-                  color: const Color(0xFF0284C7),
-                  onTap: () => setState(() => _currentTabIndex = 5),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 22),
-
-          // Overview Santri & Keberadaan
+          // Santri Terkini
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Status Keberadaan Santri Terbaru',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
-              ),
+              const Text('Data Keberadaan Santri Terbaru', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
               TextButton(
-                onPressed: () => setState(() => _currentTabIndex = 2),
+                onPressed: () => setState(() => _activeMenuKey = 'data_kamar'),
                 child: const Text('Lihat Semua', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF047857))),
               ),
             ],
@@ -533,7 +1298,7 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
           const SizedBox(height: 6),
 
           if (_santriList.isEmpty)
-            const Center(child: Text('Belum ada data santri.'))
+            const Text('Belum ada data santri.')
           else
             ..._santriList.take(4).map((s) => _buildSantriMiniCard(s)),
 
@@ -543,193 +1308,20 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
     );
   }
 
-  Widget _buildRoleGreetingBanner() {
-    final role = widget.session.role;
-    final primaryColor = role.primaryColor;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [primaryColor, primaryColor.withOpacity(0.85)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: primaryColor.withOpacity(0.25),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(role.icon, color: Colors.white, size: 26),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Ahlan wa Sahlan, ${widget.session.namaLengkap}',
-                  style: const TextStyle(
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  role.subtitle,
-                  style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.9)),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildKpiCard({
-    required String label,
-    required String value,
-    required String sub,
-    required IconData icon,
-    required Color color,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
-              Icon(icon, size: 16, color: color),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
-          ),
-          const SizedBox(height: 2),
-          Text(sub, style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w600)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuickActionBtn({
-    required String title,
-    required IconData icon,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withOpacity(0.2)),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, size: 20, color: color),
-            const SizedBox(height: 4),
-            Text(
-              title,
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSantriMiniCard(SantriModel s) {
-    final isInside = s.isPresent;
-    final badgeColor = isInside ? const Color(0xFF047857) : const Color(0xFFD97706);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 18,
-            backgroundColor: badgeColor.withOpacity(0.12),
-            child: Icon(
-              isInside ? Icons.home_rounded : Icons.directions_walk_rounded,
-              color: badgeColor,
-              size: 18,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  s.namaLengkap,
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
-                ),
-                Text(
-                  'NIS: ${s.nis} • ${s.kamar}',
-                  style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: badgeColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              isInside ? 'Di Asrama' : 'Sedang Izin',
-              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: badgeColor),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ─── TAB 1: GRAFIK AKTIVITAS REAL-TIME ──────────────────────────────────────
-  Widget _buildTabGrafikRealtime() {
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 2. GRAFIK AKTIVITAS VIEW (MudirChartsView)
+  // ═══════════════════════════════════════════════════════════════════════════
+  Widget _buildGrafikView() {
     return const MudirChartsView();
   }
 
-  // ─── TAB 2: MANAJEMEN DATA & KAMAR ─────────────────────────────────────────
-  Widget _buildTabDataKamar() {
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 3. MANAJEMEN DATA & KAMAR VIEW (CRUD untuk Admin, Read-only / Presensi)
+  // ═══════════════════════════════════════════════════════════════════════════
+  Widget _buildDataKamarView() {
+    final role = widget.session.role;
+    final isAllowedCRUD = role == AppRole.superAdmin || role == AppRole.adminRiayah;
+
     final filteredRooms = _roomsList.where((room) {
       if (_selectedGenderFilter == 'PUTRA' && room.isPutri) return false;
       if (_selectedGenderFilter == 'PUTRI' && !room.isPutri) return false;
@@ -741,133 +1333,544 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
       final q = _searchQuery.toLowerCase();
       return santri.namaLengkap.toLowerCase().contains(q) ||
           santri.nis.toLowerCase().contains(q) ||
-          santri.kamar.toLowerCase().contains(q) ||
-          (santri.rfidUid?.toLowerCase().contains(q) ?? false);
+          santri.kamar.toLowerCase().contains(q);
     }).toList();
 
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       children: [
-        // Action Buttons: Tambah Kamar & Santri
-        Row(
-          children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const ManageRoomsScreen()),
-                  ).then((_) => _loadAllData());
-                },
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('Tambah Kamar'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF047857),
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
+        if (isAllowedCRUD) ...[
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ManageRoomsScreen()),
+                    ).then((_) => _loadAllData());
+                  },
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('Tambah Kamar'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF047857),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => OnboardingSantriScreen(availableRooms: _roomsList),
-                    ),
-                  ).then((_) => _loadAllData());
-                },
-                icon: const Icon(Icons.person_add_rounded, size: 16),
-                label: const Text('Santri Baru'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0D9488),
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => OnboardingSantriScreen(availableRooms: _roomsList)),
+                    ).then((_) => _loadAllData());
+                  },
+                  icon: const Icon(Icons.person_add_rounded, size: 16),
+                  label: const Text('Santri Baru'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0D9488),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
                 ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
+            ],
+          ),
+          const SizedBox(height: 14),
+        ],
 
         // Search Bar
         TextField(
           onChanged: (val) => setState(() => _searchQuery = val),
           decoration: InputDecoration(
-            hintText: 'Cari nama, NIS, kamar, atau UID...',
-            hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-            prefixIcon: const Icon(Icons.search_rounded, size: 20, color: Color(0xFF64748B)),
+            hintText: 'Cari nama santri, NIS, atau kamar...',
+            prefixIcon: const Icon(Icons.search_rounded, size: 20),
             filled: true,
             fillColor: Colors.white,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
 
-        // Filter Gender Tabs
+        // Filter Gender
         Row(
           children: [
             _buildGenderFilterChip('ALL', 'Semua (${_roomsList.length})'),
             const SizedBox(width: 8),
-            _buildGenderFilterChip('PUTRA', 'Asrama Putra'),
+            _buildGenderFilterChip('PUTRA', 'Putra'),
             const SizedBox(width: 8),
-            _buildGenderFilterChip('PUTRI', 'Asrama Putri'),
+            _buildGenderFilterChip('PUTRI', 'Putri'),
           ],
         ),
         const SizedBox(height: 16),
 
-        // Daftar Kamar
-        const Text(
-          'Alokasi & Kuota Kasur Asrama',
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
-        ),
+        const Text('Daftar Kamar Asrama', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
 
-        if (filteredRooms.isEmpty)
-          const Padding(padding: EdgeInsets.all(20), child: Center(child: Text('Belum ada data kamar.')))
-        else
-          ...filteredRooms.map(
-            (room) => RoomOccupancyCard(
-              room: room,
-              onEdit: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => ManageRoomsScreen(roomToEdit: room)),
-                ).then((_) => _loadAllData());
-              },
-              onDelete: () => _confirmDeleteRoom(room),
-            ),
+        ...filteredRooms.map(
+          (room) => RoomOccupancyCard(
+            room: room,
+            onEdit: isAllowedCRUD
+                ? () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => ManageRoomsScreen(roomToEdit: room)),
+                    ).then((_) => _loadAllData());
+                  }
+                : () {},
+            onDelete: isAllowedCRUD ? () => _confirmDeleteRoom(room) : () {},
           ),
+        ),
 
         const SizedBox(height: 20),
-        const Text(
-          'Daftar Santri Terdaftar (Buku Induk)',
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
-        ),
+        const Text('Daftar Santri', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
 
-        if (filteredSantri.isEmpty)
-          const Padding(padding: EdgeInsets.all(20), child: Center(child: Text('Tidak ada santri yang sesuai.')))
-        else
-          ...filteredSantri.map((s) => _buildSantriListItem(s)),
+        ...filteredSantri.map((s) => _buildSantriListItem(s, isAllowedCRUD)),
 
         const SizedBox(height: 30),
       ],
     );
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 4. REKAPITULASI LAPORAN VIEW
+  // ═══════════════════════════════════════════════════════════════════════════
+  Widget _buildRekapLaporanView() {
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('Arsip & Rekap Surat Izin (DU-PERMIT)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+            Text('${_permitsList.length} Arsip', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        if (_permitsList.isEmpty)
+          const Text('Belum ada arsip perizinan.')
+        else
+          ..._permitsList.map((p) => _buildPermitCard(p)),
+
+        const SizedBox(height: 30),
+      ],
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 5. PERIZINAN VIEW (Approval untuk Admin/Musyrif, Form untuk Wali)
+  // ═══════════════════════════════════════════════════════════════════════════
+  Widget _buildPerizinanView() {
+    final role = widget.session.role;
+
+    // Jika Wali atau Santri: Tampilkan Form Pengajuan Izin
+    if (role == AppRole.wali || role == AppRole.santri) {
+      return ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.send_rounded, color: Color(0xFF047857), size: 20),
+                    SizedBox(width: 8),
+                    Text('Formulir Izin Pulang / Keluar Ananda', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 14),
+
+                DropdownButtonFormField<String>(
+                  value: _permitKategoriCtrl.text,
+                  items: const [
+                    DropdownMenuItem(value: 'PULANG', child: Text('Izin Pulang Bermalam')),
+                    DropdownMenuItem(value: 'PESIAR', child: Text('Pesiar / Belanja Santri')),
+                    DropdownMenuItem(value: 'BEROBAT', child: Text('Izin Berobat ke Klinik')),
+                  ],
+                  onChanged: (val) => setState(() => _permitKategoriCtrl.text = val ?? 'PULANG'),
+                  decoration: const InputDecoration(labelText: 'Kategori Izin'),
+                ),
+                const SizedBox(height: 12),
+
+                TextField(
+                  controller: _permitKeperluanCtrl,
+                  maxLines: 2,
+                  decoration: const InputDecoration(labelText: 'Alasan / Keperluan'),
+                ),
+                const SizedBox(height: 12),
+
+                TextField(
+                  controller: _permitPenjemputCtrl,
+                  decoration: const InputDecoration(labelText: 'Nama Penjemput / Wali'),
+                ),
+                const SizedBox(height: 18),
+
+                SizedBox(
+                  width: double.infinity,
+                  height: 46,
+                  child: ElevatedButton(
+                    onPressed: _isSubmittingPermit ? null : _submitInstantPermit,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF047857),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: _isSubmittingPermit
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : const Text('Kirim Pengajuan Izin', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    // Jika Admin atau Musyrif: Tampilkan Antrean Verifikasi / Approval Izin
+    final pendingPermits = _permitsList.where((p) => p.isPending).toList();
+
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('Antrean Verifikasi Surat Izin', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(8)),
+              child: Text('${pendingPermits.length} Menunggu', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFD97706))),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        if (pendingPermits.isEmpty)
+          const Padding(padding: EdgeInsets.all(32), child: Center(child: Text('Tidak ada surat izin yang menunggu persetujuan.')))
+        else
+          ...pendingPermits.map((permit) {
+            return Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(permit.tokenIzin, style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: Colors.grey)),
+                      Text(permit.kategori, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Color(0xFF047857))),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(permit.santriNama, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                  Text('Alasan: ${permit.keperluan} • Penjemput: ${permit.penjemput}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _updatePermitApproval(permit, 'APPROVED'),
+                          icon: const Icon(Icons.check_circle_rounded, size: 16),
+                          label: const Text('Setujui (Approve)'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF047857),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _updatePermitApproval(permit, 'REJECTED'),
+                          icon: const Icon(Icons.cancel_rounded, size: 16, color: Color(0xFFDC2626)),
+                          label: const Text('Tolak', style: TextStyle(color: Color(0xFFDC2626))),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Color(0xFFDC2626)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          }),
+
+        const SizedBox(height: 30),
+      ],
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 6. DOMPET PINTAR VIEW (Khusus Anak untuk Wali, Global untuk Admin)
+  // ═══════════════════════════════════════════════════════════════════════════
+  Widget _buildDompetPintarView() {
+    final role = widget.session.role;
+    final targetSantri = (role == AppRole.wali) ? _childOfWali : (_santriList.isNotEmpty ? _santriList.first : null);
+
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      children: [
+        if (targetSantri != null)
+          RfidCardWidget(
+            rfidUid: targetSantri.rfidUid ?? '04:A1:2B:9C',
+            santriNama: targetSantri.namaLengkap,
+            nis: targetSantri.nis,
+            saldo: targetSantri.saldoRfid,
+          ),
+        const SizedBox(height: 18),
+
+        const Text('Riwayat Transaksi Kantin & Koperasi', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 10),
+
+        _buildTransactionItem('Kantin Asrama Al-Barakah', 'Makan Siang & Teh Hangat', '- Rp 12.000', '12:30 WIB', Icons.restaurant_rounded),
+        _buildTransactionItem('Koperasi Santri', 'Kitab Matan & Alat Tulis', '- Rp 18.000', '10:15 WIB', Icons.shopping_bag_rounded),
+        _buildTransactionItem('Top Up Dompet', 'Transfer Wali Santri', '+ Rp 100.000', '28 Okt', Icons.add_card_rounded, isCredit: true),
+
+        const SizedBox(height: 30),
+      ],
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 7. AI ASSISTANT VIEW
+  // ═══════════════════════════════════════════════════════════════════════════
+  Widget _buildAiAssistantView() {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          color: const Color(0xFFF5F3FF),
+          child: const Row(
+            children: [
+              Icon(Icons.auto_awesome_rounded, color: Color(0xFF8B5CF6), size: 16),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text('AI Assistant Aktif • Siap menjawab pertanyaan seputar pondok.', style: TextStyle(fontSize: 11, color: Color(0xFF6D28D9))),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            itemCount: _aiMessages.length,
+            itemBuilder: (ctx, idx) {
+              final msg = _aiMessages[idx];
+              final isAi = msg['role'] == 'ai';
+              return Align(
+                alignment: isAi ? Alignment.centerLeft : Alignment.centerRight,
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isAi ? Colors.white : const Color(0xFF8B5CF6),
+                    borderRadius: BorderRadius.circular(14),
+                    border: isAi ? Border.all(color: const Color(0xFFE2E8F0)) : null,
+                  ),
+                  child: Text(
+                    msg['content'] ?? '',
+                    style: TextStyle(fontSize: 12.5, color: isAi ? const Color(0xFF0F172A) : Colors.white),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        if (_isAiThinking)
+          const Padding(padding: EdgeInsets.all(6), child: Text('AI sedang menganalisis...', style: TextStyle(fontSize: 11, color: Colors.purple))),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          color: Colors.white,
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _aiPromptCtrl,
+                  decoration: const InputDecoration(hintText: 'Tanyakan data santri atau aturan...', border: InputBorder.none),
+                  onSubmitted: (_) => _sendAiMessage(),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.send_rounded, color: Color(0xFF8B5CF6)),
+                onPressed: () => _sendAiMessage(),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 8. LIVE CHAT VIEW
+  // ═══════════════════════════════════════════════════════════════════════════
+  Widget _buildLiveChatView() {
+    return Column(
+      children: [
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            itemCount: _chatMessages.length,
+            itemBuilder: (ctx, idx) {
+              final msg = _chatMessages[idx];
+              final isMe = msg['isMe'] == true;
+              return Align(
+                alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isMe ? const Color(0xFF047857) : Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: isMe ? null : Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                    children: [
+                      Text(msg['sender'] ?? '', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: isMe ? Colors.white70 : const Color(0xFF047857))),
+                      const SizedBox(height: 2),
+                      Text(msg['text'] ?? '', style: TextStyle(fontSize: 12.5, color: isMe ? Colors.white : const Color(0xFF0F172A))),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          color: Colors.white,
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _chatMsgCtrl,
+                  decoration: const InputDecoration(hintText: 'Ketik pesan...', border: InputBorder.none),
+                  onSubmitted: (_) => _sendLiveChatMessage(),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.send_rounded, color: Color(0xFF047857)),
+                onPressed: _sendLiveChatMessage,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // HELPER WIDGETS
+  // ═══════════════════════════════════════════════════════════════════════════
+  Widget _buildGreetingCard({
+    required String title,
+    required String sub,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: [color, color.withOpacity(0.85)]),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(14)),
+            child: Icon(icon, color: Colors.white, size: 26),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Colors.white)),
+                const SizedBox(height: 2),
+                Text(sub, style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.9))),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildKpiCard({required String label, required String value, required String sub, required IconData icon, required Color color}) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFE2E8F0))),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
+              Icon(icon, size: 16, color: color),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+          Text(sub, style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSantriMiniCard(SantriModel s) {
+    final isInside = s.isPresent;
+    final color = isInside ? const Color(0xFF047857) : const Color(0xFFD97706);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFFE2E8F0))),
+      child: Row(
+        children: [
+          CircleAvatar(radius: 16, backgroundColor: color.withOpacity(0.12), child: Icon(Icons.person, color: color, size: 16)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(s.namaLengkap, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                Text('${s.nis} • ${s.kamar}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+              ],
+            ),
+          ),
+          Text(isInside ? 'Di Asrama' : 'Sedang Izin', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: color)),
+        ],
+      ),
+    );
+  }
+
   Widget _buildGenderFilterChip(String key, String label) {
     final isSelected = _selectedGenderFilter == key;
     return InkWell(
-      borderRadius: BorderRadius.circular(20),
       onTap: () => setState(() => _selectedGenderFilter = key),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -876,58 +1879,34 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: isSelected ? const Color(0xFF047857) : const Color(0xFFCBD5E1)),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 11.5,
-            fontWeight: FontWeight.bold,
-            color: isSelected ? Colors.white : const Color(0xFF64748B),
-          ),
-        ),
+        child: Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: isSelected ? Colors.white : Colors.black87)),
       ),
     );
   }
 
-  Widget _buildSantriListItem(SantriModel santri) {
+  Widget _buildSantriListItem(SantriModel santri, bool canDelete) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFFE2E8F0))),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 18,
-            backgroundColor: const Color(0xFF047857).withOpacity(0.12),
-            child: Text(
-              santri.initials,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF047857)),
-            ),
-          ),
-          const SizedBox(width: 12),
+          CircleAvatar(radius: 16, child: Text(santri.initials, style: const TextStyle(fontSize: 11))),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  santri.namaLengkap,
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
-                ),
-                Text(
-                  'NIS: ${santri.nis} • ${santri.kamar} • Poin: ${santri.poinDisiplin}',
-                  style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                ),
+                Text(santri.namaLengkap, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                Text('${santri.nis} • ${santri.kamar}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
               ],
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFDC2626), size: 20),
-            tooltip: 'Hapus Santri',
-            onPressed: () => _confirmDeleteSantri(santri),
-          ),
+          if (canDelete)
+            IconButton(
+              icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFDC2626), size: 18),
+              onPressed: () => _confirmDeleteSantri(santri),
+            ),
         ],
       ),
     );
@@ -965,342 +1944,26 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
     );
   }
 
-  // ─── TAB 3: REKAPITULASI LAPORAN ───────────────────────────────────────────
-  Widget _buildTabRekapLaporan() {
-    return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              'Arsip Surat Izin Santri (DU-PERMIT)',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
-            ),
-            Text(
-              'Total: ${_permitsList.length}',
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-
-        if (_permitsList.isEmpty)
-          Container(
-            padding: const EdgeInsets.all(32),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            child: const Text('Belum ada riwayat perizinan di Supabase.', style: TextStyle(color: Colors.grey)),
-          )
-        else
-          ..._permitsList.map((p) => _buildPermitCard(p)),
-
-        const SizedBox(height: 30),
-      ],
-    );
-  }
-
   Widget _buildPermitCard(PermitModel permit) {
-    final statusColor = permit.statusColor;
-
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFE2E8F0))),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  permit.statusLabel,
-                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: statusColor),
-                ),
-              ),
-              Text(
-                permit.tokenIzin,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF475569)),
-              ),
+              Text(permit.tokenIzin, style: const TextStyle(fontFamily: 'monospace', fontSize: 10, color: Colors.grey)),
+              Text(permit.statusLabel, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: permit.statusColor)),
             ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '${permit.santriNama} (${permit.kategori})',
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            'Keperluan: ${permit.keperluan}',
-            style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569)),
           ),
           const SizedBox(height: 6),
-          Row(
-            children: [
-              const Icon(Icons.person_pin_rounded, size: 13, color: Color(0xFF94A3B8)),
-              const SizedBox(width: 4),
-              Text('Penjemput: ${permit.penjemput}', style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B))),
-              const Spacer(),
-              if (permit.batasKembali != null) ...[
-                const Icon(Icons.access_time_rounded, size: 13, color: Color(0xFF94A3B8)),
-                const SizedBox(width: 4),
-                Text(
-                  DateFormat('dd MMM, HH:mm').format(permit.batasKembali!),
-                  style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
-                ),
-              ],
-            ],
-          ),
+          Text(permit.santriNama, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
+          Text('${permit.kategori} • ${permit.keperluan} • Penjemput: ${permit.penjemput}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
         ],
       ),
-    );
-  }
-
-  // ─── TAB 4: AI SMART ASSISTANT (AKTIF) ───────────────────────────────────────
-  Widget _buildTabAiAssistant() {
-    return Column(
-      children: [
-        // AI Header Notice
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          color: const Color(0xFFF5F3FF),
-          child: const Row(
-            children: [
-              Icon(Icons.auto_awesome_rounded, color: Color(0xFF8B5CF6), size: 18),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'AI Smart Assistant aktif memonitor data presensi, kamar, & perizinan Supabase.',
-                  style: TextStyle(fontSize: 11, color: Color(0xFF6D28D9), fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        // Quick Query Chips
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          child: Row(
-            children: [
-              _buildAiChip('Berapa santri di luar asrama?'),
-              const SizedBox(width: 6),
-              _buildAiChip('Cek kuota kasur kamar'),
-              const SizedBox(width: 6),
-              _buildAiChip('Aturan jam malam pondok'),
-            ],
-          ),
-        ),
-
-        // Chat History List
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            itemCount: _aiMessages.length,
-            itemBuilder: (ctx, idx) {
-              final msg = _aiMessages[idx];
-              final isAi = msg['role'] == 'ai';
-
-              return Align(
-                alignment: isAi ? Alignment.centerLeft : Alignment.centerRight,
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: isAi ? Colors.white : const Color(0xFF8B5CF6),
-                    borderRadius: BorderRadius.circular(16),
-                    border: isAi ? Border.all(color: const Color(0xFFE2E8F0)) : null,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.02),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Text(
-                    msg['content'] ?? '',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: isAi ? const Color(0xFF0F172A) : Colors.white,
-                      height: 1.4,
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-
-        if (_isAiThinking)
-          const Padding(
-            padding: EdgeInsets.all(8.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF8B5CF6))),
-                SizedBox(width: 8),
-                Text('AI sedang menganalisis data...', style: TextStyle(fontSize: 11, color: Color(0xFF8B5CF6))),
-              ],
-            ),
-          ),
-
-        // Text Input Bar
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _aiPromptCtrl,
-                  style: const TextStyle(fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: 'Tanyakan data santri atau aturan...',
-                    hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                    filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
-                  ),
-                  onSubmitted: (_) => _sendAiMessage(),
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(Icons.send_rounded, color: Color(0xFF8B5CF6)),
-                onPressed: () => _sendAiMessage(),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAiChip(String text) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: () => _sendAiMessage(text),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFDDD6FE)),
-        ),
-        child: Text(
-          text,
-          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF7C3AED)),
-        ),
-      ),
-    );
-  }
-
-  // ─── TAB 5: DOMPET PINTAR CASHLESS (KEUANGAN WALI & SANTRI) ─────────────────
-  Widget _buildTabDompetPintar() {
-    final santri = _santriList.isNotEmpty ? _santriList.first : null;
-    final currencyFmt = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
-
-    return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-      children: [
-        // Kartu Fisik Mockup RFID
-        if (santri != null)
-          RfidCardWidget(
-            rfidUid: santri.rfidUid ?? '04:A1:2B:9C',
-            santriNama: santri.namaLengkap,
-            nis: santri.nis,
-            saldo: santri.saldoRfid,
-          )
-        else
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18)),
-            child: const Text('Data kartu RFID santri belum tersedia.'),
-          ),
-
-        const SizedBox(height: 18),
-
-        // Saldo & Limit Harian Quick Stats
-        Row(
-          children: [
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Limit Jajan Harian', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-                    const SizedBox(height: 4),
-                    Text(currencyFmt.format(25000), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF047857))),
-                    const Text('Terkunci Otomatis', style: TextStyle(fontSize: 9.5, color: Color(0xFF10B981))),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Status Kartu Fisik', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-                    SizedBox(height: 4),
-                    Text('AKTIF / VALID', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFF0284C7))),
-                    Text('Mifare 13.56 MHz', style: TextStyle(fontSize: 9.5, color: Color(0xFF64748B))),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 20),
-
-        // Riwayat Transaksi Dompet Pintar (Kantin, Koperasi)
-        const Text(
-          'Riwayat Transaksi Cashless Terkini',
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
-        ),
-        const SizedBox(height: 10),
-
-        _buildTransactionItem('Kantin Asrama Al-Barakah', 'Makan Siang & Susu Kedelai', '- Rp 12.000', '12:30 WIB', Icons.restaurant_rounded),
-        _buildTransactionItem('Koperasi Santri Putra', 'Buku Tulis & Kitab Matan', '- Rp 18.000', '10:15 WIB', Icons.shopping_bag_rounded),
-        _buildTransactionItem('Laundry Pesantren', 'Paket Cuci Kering Setrika 3kg', '- Rp 15.000', 'Kemarin', Icons.local_laundry_service_rounded),
-        _buildTransactionItem('Top Up Saldo Dompet', 'Transfer Bank Syariah (Wali)', '+ Rp 100.000', '28 Okt', Icons.add_card_rounded, isCredit: true),
-
-        const SizedBox(height: 30),
-      ],
     );
   }
 
@@ -1308,238 +1971,27 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFFE2E8F0))),
       child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: isCredit ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, size: 18, color: isCredit ? const Color(0xFF16A34A) : const Color(0xFF475569)),
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: isCredit ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
+            child: Icon(icon, size: 16, color: isCredit ? const Color(0xFF16A34A) : Colors.grey),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-                Text(desc, style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B))),
+                Text(title, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+                Text(desc, style: const TextStyle(fontSize: 10.5, color: Colors.grey)),
               ],
             ),
           ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                amount,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                  color: isCredit ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
-                ),
-              ),
-              Text(time, style: const TextStyle(fontSize: 9.5, color: Color(0xFF94A3B8))),
-            ],
-          ),
+          Text(amount, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: isCredit ? Colors.green : Colors.red)),
         ],
       ),
     );
   }
-
-  // ─── TAB 6: PERIZINAN LANGSUNG (INSTANT PERMIT) ─────────────────────────────
-  Widget _buildTabPerizinanLangsung() {
-    return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-      children: [
-        Container(
-          padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(Icons.assignment_turned_in_rounded, color: Color(0xFF047857), size: 22),
-                SizedBox(width: 8),
-                Text(
-                  'Formulir Pengajuan Izin Langsung',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Pengajuan izin digital akan langsung tercatat di Supabase dan menerbitkan token gerbang.',
-              style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-            ),
-            const SizedBox(height: 16),
-
-            // Kategori
-            const Text('Kategori Izin', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 6),
-            DropdownButtonFormField<String>(
-              value: _permitKategoriCtrl.text,
-              items: const [
-                DropdownMenuItem(value: 'PULANG', child: Text('Izin Pulang Bermalam')),
-                DropdownMenuItem(value: 'PESIAR', child: Text('Pesiar / Belanja Kebutuhan')),
-                DropdownMenuItem(value: 'BEROBAT', child: Text('Berobat ke Klinik/RS')),
-                DropdownMenuItem(value: 'LOMBA', child: Text('Delegasi Prestasi & Lomba')),
-              ],
-              onChanged: (val) => setState(() => _permitKategoriCtrl.text = val ?? 'PULANG'),
-              decoration: InputDecoration(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-            const SizedBox(height: 14),
-
-            // Keperluan
-            const Text('Keperluan / Alasan Izin', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _permitKeperluanCtrl,
-              maxLines: 2,
-              decoration: InputDecoration(
-                hintText: 'Contoh: Menghadiri pernikahan keluarga di rumah.',
-                hintStyle: const TextStyle(fontSize: 12, color: Colors.grey),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-            const SizedBox(height: 14),
-
-            // Penjemput
-            const Text('Nama Penjemput / Wali', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _permitPenjemputCtrl,
-              decoration: InputDecoration(
-                hintText: 'Nama lengkap penjemput',
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton.icon(
-                onPressed: _isSubmittingPermit ? null : _submitInstantPermit,
-                icon: const Icon(Icons.send_rounded, size: 16),
-                label: _isSubmittingPermit
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : const Text('Kirim Pengajuan Izin Instan', style: TextStyle(fontWeight: FontWeight.bold)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF047857),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-      ],
-    );
-  }
-
-  // ─── TAB 7: LIVE CHAT PENGURUS PONDOK ───────────────────────────────────────
-  Widget _buildTabLiveChat() {
-    return Column(
-      children: [
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            itemCount: _chatMessages.length,
-            itemBuilder: (ctx, idx) {
-              final msg = _chatMessages[idx];
-              final isMe = msg['isMe'] == true;
-
-              return Align(
-                alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: isMe ? const Color(0xFF047857) : Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: isMe ? null : Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        msg['sender'] ?? '',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: isMe ? Colors.white70 : const Color(0xFF047857),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        msg['text'] ?? '',
-                        style: TextStyle(fontSize: 12.5, color: isMe ? Colors.white : const Color(0xFF0F172A)),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        msg['time'] ?? '',
-                        style: TextStyle(fontSize: 9, color: isMe ? Colors.white60 : const Color(0xFF94A3B8)),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-
-        // Chat Input Bar
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _chatMsgCtrl,
-                  style: const TextStyle(fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: 'Ketik pesan ke pengurus pondok...',
-                    hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                    filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
-                  ),
-                  onSubmitted: (_) => _sendLiveChatMessage(),
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(Icons.send_rounded, color: Color(0xFF047857)),
-                onPressed: _sendLiveChatMessage,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
 }
-
