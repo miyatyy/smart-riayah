@@ -17,6 +17,7 @@ import 'admin/onboarding_santri_screen.dart';
 import 'admin/manage_rooms_screen.dart';
 import 'auth/login_screen.dart';
 import '../widgets/whatsapp_live_chat_view.dart';
+import '../widgets/ai_agent_chat_view.dart';
 import '../services/notification_service.dart';
 
 /**
@@ -2061,69 +2062,11 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
   // 7. AI ASSISTANT VIEW
   // ═══════════════════════════════════════════════════════════════════════════
   Widget _buildAiAssistantView() {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          color: const Color(0xFFF5F3FF),
-          child: const Row(
-            children: [
-              Icon(Icons.auto_awesome_rounded, color: Color(0xFF8B5CF6), size: 16),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text('AI Assistant Aktif • Siap menjawab pertanyaan seputar pondok.', style: TextStyle(fontSize: 11, color: Color(0xFF6D28D9))),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            itemCount: _aiMessages.length,
-            itemBuilder: (ctx, idx) {
-              final msg = _aiMessages[idx];
-              final isAi = msg['role'] == 'ai';
-              return Align(
-                alignment: isAi ? Alignment.centerLeft : Alignment.centerRight,
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: isAi ? Colors.white : const Color(0xFF8B5CF6),
-                    borderRadius: BorderRadius.circular(14),
-                    border: isAi ? Border.all(color: const Color(0xFFE2E8F0)) : null,
-                  ),
-                  child: Text(
-                    msg['content'] ?? '',
-                    style: TextStyle(fontSize: 12.5, color: isAi ? const Color(0xFF0F172A) : Colors.white),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-        if (_isAiThinking)
-          const Padding(padding: EdgeInsets.all(6), child: Text('AI sedang menganalisis...', style: TextStyle(fontSize: 11, color: Colors.purple))),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          color: Colors.white,
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _aiPromptCtrl,
-                  decoration: const InputDecoration(hintText: 'Tanyakan data santri atau aturan...', border: InputBorder.none),
-                  onSubmitted: (_) => _sendAiMessage(),
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.send_rounded, color: Color(0xFF8B5CF6)),
-                onPressed: () => _sendAiMessage(),
-              ),
-            ],
-          ),
-        ),
-      ],
+    return AiAgentChatView(
+      session: widget.session,
+      santriList: _santriList,
+      roomsList: _roomsList,
+      permitsList: _permitsList,
     );
   }
 
