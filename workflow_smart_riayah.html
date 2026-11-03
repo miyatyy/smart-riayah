@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Dokumen Alur Kerja (Workflow) Sistem Smart Ri'ayah</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 10mm 12mm 10mm 12mm;
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+      color: #0f172a;
+      background-color: #ffffff;
+      line-height: 1.5;
+      font-size: 10.5pt;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .page {
+      padding: 0;
+      height: 100%;
+      position: relative;
+    }
+
+    .page-break {
+      page-break-after: always;
+      break-after: page;
+    }
+
+    .avoid-break {
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+
+    /* HEADER */
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #047857;
+      margin-bottom: 16px;
+    }
+
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .header-logo-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #047857, #10b981);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 900;
+      font-size: 20px;
+      box-shadow: 0 4px 10px rgba(4, 120, 87, 0.25);
+    }
+
+    .header-titles h1 {
+      font-size: 16pt;
+      font-weight: 800;
+      color: #064e3b;
+      letter-spacing: -0.3px;
+      line-height: 1.2;
+    }
+
+    .header-titles p {
+      font-size: 9pt;
+      color: #047857;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .header-meta {
+      text-align: right;
+    }
+
+    .header-meta .badge {
+      display: inline-block;
+      background: #ecfdf5;
+      color: #047857;
+      border: 1px solid #a7f3d0;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 8.5pt;
+      font-weight: 700;
+      margin-bottom: 3px;
+    }
+
+    .header-meta .date {
+      font-size: 8pt;
+      color: #64748b;
+    }
+
+    /* TYPOGRAPHY */
+    h2.section-title {
+      font-size: 13pt;
+      font-weight: 800;
+      color: #0f172a;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      margin-bottom: 10px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    h2.section-title span.number {
+      background: #047857;
+      color: white;
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9.5pt;
+    }
+
+    p.lead {
+      font-size: 9.5pt;
+      color: #334155;
+      margin-bottom: 12px;
+      line-height: 1.5;
+    }
+
+    /* SUMMARY CARDS */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .summary-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 12px 14px;
+      border-left: 4px solid #047857;
+    }
+
+    .summary-card.purple {
+      border-left-color: #7c3aed;
+    }
+
+    .summary-card.amber {
+      border-left-color: #d97706;
+    }
+
+    .summary-card h4 {
+      font-size: 9.5pt;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: #475569;
+      margin-bottom: 4px;
+    }
+
+    .summary-card p {
+      font-size: 8.5pt;
+      color: #1e293b;
+      line-height: 1.4;
+    }
+
+    /* DIAGRAM CONTAINER */
+    .diagram-container {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      padding: 14px 12px;
+      margin-bottom: 14px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+    }
+
+    .diagram-title {
+      font-size: 10pt;
+      font-weight: 750;
+      color: #334155;
+      margin-bottom: 10px;
+      text-align: center;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* SVG DIAGRAMS */
+    svg {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    /* WORKFLOW STEPS GRID */
+    .workflow-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .workflow-box {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 9px 12px;
+    }
+
+    .workflow-box-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .workflow-badge {
+      font-size: 8pt;
+      font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 5px;
+      text-transform: uppercase;
+      background: #047857;
+      color: white;
+    }
+
+    .workflow-badge.purple { background: #7c3aed; }
+    .workflow-badge.blue { background: #2563eb; }
+    .workflow-badge.amber { background: #d97706; }
+    .workflow-badge.rose { background: #e11d48; }
+
+    .workflow-box-title {
+      font-size: 10pt;
+      font-weight: 750;
+      color: #0f172a;
+    }
+
+    .workflow-box ul {
+      list-style-type: none;
+      padding-left: 0;
+      font-size: 8.8pt;
+      color: #334155;
+    }
+
+    .workflow-box ul li {
+      margin-bottom: 5px;
+      position: relative;
+      padding-left: 14px;
+      line-height: 1.4;
+    }
+
+    .workflow-box ul li::before {
+      content: "•";
+      color: #047857;
+      font-weight: bold;
+      font-size: 12pt;
+      position: absolute;
+      left: 2px;
+      top: -2px;
+    }
+
+    /* TABLE RBAC */
+    table.rbac-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      margin-bottom: 16px;
+      font-size: 8.8pt;
+    }
+
+    table.rbac-table th {
+      background: #064e3b;
+      color: white;
+      text-align: left;
+      padding: 8px 12px;
+      font-weight: 700;
+      font-size: 9pt;
+      border: 1px solid #064e3b;
+    }
+
+    table.rbac-table td {
+      padding: 7px 12px;
+      border: 1px solid #e2e8f0;
+      color: #334155;
+      vertical-align: top;
+      line-height: 1.4;
+    }
+
+    table.rbac-table tr:nth-child(even) {
+      background: #f8fafc;
+    }
+
+    table.rbac-table td.role-name {
+      font-weight: 750;
+      color: #0f172a;
+      white-space: nowrap;
+    }
+
+    /* CALLOUT BOX */
+    .callout-box {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-left: 4px solid #047857;
+      border-radius: 8px;
+      padding: 8px 12px;
+      margin-top: 8px;
+      font-size: 8.5pt;
+      color: #166534;
+      line-height: 1.4;
+    }
+
+    /* FOOTER */
+    .footer-bar {
+      margin-top: 10px;
+      padding-top: 6px;
+      border-top: 1px solid #cbd5e1;
+      display: flex;
+      justify-content: space-between;
+      font-size: 7.5pt;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ==================== HALAMAN 1 ==================== -->
+  <div class="page page-break">
+    <!-- Header -->
+    <div class="header-bar">
+      <div class="header-brand">
+        <div class="header-logo-icon">SR</div>
+        <div class="header-titles">
+          <h1>SISTEM TERPADU SMART RI'AYAH</h1>
+          <p>Pesantren Modern Darul Ulum • Arsitektur Alur Kerja (Workflow)</p>
+        </div>
+      </div>
+      <div class="header-meta">
+        <span class="badge">Enterprise Spec v2.5</span>
+        <div class="date">Dokumentasi Arsitektur Resmi</div>
+      </div>
+    </div>
+
+    <!-- Ringkasan Eksekutif -->
+    <h2 class="section-title"><span class="number">1</span> Definisi & Arsitektur Ekosistem</h2>
+    <p class="lead">
+      <strong>Smart Ri'ayah</strong> adalah platform tata kelola kepengasuhan, keuangan non-tunai, dan keamanan santri terpadu untuk Pesantren Modern Darul Ulum. Sistem ini menghubungkan <strong>7 Entitas Pengguna (Role-Based Access Control)</strong> dalam ekosistem siklus tertutup (<em>closed-loop ecosystem</em>) berbasis <strong>IoT RFID Hardware</strong>, <strong>Real-Time Database Streaming (Supabase PostgreSQL WebSocket)</strong>, dan <strong>Real Generative AI (LLM Context-Aware)</strong>.
+    </p>
+
+    <div class="summary-grid">
+      <div class="summary-card">
+        <h4>1. Real-Time Two-Way Sync</h4>
+        <p>Sinkronisasi instan &lt;50ms antara Website (React) dan Mobile (Flutter) melalui listener WebSocket PostgreSQL Changes.</p>
+      </div>
+      <div class="summary-card purple">
+        <h4>2. Real Generative AI</h4>
+        <p>Penalaran bebas LLM (Gemini/Groq/OpenAI) yang disuntikkan fakta live Supabase tanpa if-else atau template statis.</p>
+      </div>
+      <div class="summary-card amber">
+        <h4>3. Closed-Loop Security</h4>
+        <p>Validasi bertingkat tiket DU-PERMIT di pos gerbang utama santri untuk menangkal santri bypass atau overstay.</p>
+      </div>
+    </div>
+
+    <!-- Diagram Alur Kerja Makro -->
+    <div class="diagram-container">
+      <div class="diagram-title">Diagram Alur Kerja Makro Sistem Smart Ri'ayah (End-to-End)</div>
+      
+      <svg viewBox="0 0 900 450" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="gradEmerald" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#047857"/>
+            <stop offset="100%" stop-color="#059669"/>
+          </linearGradient>
+          <linearGradient id="gradPurple" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#7c3aed"/>
+            <stop offset="100%" stop-color="#6d28d9"/>
+          </linearGradient>
+          <linearGradient id="gradBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#2563eb"/>
+            <stop offset="100%" stop-color="#1d4ed8"/>
+          </linearGradient>
+          <linearGradient id="gradAmber" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#d97706"/>
+            <stop offset="100%" stop-color="#b45309"/>
+          </linearGradient>
+          <linearGradient id="gradRose" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#e11d48"/>
+            <stop offset="100%" stop-color="#be123c"/>
+          </linearGradient>
+          <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%">
+            <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.08"/>
+          </filter>
+          <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 8 5 L 0 9 z" fill="#64748b"/>
+          </marker>
+          <marker id="arrowGreen" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 8 5 L 0 9 z" fill="#047857"/>
+          </marker>
+        </defs>
+
+        <!-- Blok 1: Onboarding Master Data -->
+        <g filter="url(#shadow)">
+          <rect x="20" y="20" width="250" height="95" rx="10" fill="#ffffff" stroke="#047857" stroke-width="2"/>
+          <rect x="20" y="20" width="250" height="26" rx="8" fill="url(#gradEmerald)"/>
+          <text x="145" y="38" fill="#ffffff" font-size="12" font-weight="bold" text-anchor="middle">1. ONBOARDING & KAMAR</text>
+          <text x="35" y="65" fill="#1e293b" font-size="10.5" font-weight="bold">Admin / Super Admin</text>
+          <text x="35" y="82" fill="#475569" font-size="9.5">• Input Santri & Pairing RFID</text>
+          <text x="35" y="99" fill="#475569" font-size="9.5">• Alokasi Kuota Kamar Asrama</text>
+        </g>
+
+        <!-- Blok 2: Dompet Pintar Cashless -->
+        <g filter="url(#shadow)">
+          <rect x="325" y="20" width="250" height="95" rx="10" fill="#ffffff" stroke="#2563eb" stroke-width="2"/>
+          <rect x="325" y="20" width="250" height="26" rx="8" fill="url(#gradBlue)"/>
+          <text x="450" y="38" fill="#ffffff" font-size="12" font-weight="bold" text-anchor="middle">2. DOMPET RFID CASHLESS</text>
+          <text x="340" y="65" fill="#1e293b" font-size="10.5" font-weight="bold">Wali Santri & Mesin POS Kantin</text>
+          <text x="340" y="82" fill="#475569" font-size="9.5">• Atur Limit Belanja Harian</text>
+          <text x="340" y="99" fill="#475569" font-size="9.5">• Tap Kartu di Kantin / Koperasi</text>
+        </g>
+
+        <!-- Blok 3: Real Generative AI -->
+        <g filter="url(#shadow)">
+          <rect x="630" y="20" width="250" height="95" rx="10" fill="#ffffff" stroke="#7c3aed" stroke-width="2"/>
+          <rect x="630" y="20" width="250" height="26" rx="8" fill="url(#gradPurple)"/>
+          <text x="755" y="38" fill="#ffffff" font-size="12" font-weight="bold" text-anchor="middle">3. AI SMART ASSISTANT</text>
+          <text x="645" y="65" fill="#1e293b" font-size="10.5" font-weight="bold">Real LLM (Gemini / Groq / OpenAI)</text>
+          <text x="645" y="82" fill="#475569" font-size="9.5">• Injeksi Data Live Supabase</text>
+          <text x="645" y="99" fill="#475569" font-size="9.5">• Konsultasi Bebas & Pengasuhan</text>
+        </g>
+
+        <!-- Panah Horizontal Atas -->
+        <path d="M 270 67 L 325 67" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+        <path d="M 575 67 L 630 67" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+
+        <!-- Blok Database Realtime Pusat -->
+        <g filter="url(#shadow)">
+          <rect x="270" y="155" width="360" height="95" rx="12" fill="#f0fdf4" stroke="#047857" stroke-width="2.5" stroke-dasharray="6,3"/>
+          <text x="450" y="180" fill="#065f46" font-size="13" font-weight="900" text-anchor="middle">SUPABASE POSTGRESQL & WEBSOCKET</text>
+          <text x="450" y="200" fill="#047857" font-size="10" font-weight="bold" text-anchor="middle">Tabel: santri • rooms • permits • messages • gate_logs</text>
+          <text x="450" y="220" fill="#475569" font-size="9.5" text-anchor="middle">Two-Way Realtime Streaming Channel (Web &lt;=&gt; Mobile)</text>
+          <text x="450" y="237" fill="#047857" font-size="9" font-weight="bold" text-anchor="middle">Latensi &lt; 50 ms • Clean Background Sync</text>
+        </g>
+
+        <!-- Panah ke Database Pusat -->
+        <path d="M 145 115 L 145 202 L 270 202" stroke="#047857" stroke-width="2" marker-end="url(#arrowGreen)"/>
+        <path d="M 450 115 L 450 155" stroke="#047857" stroke-width="2" marker-end="url(#arrowGreen)"/>
+        <path d="M 755 115 L 755 202 L 630 202" stroke="#047857" stroke-width="2" marker-end="url(#arrowGreen)"/>
+
+        <!-- Blok 4: Pengajuan Izin Santri (Wali) -->
+        <g filter="url(#shadow)">
+          <rect x="20" y="290" width="200" height="135" rx="10" fill="#ffffff" stroke="#d97706" stroke-width="2"/>
+          <rect x="20" y="290" width="200" height="26" rx="8" fill="url(#gradAmber)"/>
+          <text x="120" y="308" fill="#ffffff" font-size="11" font-weight="bold" text-anchor="middle">A. PENGAJUAN IZIN</text>
+          <text x="32" y="335" fill="#1e293b" font-size="10" font-weight="bold">Wali Santri (HP)</text>
+          <text x="32" y="352" fill="#475569" font-size="9">• Form Izin Digital</text>
+          <text x="32" y="367" fill="#475569" font-size="9">• Alasan & Penjemput</text>
+          <text x="32" y="382" fill="#d97706" font-size="9" font-weight="bold">• Status: PENDING</text>
+          <text x="32" y="402" fill="#64748b" font-size="8.5">• Ajukan Perpanjangan</text>
+          <text x="32" y="416" fill="#b45309" font-size="8" font-weight="bold">(EXTEND_REQUESTED)</text>
+        </g>
+
+        <!-- Blok 5: Verifikasi & Approval (Musyrif / Admin) -->
+        <g filter="url(#shadow)">
+          <rect x="250" y="290" width="200" height="135" rx="10" fill="#ffffff" stroke="#047857" stroke-width="2"/>
+          <rect x="250" y="290" width="200" height="26" rx="8" fill="url(#gradEmerald)"/>
+          <text x="350" y="308" fill="#ffffff" font-size="11" font-weight="bold" text-anchor="middle">B. VERIFIKASI & APPROVE</text>
+          <text x="262" y="335" fill="#1e293b" font-size="10" font-weight="bold">Musyrif / Admin Ri'ayah</text>
+          <text x="262" y="352" fill="#475569" font-size="9">• Cek Setoran Tahfidz</text>
+          <text x="262" y="367" fill="#475569" font-size="9">• Cek Poin Disiplin</text>
+          <text x="262" y="382" fill="#047857" font-size="9" font-weight="bold">• Setujui (APPROVED)</text>
+          <text x="262" y="397" fill="#047857" font-size="8.5">• Terbit Tiket DU-PERMIT</text>
+          <text x="262" y="414" fill="#b45309" font-size="8.5">• Approval Perpanjangan</text>
+        </g>
+
+        <!-- Blok 6: Pos Satpam (Gerbang Utama) -->
+        <g filter="url(#shadow)">
+          <rect x="480" y="290" width="200" height="135" rx="10" fill="#ffffff" stroke="#e11d48" stroke-width="2"/>
+          <rect x="480" y="290" width="200" height="26" rx="8" fill="url(#gradRose)"/>
+          <text x="580" y="308" fill="#ffffff" font-size="11" font-weight="bold" text-anchor="middle">C. POS KEAMANAN GATE</text>
+          <text x="492" y="335" fill="#1e293b" font-size="10" font-weight="bold">Satpam / Turnstile RFID</text>
+          <text x="492" y="352" fill="#475569" font-size="9">• Scan Barcode / Input Kode</text>
+          <text x="492" y="367" fill="#475569" font-size="9">• Validasi Status APPROVED</text>
+          <text x="492" y="382" fill="#2563eb" font-size="9" font-weight="bold">• Checkout: DI_LUAR</text>
+          <text x="492" y="399" fill="#e11d48" font-size="8.5" font-weight="bold">• Deteksi OVERDUE</text>
+          <text x="492" y="414" fill="#047857" font-size="8.5" font-weight="bold">• Checkin: COMPLETED</text>
+        </g>
+
+        <!-- Blok 7: Executive Summary & Poskestren -->
+        <g filter="url(#shadow)">
+          <rect x="710" y="290" width="170" height="135" rx="10" fill="#ffffff" stroke="#7c3aed" stroke-width="2"/>
+          <rect x="710" y="290" width="170" height="26" rx="8" fill="url(#gradPurple)"/>
+          <text x="795" y="308" fill="#ffffff" font-size="11" font-weight="bold" text-anchor="middle">D. REKAP & MEDIS</text>
+          <text x="720" y="335" fill="#1e293b" font-size="10" font-weight="bold">Mudir & Poskestren</text>
+          <text x="720" y="355" fill="#475569" font-size="9">• Triase UKS / Sakit</text>
+          <text x="720" y="373" fill="#475569" font-size="9">• Rasio Kamar Asrama</text>
+          <text x="720" y="391" fill="#475569" font-size="9">• Executive KPI</text>
+          <text x="720" y="410" fill="#7c3aed" font-size="8.5" font-weight="bold">• Laporan Terpadu</text>
+        </g>
+
+        <!-- Panah Alur Perizinan Bawah -->
+        <path d="M 220 357 L 250 357" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+        <path d="M 450 357 L 480 357" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+        <path d="M 680 357 L 710 357" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+
+        <!-- Panah Sinkronisasi ke Database Tengah -->
+        <path d="M 120 290 L 120 248 L 270 248" stroke="#d97706" stroke-width="1.5" stroke-dasharray="4,2" marker-end="url(#arrow)"/>
+        <path d="M 350 290 L 350 250" stroke="#047857" stroke-width="1.5" stroke-dasharray="4,2" marker-end="url(#arrowGreen)"/>
+        <path d="M 580 290 L 580 250" stroke="#e11d48" stroke-width="1.5" stroke-dasharray="4,2" marker-end="url(#arrow)"/>
+      </svg>
+    </div>
+
+    <!-- Footer Hal 1 -->
+    <div class="footer-bar">
+      <span>Dokumen Arsitektur Alur Kerja Smart Ri'ayah • Pesantren Modern Darul Ulum</span>
+      <span>Halaman 1 dari 3</span>
+    </div>
+  </div>
+
+  <!-- ==================== HALAMAN 2 ==================== -->
+  <div class="page page-break">
+    <!-- Header Mini -->
+    <div class="header-bar" style="margin-bottom: 14px; padding-bottom: 8px;">
+      <div class="header-brand">
+        <div class="header-titles">
+          <h1 style="font-size: 13.5pt;">RINCIAN 8 SUB-ALUR KERJA OPERASIONAL</h1>
+          <p>Implementasi Logika Bisnis & Prosedur Operasional Standar (SOP)</p>
+        </div>
+      </div>
+      <div class="header-meta">
+        <span class="badge">Spesifikasi Detail</span>
+      </div>
+    </div>
+
+    <h2 class="section-title"><span class="number">2</span> Penjelasan Rinci 8 Sub-Alur Kerja</h2>
+    <p class="lead">
+      Setiap sub-alur di bawah ini berjalan secara otomatis dan terisolasi dengan kontrol izin yang ketat sesuai tugas masing-masing role:
+    </p>
+
+    <div class="workflow-grid">
+      <div class="workflow-box">
+        <div class="workflow-box-header">
+          <span class="workflow-badge">Alur 1</span>
+          <span class="workflow-box-title">Onboarding & Manajemen Asrama</span>
+        </div>
+        <ul>
+          <li>Admin Ri'ayah / Super Admin mendaftarkan santri baru melalui modul Manajemen Data di HP atau panel Web.</li>
+          <li>Sistem mengalokasikan ranjang di kamar tertentu dan secara otomatis mengurangi kapasitas kasur kosong (<em>anti-overcapacity</em>).</li>
+          <li>Kartu RFID fisik di-pairing dengan UID hardware unik untuk kebutuhan smart turnstile gate dan kasir POS kantin.</li>
+        </ul>
+      </div>
+
+      <div class="workflow-box">
+        <div class="workflow-box-header">
+          <span class="workflow-badge blue">Alur 2</span>
+          <span class="workflow-box-title">Dompet Cashless & Smart POS</span>
+        </div>
+        <ul>
+          <li>Wali Santri mengontrol uang saku anak dari HP dan menentukan <strong>Limit Jajan Harian</strong> (misal Rp 30.000/hari).</li>
+          <li>Santri men-tap kartu RFID di kasir kantin, koperasi pondok, atau laundry.</li>
+          <li>Sistem memvalidasi saldo dan limit harian, memotong saldo instan, dan mengirim notifikasi riwayat transaksi ke HP Wali.</li>
+        </ul>
+      </div>
+
+      <div class="workflow-box">
+        <div class="workflow-box-header">
+          <span class="workflow-badge amber">Alur 3</span>
+          <span class="workflow-box-title">E-Perizinan DU-PERMIT & Perpanjangan</span>
+        </div>
+        <ul>
+          <li>Wali mengajukan izin pulang / pesiar / berobat di HP (status: <strong>PENDING</strong>).</li>
+          <li>Musyrif memeriksa tanggungan hafalan Qur'an & adab, lalu menyetujui izin (status: <strong>APPROVED</strong>).</li>
+          <li>Wali dapat mengajukan perpanjangan liburan dari rumah (status: <strong>EXTEND_REQUESTED</strong>) yang langsung direspons Musyrif.</li>
+        </ul>
+      </div>
+
+      <div class="workflow-box">
+        <div class="workflow-box-header">
+          <span class="workflow-badge rose">Alur 4</span>
+          <span class="workflow-box-title">Validasi Gerbang & Deteksi Overdue</span>
+        </div>
+        <ul>
+          <li>Satpam pos gerbang memindai kode tiket izin atau santri men-tap kartu RFID di gerbang turnstile otomatis.</li>
+          <li>Saat keluar, status menjadi <strong>DI_LUAR</strong>. Saat kembali tepat waktu, status menjadi <strong>COMPLETED</strong>.</li>
+          <li>Jika melewati batas waktu kembali tanpa perpanjangan, sistem secara otomatis menandai santri berstatus <strong>OVERDUE</strong>.</li>
+        </ul>
+      </div>
+
+      <div class="workflow-box">
+        <div class="workflow-box-header">
+          <span class="workflow-badge">Alur 5</span>
+          <span class="workflow-box-title">Presensi Sholat & Mutaba'ah Adab</span>
+        </div>
+        <ul>
+          <li>Musyrif mengecek kehadiran sholat 5 waktu di masjid jami' dan absensi jam malam asrama (pukul 21.30 WIB).</li>
+          <li>Pencatatan pelanggaran tata tertib (mengurangi skor kedisiplinan) atau capaian tahfidz Qur'an santri.</li>
+          <li>Seluruh riwayat adab tersinkronisasi langsung ke dasbor orang tua dan evaluasi pimpinan pondok.</li>
+        </ul>
+      </div>
+
+      <div class="workflow-box">
+        <div class="workflow-box-header">
+          <span class="workflow-badge rose">Alur 6</span>
+          <span class="workflow-box-title">Layanan Medis & UKS Poskestren</span>
+        </div>
+        <ul>
+          <li>Petugas klinik melakukan skrining dan input rekam medis santri (keluhan demam, maag, flu, luka fisik).</li>
+          <li>Santri yang dirawat inap di UKS status asramanya otomatis menjadi <strong>SAKIT</strong> (memberikan dispensasi izin kegiatan).</li>
+          <li>Petugas medis dapat menerbitkan draf rujukan rumah sakit luar yang terhubung ke pimpinan dan orang tua.</li>
+        </ul>
+      </div>
+
+      <div class="workflow-box">
+        <div class="workflow-box-header">
+          <span class="workflow-badge purple">Alur 7</span>
+          <span class="workflow-box-title">Real Generative AI (LLM Context-Aware)</span>
+        </div>
+        <ul>
+          <li>Sistem menyerap fakta live Supabase (santri, kamar kosong, berkas izin) ke dalam <em>System Instruction</em> LLM.</li>
+          <li>Mendukung Google Gemini API, Groq Cloud (Llama 3.3), DeepSeek, dan OpenAI dengan memori obrolan multi-turn.</li>
+          <li>Bebas tanpa batas topik: konsultasi psikologi santri homesick, draf surat edaran resmi, pertolongan pertama medis, hingga fiqih.</li>
+        </ul>
+      </div>
+
+      <div class="workflow-box">
+        <div class="workflow-box-header">
+          <span class="workflow-badge blue">Alur 8</span>
+          <span class="workflow-box-title">Executive Decision Support (Mudir)</span>
+        </div>
+        <ul>
+          <li>Kyai / Mudir Ma'had memantau metrik holistik: rasio hunian kasur asrama putra & putri serta rasio kehadiran santri.</li>
+          <li>Melihat rekapitulasi kepatuhan tata tertib dan indeks prestasi pondok secara makro.</li>
+          <li>Menjadi basis pengambilan kebijakan strategis berbasis data riil (<em>data-driven institutional decision</em>).</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Callout Box -->
+    <div class="callout-box">
+      <strong>Konektivitas Dua Arah & WebSocket Resiliency:</strong> Setiap mutasi data di HP (tambah kamar, approval izin, pengajuan perpanjangan liburan, atau kirim chat) langsung mengeksekusi mutasi SQL ke Supabase. Listener WebSocket otomatis memutakhirkan tampilan web tanpa reload browser dalam hitungan milidetik.
+    </div>
+
+    <!-- Footer Hal 2 -->
+    <div class="footer-bar">
+      <span>Dokumen Arsitektur Alur Kerja Smart Ri'ayah • Pesantren Modern Darul Ulum</span>
+      <span>Halaman 2 dari 3</span>
+    </div>
+  </div>
+
+  <!-- ==================== HALAMAN 3 ==================== -->
+  <div class="page">
+    <!-- Header Mini -->
+    <div class="header-bar" style="margin-bottom: 14px; padding-bottom: 8px;">
+      <div class="header-brand">
+        <div class="header-titles">
+          <h1 style="font-size: 13.5pt;">MATRIKS RBAC 7 ROLE & STATE MACHINE PERIZINAN</h1>
+          <p>Otoritas Pengguna & Siklus Hidup Dokumen Tiket DU-PERMIT</p>
+        </div>
+      </div>
+      <div class="header-meta">
+        <span class="badge">Keamanan & Kontrol</span>
+      </div>
+    </div>
+
+    <!-- Matriks Hak Akses (RBAC) -->
+    <h2 class="section-title"><span class="number">3</span> Matriks Wewenang & Hak Akses (RBAC 7 Role)</h2>
+
+    <table class="rbac-table">
+      <thead>
+        <tr>
+          <th style="width: 17%;">Role Pengguna</th>
+          <th style="width: 25%;">Tanggung Jawab Utama</th>
+          <th style="width: 33%;">Menu Akses di Mobile & Web</th>
+          <th style="width: 25%;">Tindakan Utama</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="role-name">1. Super Admin</td>
+          <td>Arsitektur sistem, audit database, IoT</td>
+          <td>Akses Penuh Semua Menu (100% Full Access)</td>
+          <td>Diagnostik AI, DB Sync, Backup/Restore</td>
+        </tr>
+        <tr>
+          <td class="role-name">2. Admin Ri'ayah</td>
+          <td>Operasional asrama & data master santri</td>
+          <td>Ringkasan, Grafik, Kamar, Santri, E-Izin, Dompet, AI</td>
+          <td>CRUD Kamar/Kasur, Onboarding, Topup Saldo</td>
+        </tr>
+        <tr>
+          <td class="role-name">3. Musyrif Asrama</td>
+          <td>Pembinaan kamar santri & kedisiplinan</td>
+          <td>Approval Izin, Presensi Malam, Adab, Live Chat, AI</td>
+          <td>Setujui/Tolak Izin, Input Poin, Konseling</td>
+        </tr>
+        <tr>
+          <td class="role-name">4. Wali Santri</td>
+          <td>Pemantauan anak dari rumah & perizinan</td>
+          <td>Dashboard Anak, Dompet Pintar, Form Izin, Chat, AI</td>
+          <td>Ajukan Izin & Perpanjangan, Limit Jajan</td>
+        </tr>
+        <tr>
+          <td class="role-name">5. Pos Satpam</td>
+          <td>Keamanan gerbang & validasi keluar/masuk</td>
+          <td>Gate Monitor, Validasi DU-PERMIT, Log Gerbang</td>
+          <td>Tap Check-out/Check-in, Pantau Overdue</td>
+        </tr>
+        <tr>
+          <td class="role-name">6. Medis Poskestren</td>
+          <td>Layanan kesehatan santri & klinik UKS</td>
+          <td>Rekam Medis Klinik, Santri Sakit, SOP Darurat, AI</td>
+          <td>Input Diagnosa, Dispensasi Sakit, Rujukan</td>
+        </tr>
+        <tr>
+          <td class="role-name">7. Mudir / Kyai</td>
+          <td>Pimpinan tertinggi & penentu kebijakan</td>
+          <td>Executive Summary, Monitoring Global, AI Assistant</td>
+          <td>Analisis Rasio Kamar, Kebijakan Strategis</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Diagram Siklus Hidup Tiket DU-PERMIT -->
+    <h2 class="section-title"><span class="number">4</span> Diagram Siklus Hidup Perizinan (DU-PERMIT State Machine)</h2>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 850 140" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="smArrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 8 5 L 0 9 z" fill="#475569"/>
+          </marker>
+        </defs>
+
+        <!-- State 1: PENDING -->
+        <g>
+          <rect x="10" y="35" width="130" height="65" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
+          <text x="75" y="58" fill="#b45309" font-size="11" font-weight="bold" text-anchor="middle">1. PENDING</text>
+          <text x="75" y="75" fill="#475569" font-size="8.5" text-anchor="middle">Diajukan Wali</text>
+          <text x="75" y="88" fill="#64748b" font-size="8" text-anchor="middle">Menunggu Approval</text>
+        </g>
+
+        <!-- Arrow 1 to 2 -->
+        <path d="M 140 68 L 175 68" stroke="#475569" stroke-width="2" marker-end="url(#smArrow)"/>
+
+        <!-- State 2: APPROVED -->
+        <g>
+          <rect x="180" y="35" width="135" height="65" rx="8" fill="#ecfdf5" stroke="#047857" stroke-width="2"/>
+          <text x="247" y="58" fill="#047857" font-size="11" font-weight="bold" text-anchor="middle">2. APPROVED</text>
+          <text x="247" y="75" fill="#475569" font-size="8.5" text-anchor="middle">Disetujui Musyrif</text>
+          <text x="247" y="88" fill="#065f46" font-size="8" font-weight="bold" text-anchor="middle">Tiket DU-PERMIT Terbit</text>
+        </g>
+
+        <!-- Reject branch -->
+        <path d="M 75 100 L 75 125 L 180 125" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="3,2" marker-end="url(#smArrow)"/>
+        <rect x="185" y="112" width="125" height="25" rx="5" fill="#fef2f2" stroke="#ef4444" stroke-width="1"/>
+        <text x="247" y="128" fill="#dc2626" font-size="8.5" font-weight="bold" text-anchor="middle">REJECTED (Ditolak)</text>
+
+        <!-- Arrow 2 to 3 -->
+        <path d="M 315 68 L 350 68" stroke="#475569" stroke-width="2" marker-end="url(#smArrow)"/>
+
+        <!-- State 3: DI_LUAR -->
+        <g>
+          <rect x="355" y="35" width="135" height="65" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+          <text x="422" y="58" fill="#1d4ed8" font-size="11" font-weight="bold" text-anchor="middle">3. DI_LUAR</text>
+          <text x="422" y="75" fill="#475569" font-size="8.5" text-anchor="middle">Tap Gate Satpam</text>
+          <text x="422" y="88" fill="#1e40af" font-size="8" text-anchor="middle">Checkout Gerbang</text>
+        </g>
+
+        <!-- Extension Branch -->
+        <path d="M 422 35 L 422 15 L 525 15" stroke="#d97706" stroke-width="1.5" stroke-dasharray="3,2" marker-end="url(#smArrow)"/>
+        <rect x="530" y="5" width="145" height="25" rx="5" fill="#fef3c7" stroke="#d97706" stroke-width="1"/>
+        <text x="602" y="21" fill="#b45309" font-size="8" font-weight="bold" text-anchor="middle">EXTEND_REQUESTED</text>
+        <path d="M 675 17 L 705 17 L 705 45" stroke="#047857" stroke-width="1.5" stroke-dasharray="3,2" marker-end="url(#smArrow)"/>
+
+        <!-- Arrow 3 to 4 -->
+        <path d="M 490 68 L 525 68" stroke="#475569" stroke-width="2" marker-end="url(#smArrow)"/>
+
+        <!-- State 4: COMPLETED -->
+        <g>
+          <rect x="530" y="35" width="140" height="65" rx="8" fill="#f0fdf4" stroke="#10b981" stroke-width="2"/>
+          <text x="600" y="58" fill="#065f46" font-size="11" font-weight="bold" text-anchor="middle">4. COMPLETED</text>
+          <text x="600" y="75" fill="#475569" font-size="8.5" text-anchor="middle">Kembali Tepat Waktu</text>
+          <text x="600" y="88" fill="#047857" font-size="8" font-weight="bold" text-anchor="middle">Status DI_ASRAMA</text>
+        </g>
+
+        <!-- Overdue Branch -->
+        <path d="M 490 85 L 705 85 L 705 105" stroke="#e11d48" stroke-width="1.5" stroke-dasharray="3,2" marker-end="url(#smArrow)"/>
+        <rect x="680" y="105" width="155" height="28" rx="5" fill="#fff1f2" stroke="#e11d48" stroke-width="1.5"/>
+        <text x="757" y="122" fill="#be123c" font-size="8.5" font-weight="bold" text-anchor="middle">5. OVERDUE (Terlambat)</text>
+      </svg>
+    </div>
+
+    <!-- Footer Hal 3 -->
+    <div class="footer-bar">
+      <span>Dokumen Arsitektur Alur Kerja Smart Ri'ayah • Pesantren Modern Darul Ulum</span>
+      <span>Halaman 3 dari 3 (Selesai)</span>
+    </div>
+  </div>
+
+</body>
+</html>

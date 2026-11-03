@@ -110,42 +110,6 @@ export default function WhatsAppDrawer() {
 
   return (
     <>
-      {/* Floating Bottom-Right Trigger Button when closed */}
-      {!isWaDrawerOpen && (
-        <div className="fixed bottom-6 right-6 z-50">
-          <button
-            onClick={() => {
-              setIsWaDrawerOpen(true);
-              setUnreadWaCount(0);
-              sound.playBeep();
-            }}
-            className="group flex items-center gap-3 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-3 rounded-full shadow-2xl transition-all duration-200 transform hover:scale-105 border-2 border-white"
-          >
-            <div className="relative">
-              <MessageSquare className="w-6 h-6" />
-              {unreadWaCount > 0 && (
-                <span className="animate-ping absolute -top-2 -right-2 bg-rose-500 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center font-bold">
-                  {unreadWaCount}
-                </span>
-              )}
-            </div>
-            <div className="text-left font-sans hidden sm:block">
-              <div className="text-xs font-bold leading-none flex items-center gap-1.5">
-                <span>Live WhatsApp Gateway</span>
-                <span className="w-2 h-2 rounded-full bg-emerald-300 animate-pulse"></span>
-              </div>
-              <div className="text-[10px] text-emerald-100 mt-0.5 flex items-center gap-1">
-                <span>{whatsappLogs.length} notifikasi</span>
-                <span>•</span>
-                <span className="font-mono font-bold text-emerald-200">
-                  {isFonnteEnabled ? 'Fonnte ON' : 'Simulasi'}
-                </span>
-              </div>
-            </div>
-          </button>
-        </div>
-      )}
-
       {/* Floating Smartphone Mockup Drawer */}
       {isWaDrawerOpen && (
         <div className="fixed inset-x-3 bottom-20 sm:bottom-6 sm:inset-x-auto sm:right-6 z-50 w-auto sm:w-full max-w-sm sm:max-w-md bg-white rounded-2xl shadow-2xl border border-slate-300 overflow-hidden flex flex-col h-[650px] max-h-[85vh] transition-all animate-in slide-in-from-bottom-5">
