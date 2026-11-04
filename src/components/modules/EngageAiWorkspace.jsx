@@ -1862,6 +1862,38 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
           ...prev.slice(0, 19)
         ]);
       })
+      .on('broadcast', { event: 'whatsapp.takeover' }, (payload) => {
+        const t = payload?.payload;
+        if (!t) return;
+        const targetDigits = normalizeDigits(t.phone);
+        const nextManual = Boolean(t.isManual);
+
+        setSelectedChat(prev => {
+          if (!prev) return null;
+          if (normalizeDigits(prev.phone) === targetDigits) {
+            setIsManualOverrideActive(nextManual);
+            return {
+              ...prev,
+              isManual: nextManual,
+              handling: nextManual ? 'Manual (Ambil Alih)' : 'Otonom - Mengikuti Global',
+              status: nextManual ? 'Ditangani Admin' : 'Open'
+            };
+          }
+          return prev;
+        });
+
+        setConversations(prev => prev.map(c => {
+          if (normalizeDigits(c.phone) === targetDigits) {
+            return {
+              ...c,
+              isManual: nextManual,
+              handling: nextManual ? 'Manual (Ambil Alih)' : 'Otonom - Mengikuti Global',
+              status: nextManual ? 'Ditangani Admin' : 'Open'
+            };
+          }
+          return c;
+        }));
+      })
       .subscribe();
 
     return () => {
@@ -2040,6 +2072,103 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
     }
   };
 
+  // ─── Logika Sinkronisasi Mode Ambil Alih Manual & AI Otonom ───
+  const isChatManual = Boolean(
+    selectedChat?.isManual ||
+    selectedChat?.handling?.toLowerCase().includes('manual') ||
+    isManualOverrideActive
+  );
+
+  const toggleManualOverride = async () => {
+    if (!selectedChat) return;
+    const nextManual = !isChatManual;
+
+    // 1. Update state lokal
+    setIsManualOverrideActive(nextManual);
+
+    const updatedHandling = nextManual ? 'Manual (Ambil Alih)' : 'Otonom - Mengikuti Global';
+    const updatedStatus = nextManual ? 'Ditangani Admin' : 'Open';
+
+    // 2. Update selectedChat
+    setSelectedChat(prev => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        isManual: nextManual,
+        handling: updatedHandling,
+        status: updatedStatus
+      };
+    });
+
+    // 3. Update daftar percakapan
+    setConversations(prev => prev.map(c => {
+      const match = c.id === selectedChat.id || (c.phone && normalizeDigits(c.phone) === normalizeDigits(selectedChat.phone));
+      if (match) {
+        return {
+          ...c,
+          isManual: nextManual,
+          handling: updatedHandling,
+          status: updatedStatus
+        };
+      }
+      return c;
+    }));
+
+    // 4. Feedback Suara & Notifikasi
+    if (nextManual) {
+      addSafetyLog?.(
+        'manual takeover',
+        'warning',
+        'ADMIN_TAKEOVER',
+        selectedChat.name || selectedChat.phone
+      );
+      showToast?.('👤 Mode Ambil Alih Manual Aktif! AI Bot diistirahatkan. Anda memegang kendali percakapan ini secara manual.', 'info');
+      sound.playSuccess?.();
+    } else {
+      addSafetyLog?.(
+        'autonomous resumed',
+        'info',
+        'AI_RESUMED',
+        selectedChat.name || selectedChat.phone
+      );
+      showToast?.('⚡ Mode Otonom AI Aktif Kembali! AI Smart Ri\'ayah kembali membalas pesan otomatis.', 'success');
+      sound.playSuccess?.();
+    }
+
+    // 5. Sinkronisasi Realtime & Backend Fonnte API
+    try {
+      if (supabase) {
+        supabase.channel('whatsapp-room').send({
+          type: 'broadcast',
+          event: 'whatsapp.takeover',
+          payload: {
+            phone: selectedChat.phone,
+            isManual: nextManual,
+            admin: 'Ust. Drs. H. Mustofa',
+            timestamp: new Date().toISOString()
+          }
+        }).catch(() => {});
+      }
+
+      await fetch('/api/whatsapp/fonnte/takeover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: selectedChat.phone,
+          isManual: nextManual
+        })
+      }).catch(() => {});
+    } catch (err) {
+      console.warn('Takeover sync notice:', err);
+    }
+  };
+
+  const handleOpenChat = (chat) => {
+    setSelectedChat(chat);
+    const isManual = Boolean(chat.isManual || chat.handling?.toLowerCase().includes('manual'));
+    setIsManualOverrideActive(isManual);
+  };
+
   // If viewing Conversation Detail
   if (selectedChat) {
     return (
@@ -2055,11 +2184,42 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
               <ArrowLeft className="w-4 h-4" />
             </button>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="font-extrabold text-sm text-slate-900">{selectedChat.name}</h3>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                  Otonom
-                </span>
+
+                {/* TOMBOL TOGGLE MODE: AMBIL ALIH <-> OTONOM DI BAGIAN ATAS */}
+                <button
+                  type="button"
+                  onClick={toggleManualOverride}
+                  className={`group px-3 py-1 rounded-full text-xs font-black transition-all duration-200 flex items-center gap-1.5 shadow-sm border cursor-pointer select-none active:scale-95 ${
+                    isChatManual
+                      ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 ring-2 ring-amber-300/60 shadow-amber-200'
+                      : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border-emerald-300 ring-1 ring-emerald-400/40'
+                  }`}
+                  title={isChatManual ? "Klik untuk mengembalikan ke Mode Otonom AI" : "Klik untuk Ambil Alih (Mode Manual)"}
+                >
+                  {isChatManual ? (
+                    <>
+                      <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                      <span>👤 Mode Ambil Alih (Manual)</span>
+                      <span className="text-[10px] bg-amber-600/90 text-amber-50 px-2 py-0.5 rounded-full font-semibold group-hover:bg-amber-700">
+                        Klik jadi Otonom ↻
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600" />
+                      </span>
+                      <span>⚡ Otonom (AI Aktif)</span>
+                      <span className="text-[10px] bg-emerald-200/90 text-emerald-900 px-2 py-0.5 rounded-full font-semibold group-hover:bg-emerald-300">
+                        Klik Ambil Alih ⇄
+                      </span>
+                    </>
+                  )}
+                </button>
+
                 <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800">
                   Known Customer
                 </span>
@@ -2071,8 +2231,12 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-              {selectedChat.aiSafety}
+            <span className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border transition ${
+              isChatManual 
+                ? 'text-amber-800 bg-amber-50 border-amber-200' 
+                : 'text-emerald-700 bg-emerald-50 border-emerald-200'
+            }`}>
+              {isChatManual ? '👤 Admin Manual Override' : selectedChat.aiSafety}
             </span>
           </div>
         </div>
@@ -2089,27 +2253,25 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
               </span>
               <button
                 type="button"
-                onClick={() => {
-                  const nextState = !isManualOverrideActive;
-                  setIsManualOverrideActive(nextState);
-                  setSelectedChat(prev => ({
-                    ...prev,
-                    handling: nextState ? 'Manual Override (Admin Ri\'ayah)' : 'Otonom - Mengikuti Global'
-                  }));
-                  if (nextState) {
-                    showToast?.('Mode Ambil Alih Manual aktif! AI diistirahatkan untuk percakapan ini.', 'info');
-                    sound.playSuccess?.();
-                  } else {
-                    showToast?.('Mode Otonom AI aktif kembali.', 'info');
-                  }
-                }}
-                className={`px-3 py-1 rounded-lg font-bold text-[10px] transition flex items-center gap-1.5 shadow-xs ${
-                  isManualOverrideActive
-                    ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                    : 'bg-amber-500 hover:bg-amber-600 text-white'
+                onClick={toggleManualOverride}
+                className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 ${
+                  isChatManual
+                    ? 'bg-amber-500 hover:bg-amber-600 text-white border border-amber-600 ring-2 ring-amber-300/50'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700'
                 }`}
+                title={isChatManual ? "Klik untuk mengembalikan ke Mode Otonom AI" : "Klik untuk Ambil Alih percakapan dari AI"}
               >
-                <span>{isManualOverrideActive ? '✓ Mode Manual Aktif' : 'Ambil Alih dari AI'}</span>
+                {isChatManual ? (
+                  <>
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>✓ Mode Manual Aktif (Klik Balik ke Otonom)</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>Ambil Alih dari AI</span>
+                  </>
+                )}
               </button>
             </div>
 
@@ -2199,6 +2361,22 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
 
             {/* Chat Composer (Manual Override Reply) */}
             <form onSubmit={handleSendOverride} className="p-3 bg-slate-900 border-t border-slate-800 space-y-2">
+              {isChatManual && (
+                <div className="px-3 py-1.5 bg-amber-500/15 border border-amber-500/30 rounded-lg flex items-center justify-between text-xs text-amber-200">
+                  <span className="flex items-center gap-1.5 font-medium">
+                    <UserCheck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span>Mode Ambil Alih Aktif: Balasan langsung dari Anda, AI diistirahatkan.</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={toggleManualOverride}
+                    className="text-[10px] font-bold text-amber-300 hover:text-amber-100 underline cursor-pointer shrink-0"
+                  >
+                    Kembalikan ke Otonom ↻
+                  </button>
+                </div>
+              )}
+
               <div className="flex items-center justify-between text-slate-400 text-xs">
                 <div className="flex items-center gap-1">
                   <button type="button" onClick={() => applyFormat('bold')} className="p-1.5 hover:text-white rounded hover:bg-slate-800" title="Tebal (*teks*)"><Bold className="w-3.5 h-3.5" /></button>
@@ -2217,17 +2395,23 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
                 <textarea
                   value={overrideMessage}
                   onChange={(e) => setOverrideMessage(e.target.value)}
-                  placeholder="Ketik balasan manual override untuk wali santri..."
+                  placeholder={
+                    isChatManual
+                      ? "Ketik pesan manual langsung ke wali santri (AI diistirahatkan untuk percakapan ini)..."
+                      : "Ketik balasan manual override untuk wali santri..."
+                  }
                   rows={2}
                   className="flex-1 px-3 py-2 bg-slate-800 text-white text-xs rounded-xl border border-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-500 resize-none"
                 />
                 <button
                   type="submit"
                   disabled={isSendingOverride || !overrideMessage.trim()}
-                  className="px-4 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs transition flex items-center gap-1.5 shadow-md shrink-0"
+                  className={`px-4 py-3 disabled:opacity-50 text-white rounded-xl font-bold text-xs transition flex items-center gap-1.5 shadow-md shrink-0 cursor-pointer ${
+                    isChatManual ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-600 hover:bg-emerald-700'
+                  }`}
                 >
                   {isSendingOverride ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                  <span>{isSendingOverride ? 'Mengirim...' : 'Kirim Manual Override'}</span>
+                  <span>{isSendingOverride ? 'Mengirim...' : isChatManual ? 'Kirim Pesan Manual' : 'Kirim Manual Override'}</span>
                 </button>
               </div>
             </form>
@@ -2262,9 +2446,36 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
               <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">Conversation Tools</h4>
               <div className="space-y-2 text-xs">
-                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
-                  <strong className="text-slate-800 block text-xs">Handoff Status</strong>
-                  <span className="text-[11px] text-emerald-700 font-bold block mt-0.5">Active: AI Otonom (Bot Agent)</span>
+                <div className={`p-3 rounded-xl border transition-all ${
+                  isChatManual
+                    ? 'bg-amber-50/80 border-amber-200 text-amber-900'
+                    : 'bg-slate-50 border-slate-200 text-slate-800'
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <strong className="block text-xs font-bold text-slate-800">Handoff Status</strong>
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                      isChatManual ? 'bg-amber-500 text-white' : 'bg-emerald-100 text-emerald-800'
+                    }`}>
+                      {isChatManual ? 'MODE AMBIL ALIH' : 'OTONOM'}
+                    </span>
+                  </div>
+                  <span className={`text-[11px] font-bold block mt-1.5 ${
+                    isChatManual ? 'text-amber-800' : 'text-emerald-700'
+                  }`}>
+                    {isChatManual
+                      ? '⏸️ Terhenti: Admin Ri\'ayah sedang menangani chat ini (AI Bot diistirahatkan).'
+                      : '⚡ Active: AI Otonom (Bot Agent membalas otomatis).'
+                    }
+                  </span>
+                  <button
+                    type="button"
+                    onClick={toggleManualOverride}
+                    className={`mt-2 text-[11px] font-bold underline cursor-pointer block hover:opacity-80 ${
+                      isChatManual ? 'text-amber-800 hover:text-amber-950' : 'text-emerald-700 hover:text-emerald-900'
+                    }`}
+                  >
+                    {isChatManual ? '↻ Kembalikan kendali ke AI Otonom' : '⇄ Ambil alih percakapan ini secara manual'}
+                  </button>
                 </div>
                 <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
                   <strong className="text-slate-800 block text-xs">Pesantren Context</strong>
@@ -2361,7 +2572,7 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
               key={log.id || i}
               onClick={() => {
                 const match = conversations.find(c => normalizeDigits(c.phone) === normalizeDigits(log.phone));
-                if (match) setSelectedChat(match);
+                if (match) handleOpenChat(match);
               }}
               className="p-3 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
             >
@@ -2461,7 +2672,7 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
                     className={`hover:bg-slate-50/80 transition cursor-pointer ${
                       chat.isLiveIncoming || chat.unread ? 'bg-emerald-50/50 border-l-4 border-l-emerald-500' : ''
                     }`}
-                    onClick={() => setSelectedChat(chat)}
+                    onClick={() => handleOpenChat(chat)}
                   >
                     <td className="py-3 px-3">
                       <div className="flex items-center gap-2.5">
@@ -2494,12 +2705,24 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
                     <td className="py-3 px-3 font-mono text-[11px] text-slate-700 font-semibold">{chat.phone}</td>
                     <td className="py-3 px-3">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        chat.status === 'Open' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                        chat.isManual || chat.status === 'Ditangani Admin'
+                          ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                          : chat.status === 'Open'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-slate-100 text-slate-700'
                       }`}>
-                        {chat.status}
+                        {chat.isManual ? 'Ditangani Admin' : chat.status}
                       </span>
                     </td>
-                    <td className="py-3 px-3 text-[11px] text-slate-600">{chat.handling}</td>
+                    <td className="py-3 px-3 text-[11px]">
+                      {chat.isManual || chat.handling?.toLowerCase().includes('manual') ? (
+                        <span className="font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 inline-flex items-center gap-1">
+                          <span>👤 Manual (Ambil Alih)</span>
+                        </span>
+                      ) : (
+                        <span className="text-slate-700">{chat.handling}</span>
+                      )}
+                    </td>
                     <td className="py-3 px-3">
                       <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
                         {chat.aiSafety}
@@ -2511,8 +2734,8 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
                     </td>
                     <td className="py-3 px-3 text-right space-x-1" onClick={(e) => e.stopPropagation()}>
                       <button
-                        onClick={() => setSelectedChat(chat)}
-                        className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] transition shadow-sm"
+                        onClick={() => handleOpenChat(chat)}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] transition shadow-sm cursor-pointer"
                       >
                         Buka Chat
                       </button>

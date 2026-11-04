@@ -1,6 +1,6 @@
 import express from 'express';
 import { broadcastToSupabaseRealtime } from './supabaseBroadcaster.js';
-import { generateAutonomousReply, sendFonnteAutoReply, normalizePhone } from './aiAutonomousResponder.js';
+import { generateAutonomousReply, sendFonnteAutoReply, normalizePhone, setManualTakeover, isPhoneInManualTakeover } from './aiAutonomousResponder.js';
 
 /**
  * ============================================================================
@@ -129,6 +129,20 @@ router.post('/webhook', async (req, res) => {
 
       // Broadcast pesan masuk ke frontend via Supabase Realtime
       await broadcastToSupabaseRealtime('whatsapp.incoming', incomingData);
+
+      // Cek apakah nomor sedang dalam Mode Ambil Alih (Manual Override) oleh Admin Ri'ayah
+      if (isPhoneInManualTakeover(cleanSender)) {
+        console.log(`⏸️ [Manual Takeover Aktif]: Chat dari ${cleanSender} tidak dibalas AI karena sedang diambil alih Admin Ri'ayah.`);
+        return res.json({
+          success: true,
+          type: 'manual_takeover_active',
+          sender: cleanSender,
+          incoming: incomingText,
+          broadcasted: true,
+          read: true,
+          message: 'Ditangani manual oleh Admin Ri\'ayah. AI diistirahatkan.'
+        });
+      }
 
       // ─── GENERATE BALASAN AI OTONOM (CONTEXT-AWARE SMART RI'AYAH) ───
       console.log(`🤖 [Menjalankan AI Otonom untuk ${cleanSender}]: "${incomingText}"`);
@@ -488,6 +502,36 @@ router.post('/fonnte/send', async (req, res) => {
       message: `Gagal mengirim pesan: ${error.message}`
     });
   }
+});
+
+/**
+ * 6. POST /api/whatsapp/fonnte/takeover
+ * Mengaktifkan atau menonaktifkan Mode Ambil Alih Manual untuk nomor tertentu
+ */
+router.post('/fonnte/takeover', async (req, res) => {
+  const { phone, isManual } = req.body;
+
+  if (!phone) {
+    return res.status(400).json({
+      success: false,
+      message: 'Parameter "phone" wajib diisi!'
+    });
+  }
+
+  const clean = normalizeIndonesianPhone(phone);
+  const active = Boolean(isManual);
+  setManualTakeover(clean, active);
+
+  console.log(`👤 [Fonnte Route Takeover]: Nomor ${clean} diubah status takeover-nya menjadi: ${active ? 'MANUAL' : 'OTONOM'}`);
+
+  return res.json({
+    success: true,
+    phone: clean,
+    isManual: active,
+    message: active
+      ? `Nomor ${clean} berhasil diambil alih secara manual. AI Otonom diistirahatkan.`
+      : `Nomor ${clean} berhasil dikembalikan ke Mode Otonom AI.`
+  });
 });
 
 

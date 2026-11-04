@@ -3,7 +3,7 @@
  * Menerima incoming webhook dari Fonnte WhatsApp Gateway dan membalas secara Otonom (Autonomous AI)
  */
 
-import { generateAutonomousReply, sendFonnteAutoReply, normalizePhone } from '../../server/whatsapp-gateway/aiAutonomousResponder.js';
+import { generateAutonomousReply, sendFonnteAutoReply, normalizePhone, isPhoneInManualTakeover } from '../../server/whatsapp-gateway/aiAutonomousResponder.js';
 import { broadcastToSupabaseRealtime } from '../../server/whatsapp-gateway/supabaseBroadcaster.js';
 
 export default async function handler(req, res) {
@@ -66,6 +66,19 @@ export default async function handler(req, res) {
 
       // Siarkan pesan masuk ke Supabase Realtime seketika!
       await broadcastToSupabaseRealtime('whatsapp.incoming', incomingData);
+
+      // Cek apakah nomor sedang dalam Mode Ambil Alih (Manual Override) oleh Admin
+      if (isPhoneInManualTakeover(cleanSender)) {
+        console.log(`⏸️ [Vercel Takeover Aktif]: Chat dari ${cleanSender} tidak dibalas AI karena sedang diambil alih Admin Ri'ayah.`);
+        return res.status(200).json({
+          success: true,
+          type: 'manual_takeover_active',
+          sender: cleanSender,
+          incoming: incomingText,
+          read: true,
+          message: "Mode Ambil Alih Aktif. AI diistirahatkan, percakapan ditangani manual oleh Admin."
+        });
+      }
 
       // JALANKAN OTAK AI OTONOM
       console.log(`🤖 [Vercel AI Otonom untuk ${cleanSender}]: "${incomingText}"`);

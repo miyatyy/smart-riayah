@@ -11,6 +11,32 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 const DEFAULT_FONNTE_TOKEN = 'XvFjdLyyvBgNUbXBZYzZ';
 
+// In-memory set penyimpan nomor HP yang sedang diambil alih manual oleh Admin Ri'ayah
+export const manualTakeoverPhones = new Set();
+
+export function setManualTakeover(phone, isManual) {
+  const clean = normalizePhone(phone);
+  if (isManual) {
+    manualTakeoverPhones.add(clean);
+  } else {
+    manualTakeoverPhones.delete(clean);
+    const alt = clean.startsWith('62') ? '0' + clean.slice(2) : (clean.startsWith('0') ? '62' + clean.slice(1) : clean);
+    manualTakeoverPhones.delete(alt);
+  }
+  return isPhoneInManualTakeover(clean);
+}
+
+export function isPhoneInManualTakeover(phone) {
+  const clean = normalizePhone(phone);
+  if (manualTakeoverPhones.has(clean)) return true;
+  for (const p of manualTakeoverPhones) {
+    if (clean.endsWith(p.slice(-8)) || p.endsWith(clean.slice(-8))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // Database referensi cepat Wali & Santri Pesantren Darul Ulum
 const KNOWN_WALI_MAP = {
   '08813576012': {

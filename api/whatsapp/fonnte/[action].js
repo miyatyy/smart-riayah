@@ -251,6 +251,24 @@ export default async function handler(req, res) {
     }
   }
 
+  // 6. TAKEOVER (Mode Ambil Alih Manual vs Otonom)
+  if (action === 'takeover') {
+    const { phone, isManual } = req.body || {};
+    if (!phone) {
+      return res.status(400).json({ success: false, message: 'Nomor telepon wajib disertakan' });
+    }
+    const clean = normalizeIndonesianPhone(phone);
+    const active = Boolean(isManual);
+    return res.status(200).json({
+      success: true,
+      phone: clean,
+      isManual: active,
+      message: active
+        ? `Nomor ${clean} berhasil diambil alih secara manual. AI Otonom diistirahatkan.`
+        : `Nomor ${clean} berhasil dikembalikan ke Mode Otonom AI.`
+    });
+  }
+
   return res.status(404).json({ success: false, message: `Action "${action}" tidak ditemukan.` });
 }
 
