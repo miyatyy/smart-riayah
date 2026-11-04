@@ -3,6 +3,12 @@
  * Otak AI Otonom yang membalas pesan masuk dari Wali Santri secara instan via Fonnte API
  */
 
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://htjnrpyuzkarigglgrxm.supabase.co';
+const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_WQ7Ix8DuKxlVdv_dnwBspw_cXbdkADI';
+const supabase = createClient(supabaseUrl, supabaseKey);
+
 const DEFAULT_FONNTE_TOKEN = 'XvFjdLyyvBgNUbXBZYzZ';
 
 // Database referensi cepat Wali & Santri Pesantren Darul Ulum
@@ -95,11 +101,57 @@ export function normalizePhone(raw) {
 }
 
 /**
+ * Cari data Santri & Wali real-time dari Supabase (Mendukung update ganti nomor dari Tabel RFID)
+ */
+export async function findLiveSantriByPhone(cleanPhone) {
+  try {
+    const digits = String(cleanPhone || '').replace(/[^0-9]/g, '');
+    if (digits.length >= 7) {
+      const last8 = digits.slice(-8);
+
+      const { data, error } = await supabase
+        .from('santri')
+        .select('*');
+
+      if (!error && Array.isArray(data)) {
+        const matched = data.find(s => {
+          const sWaliDigits = String(s.no_wali || '').replace(/[^0-9]/g, '');
+          return sWaliDigits && (sWaliDigits.endsWith(last8) || digits.endsWith(sWaliDigits.slice(-8)));
+        });
+
+        if (matched) {
+          console.log(`🎯 [Supabase Match]: Nomor ${cleanPhone} teridentifikasi sebagai Wali dari Santri ${matched.nama_lengkap}`);
+          return {
+            namaWali: matched.nama_wali || 'Bapak/Ibu Wali Santri',
+            santriNama: matched.nama_lengkap,
+            nis: matched.nis || '-',
+            kelas: matched.kelas || 'Santri Darul Ulum',
+            kamar: matched.kamar || 'Asrama Darul Ulum',
+            saldoRfid: `Rp ${Number(matched.saldo_rfid || matched.saldo_awal || 0).toLocaleString('id-ID')}`,
+            limitHarian: `Rp ${Number(matched.limit_jajan_harian || 25000).toLocaleString('id-ID')}`,
+            poinDisiplin: `${matched.poin_disiplin || 100}/100 (Mumtaz)`,
+            statusAsrama: matched.status_asrama === 'DI_ASRAMA' ? 'Di Asrama (Aktif Sholat Berjamaah & Halaqah)' : (matched.status_asrama || 'Di Lingkungan Pondok'),
+            izinTerakhir: 'Tertib di Asrama'
+          };
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('⚠️ [findLiveSantriByPhone error]:', err.message);
+  }
+  return null;
+}
+
+/**
  * Otak AI Otonom: Menganalisis pesan dan menghasilkan balasan islami & cerdas
  */
 export async function generateAutonomousReply(senderPhone, incomingText, senderName = 'Wali Santri') {
   const cleanPhone = normalizePhone(senderPhone);
-  const waliData = KNOWN_WALI_MAP[cleanPhone] || KNOWN_WALI_MAP[senderPhone] || {
+
+  // 1. Cek live database Supabase terlebih dahulu (Mendukung Wali yang baru ganti nomor di Tabel RFID!)
+  const liveWali = await findLiveSantriByPhone(cleanPhone);
+
+  const waliData = liveWali || KNOWN_WALI_MAP[cleanPhone] || KNOWN_WALI_MAP[senderPhone] || {
     namaWali: senderName || 'Bapak/Ibu Wali Santri',
     santriNama: 'Ananda',
     nis: '-',

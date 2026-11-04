@@ -1905,6 +1905,8 @@ export const AppProvider = ({ children }) => {
 
   // 4e. RFID Card Management: Update existing santri card info & wali contact
   const updateSantriCard = (santriId, updatedData) => {
+    let syncedSantri = null;
+
     setSantriList(prev => prev.map(s => {
       if (s.id === santriId) {
         const updatedWali = {
@@ -1916,15 +1918,40 @@ export const AppProvider = ({ children }) => {
           alamat: updatedData.waliAlamat !== undefined ? updatedData.waliAlamat : (updatedData.wali?.alamat || s.wali?.alamat || '-')
         };
 
-        return {
+        syncedSantri = {
           ...s,
           ...updatedData,
           wali: updatedWali,
           rfidUid: updatedData.rfidUid ? updatedData.rfidUid.trim().toUpperCase() : s.rfidUid
         };
+        return syncedSantri;
       }
       return s;
     }));
+
+    if (syncedSantri) {
+      // 1. Simpan permanen ke Supabase PostgreSQL & Firebase
+      syncSantriToSupabase(syncedSantri);
+
+      // 2. Siarkan perubahan nomor wali baru ke seluruh sesi & WhatsApp Gateway
+      try {
+        const waChannel = supabase.channel('whatsapp-room');
+        waChannel.send({
+          type: 'broadcast',
+          event: 'santri.wali_updated',
+          payload: {
+            santriId: syncedSantri.id,
+            namaSantri: syncedSantri.nama,
+            namaWali: syncedSantri.wali?.nama,
+            noWali: syncedSantri.wali?.telepon,
+            rfidUid: syncedSantri.rfidUid
+          }
+        });
+      } catch (e) {
+        console.warn('Realtime broadcast wali update failed:', e);
+      }
+    }
+
     sound.playSuccess();
   };
 
