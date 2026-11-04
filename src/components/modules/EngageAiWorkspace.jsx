@@ -1125,11 +1125,17 @@ function TabChannels({
         </div>
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm">
           <span className="text-[10px] font-bold text-slate-400 uppercase block">Connected</span>
-          <span className={`text-lg font-extrabold mt-1 block ${isConnected ? 'text-emerald-700' : 'text-rose-600'}`}>
-            {isConnected ? '1 Channel Aktif' : '0 Channel Aktif'}
+          <span className={`text-lg font-extrabold mt-1 block ${(isConnected || isTelegramConnected) ? 'text-emerald-700' : 'text-rose-600'}`}>
+            {(isConnected ? 1 : 0) + (isTelegramConnected ? 1 : 0)} Channel Aktif
           </span>
           <span className="text-[10px] text-slate-500">
-            {isConnected ? 'Standby Outbound & Inbound' : 'Perlu Scan QR ulang'}
+            {isConnected && isTelegramConnected
+              ? 'WA & Telegram Siaga Otonom'
+              : isTelegramConnected
+              ? 'Telegram Bot Siaga Otonom'
+              : isConnected
+              ? 'WhatsApp Standby Outbound'
+              : 'Perlu Scan QR / Connect Bot'}
           </span>
         </div>
       </div>
@@ -1237,7 +1243,9 @@ function TabChannels({
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-200 flex items-center justify-between">
           <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">Inventaris Channel Aktif</h4>
-          <span className="text-[10px] font-mono text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded">1 Channel Fonnte Terpasang</span>
+          <span className="text-[10px] font-mono text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded">
+            {(isConnected ? 1 : 0) + (isTelegramConnected ? 1 : 0)} Channel Terpasang
+          </span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -1255,6 +1263,47 @@ function TabChannels({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
+              {/* Row 1: Telegram Bot (Jika Terhubung) */}
+              {isTelegramConnected && (
+                <tr className="hover:bg-slate-50/50 bg-sky-50/20">
+                  <td className="py-3 px-3 font-extrabold text-slate-800">{telegramBotInfo?.first_name || 'Smart Riayah AI Pesantren'}</td>
+                  <td className="py-3 px-3 font-mono text-slate-500 text-[11px]">@{telegramBotInfo?.username || 'smartriayah_ai_bot'}</td>
+                  <td className="py-3 px-3">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-200">
+                      Telegram Bot
+                    </span>
+                  </td>
+                  <td className="py-3 px-3">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      Autonomous AI - Bot
+                    </span>
+                  </td>
+                  <td className="py-3 px-3">
+                    <span className="inline-flex items-center gap-1 font-bold text-[11px] text-emerald-700">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      Active / Otonom
+                    </span>
+                  </td>
+                  <td className="py-3 px-3">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-emerald-100 text-emerald-800">Live Webhook</span>
+                    <span className="text-[9px] text-slate-400 block mt-0.5 font-mono">Bgt: 5/5 • Rsk: 0</span>
+                  </td>
+                  <td className="py-3 px-3 font-mono font-bold text-slate-700">ID: {telegramBotInfo?.id || '9079176204'}</td>
+                  <td className="py-3 px-3 font-mono text-emerald-700 text-[11px] font-bold">Unlimited</td>
+                  <td className="py-3 px-3 text-right">
+                    <a
+                      href={`https://t.me/${telegramBotInfo?.username || 'smartriayah_ai_bot'}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-2.5 py-1 rounded text-[10px] font-bold text-sky-700 border border-sky-300 hover:bg-sky-50 transition inline-block"
+                    >
+                      Buka Bot
+                    </a>
+                  </td>
+                </tr>
+              )}
+
+              {/* Row 2: WhatsApp Fonnte */}
               <tr className="hover:bg-slate-50/50">
                 <td className="py-3 px-3 font-extrabold text-slate-800">{deviceData?.name || 'Pesantren Darul Ulum'}</td>
                 <td className="py-3 px-3 font-mono text-slate-500 text-[11px]">fonnte-main-01</td>
@@ -1729,7 +1778,9 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
   const [selectedChat, setSelectedChat] = useState(null);
   const [isSendingOverride, setIsSendingOverride] = useState(false);
   const [isManualOverrideActive, setIsManualOverrideActive] = useState(false);
-  const [globalHandling, setGlobalHandling] = useState('autonomous'); // 'manual' | 'semi_auto' | 'autonomous'
+  const [globalHandling, setGlobalHandling] = useState(() => {
+    return localStorage.getItem('smart_riayah_global_handling') || 'autonomous';
+  }); // 'manual' | 'semi_auto' | 'autonomous'
   const [channelFilter, setChannelFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [overrideMessage, setOverrideMessage] = useState('');
@@ -2226,7 +2277,21 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
     sound.playBeep?.();
 
     try {
-      const res = await sendManualOverrideMessage(targetPhone, textToSend, fonnteToken);
+      let res;
+      const isTelegramChat = selectedChat.channel === 'Telegram Bot' || String(targetPhone).startsWith('TG-');
+      if (isTelegramChat) {
+        const cleanChatId = String(targetPhone).replace(/[^0-9]/g, '');
+        const tgToken = localStorage.getItem('smart_riayah_telegram_token') || '9079176204:AAEBAzGX5ReS_Kykuk32ctWtIkmIhh-ElVQ';
+        const tgRes = await fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: cleanChatId, text: textToSend })
+        });
+        const tgData = await tgRes.json().catch(() => ({}));
+        res = { success: Boolean(tgData.ok), message: tgData.description };
+      } else {
+        res = await sendManualOverrideMessage(targetPhone, textToSend, fonnteToken);
+      }
       setIsSendingOverride(false);
 
       if (res.success || res.data?.status === true || res.data?.status === 'true' || res.data?.id) {
@@ -2248,12 +2313,17 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
           selectedChat.santri?.split(' ')[0] || targetPhone
         );
 
-        showToast?.(`Pesan berhasil dikirim ke WhatsApp ${targetPhone} via Fonnte API!`, 'success');
+        showToast?.(
+          isTelegramChat
+            ? `Pesan berhasil dikirim ke Telegram Chat ${targetPhone}!`
+            : `Pesan berhasil dikirim ke WhatsApp ${targetPhone} via Fonnte API!`,
+          'success'
+        );
         sound.playWhatsApp?.();
         setOverrideMessage('');
       } else {
-        const errMsg = res.data?.reason || res.data?.message || res.message || 'Error API Fonnte';
-        showToast?.(`Gagal mengirim WhatsApp: ${errMsg}`, 'error');
+        const errMsg = res.data?.reason || res.data?.message || res.message || 'Error API Gateway';
+        showToast?.(`Gagal mengirim pesan: ${errMsg}`, 'error');
         addSafetyLog?.(
           'outbound failed',
           'warning',
@@ -2475,7 +2545,7 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
             <div className="p-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs">
               <span className="font-bold text-slate-700 flex items-center gap-2">
                 <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
-                Live Conversation Stream (WhatsApp Fonnte)
+                Live Conversation Stream ({selectedChat.channel || 'WhatsApp Fonnte'})
               </span>
               <button
                 type="button"
@@ -2651,7 +2721,7 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
                   <span className="text-[9px] uppercase font-bold text-slate-400 block">Source</span>
-                  <span className="font-bold text-slate-800">WhatsApp Fonnte</span>
+                  <span className="font-bold text-slate-800">{selectedChat.channel || 'WhatsApp Fonnte'}</span>
                 </div>
                 <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
                   <span className="text-[9px] uppercase font-bold text-slate-400 block">Consent</span>
@@ -2978,12 +3048,21 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
-            <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-800">Default Chat Handling Mode</h4>
+            <div className="flex items-center gap-2">
+              <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-800">Default Chat Handling Mode</h4>
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                Berlaku untuk WhatsApp &amp; Telegram Bot
+              </span>
+            </div>
             <p className="text-xs text-slate-500 mt-0.5">Pilih tingkat otonomi balasan AI untuk seluruh pesan masuk dari wali santri.</p>
           </div>
           <button
-            onClick={() => { sound.playSuccess?.(); alert('Pengaturan Global Handling tersimpan!'); }}
-            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-sm self-start"
+            onClick={() => {
+              localStorage.setItem('smart_riayah_global_handling', globalHandling);
+              sound.playSuccess?.();
+              showToast?.(`✓ Global Handling tersimpan: Mode ${globalHandling === 'autonomous' ? 'Otonom' : globalHandling === 'semi_auto' ? 'Semi Auto' : 'Manual'} aktif untuk WhatsApp & Telegram!`, 'success');
+            }}
+            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-sm self-start cursor-pointer"
           >
             Simpan Global Handling
           </button>
@@ -2991,15 +3070,19 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {[
-            { id: 'manual', title: '1. Manual', desc: 'Full Control Admin. AI tidak membalas otomatis.', badge: 'Aman', color: 'border-slate-300' },
+            { id: 'manual', title: '1. Manual', desc: 'Full Control Admin. AI tidak membalas otomatis di WhatsApp & Telegram.', badge: 'Aman', color: 'border-slate-300' },
             { id: 'semi_auto', title: '2. Semi Auto', desc: 'AI menyusun draf balasan, admin me-review sebelum kirim.', badge: 'Review', color: 'border-amber-300' },
-            { id: 'autonomous', title: '3. Otonom', desc: 'AI membalas otomatis seketika sesuai data live & policy.', badge: 'Auto', color: 'border-emerald-400' }
+            { id: 'autonomous', title: '3. Otonom', desc: 'AI membalas otomatis seketika 24/7 di WhatsApp & Telegram sesuai data live santri.', badge: 'Auto', color: 'border-emerald-400' }
           ].map(opt => {
             const isSelected = globalHandling === opt.id;
             return (
               <div
                 key={opt.id}
-                onClick={() => { setGlobalHandling(opt.id); sound.playBeep?.(); }}
+                onClick={() => {
+                  setGlobalHandling(opt.id);
+                  localStorage.setItem('smart_riayah_global_handling', opt.id);
+                  sound.playBeep?.();
+                }}
                 className={`p-3.5 rounded-xl border-2 cursor-pointer transition ${
                   isSelected ? 'bg-emerald-50/60 border-emerald-600 shadow-sm' : 'bg-slate-50 border-slate-200 hover:border-slate-300'
                 }`}

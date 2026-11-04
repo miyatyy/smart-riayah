@@ -22,7 +22,14 @@ export default async function handler(req, res) {
     });
   }
 
-  const update = req.body || {};
+  let update = req.body || {};
+  if (typeof update === 'string') {
+    try {
+      update = JSON.parse(update);
+    } catch (e) {
+      console.warn('JSON parse warning:', e);
+    }
+  }
   console.log('📥 [Telegram Webhook Received]:', JSON.stringify(update));
 
   const msg = update.message || update.edited_message || update.channel_post;
@@ -47,10 +54,19 @@ export default async function handler(req, res) {
       channel: 'Telegram Bot',
       tipe: 'TELEGRAM_INCOMING'
     };
-    await broadcastToSupabaseRealtime('whatsapp.incoming', incomingData);
+    try {
+      await broadcastToSupabaseRealtime('whatsapp.incoming', incomingData);
+    } catch (e) {
+      console.warn('Realtime broadcast warning:', e.message);
+    }
 
     // 2. Cek apakah percakapan sedang diambil alih manual oleh Admin
-    const inTakeover = await isPhoneInManualTakeover(String(chatId));
+    let inTakeover = false;
+    try {
+      inTakeover = await isPhoneInManualTakeover(String(chatId));
+    } catch (e) {
+      inTakeover = false;
+    }
     if (inTakeover) {
       console.log(`⏸️ [Telegram Takeover]: Chat ${chatId} sedang diambil alih manual oleh Admin. AI diistirahatkan.`);
       return res.status(200).json({ ok: true, status: 'manual_takeover' });
@@ -66,11 +82,8 @@ export default async function handler(req, res) {
     }
 
     // 4. Kirim balasan otomatis ke pengguna di Telegram
-    const token = req.query?.token || process.env.TELEGRAM_BOT_TOKEN;
-    if (!token) {
-      console.warn('⚠️ [Telegram Webhook]: Token bot tidak tersedia di query parameter (?token=...) maupun env.');
-      return res.status(200).json({ ok: true, chat_id: chatId, reply: aiReply, sent: false, note: 'Token missing' });
-    }
+    const FALLBACK_TELEGRAM_TOKEN = '9079176204:AAEBAzGX5ReS_Kykuk32ctWtIkmIhh-ElVQ';
+    const token = req.query?.token || process.env.TELEGRAM_BOT_TOKEN || FALLBACK_TELEGRAM_TOKEN;
     const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -80,6 +93,7 @@ export default async function handler(req, res) {
       })
     });
     const tgData = await tgRes.json().catch(() => ({}));
+    console.log('📤 [Telegram sendMessage Result]:', JSON.stringify(tgData));
 
     // 5. Siarkan balasan AI ke dashboard AI Inbox
     const aiReplyData = {
