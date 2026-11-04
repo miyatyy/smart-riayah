@@ -4,6 +4,7 @@
  */
 
 import { generateAutonomousReply, sendFonnteAutoReply, normalizePhone } from '../../server/whatsapp-gateway/aiAutonomousResponder.js';
+import { broadcastToSupabaseRealtime } from '../../server/whatsapp-gateway/supabaseBroadcaster.js';
 
 export default async function handler(req, res) {
   // Set CORS headers
@@ -29,6 +30,15 @@ export default async function handler(req, res) {
   try {
     // 1. Deteksi Delivery Report / Status DLR
     if (payload.status || payload.state) {
+      const statusData = {
+        id: payload.id || `WA-${Date.now()}`,
+        status: (payload.status || payload.state || 'DELIVERED').toUpperCase(),
+        penerima: payload.name || payload.target || 'Wali Santri',
+        nomor: payload.target || payload.phone || payload.sender,
+        waktu: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB'
+      };
+      await broadcastToSupabaseRealtime('whatsapp.status', statusData);
+
       return res.status(200).json({
         success: true,
         type: 'status_update',
@@ -39,25 +49,54 @@ export default async function handler(req, res) {
     // 2. Deteksi Pesan Masuk (Incoming Message dari Wali)
     const incomingText = payload.message || payload.text;
     const sender = payload.sender || payload.phone || payload.target;
-    const senderName = payload.name || 'Wali Santri';
+    const senderName = payload.name || payload.sender_name || 'Wali Santri';
 
     if (incomingText && sender) {
       const cleanSender = normalizePhone(sender);
+      const nowWIB = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
+
+      const incomingData = {
+        id: payload.id || `IN-${Date.now()}`,
+        pengirim: senderName,
+        nomor: cleanSender,
+        pesan: incomingText,
+        waktu: nowWIB,
+        tipe: 'PESAN_MASUK_WALI'
+      };
+
+      // Siarkan pesan masuk ke Supabase Realtime seketika!
+      await broadcastToSupabaseRealtime('whatsapp.incoming', incomingData);
 
       // JALANKAN OTAK AI OTONOM
+      console.log(`🤖 [Vercel AI Otonom untuk ${cleanSender}]: "${incomingText}"`);
       const aiReply = await generateAutonomousReply(cleanSender, incomingText, senderName);
 
       // Kirim balasan aktif ke Fonnte API secara langsung
-      await sendFonnteAutoReply(cleanSender, aiReply);
+      const dispatchResult = await sendFonnteAutoReply(cleanSender, aiReply);
 
-      // Kembalikan response JSON ke Fonnte (Fonnte webhook format)
+      const aiReplyData = {
+        id: `AI-${Date.now()}`,
+        target: cleanSender,
+        namaWali: senderName,
+        incomingText: incomingText,
+        replyText: aiReply,
+        waktu: nowWIB,
+        dispatched: dispatchResult.success,
+        mode: 'AUTONOMOUS'
+      };
+
+      // Siarkan balasan AI ke Supabase Realtime!
+      await broadcastToSupabaseRealtime('whatsapp.ai_reply', aiReplyData);
+
+      // Kembalikan response JSON ke Fonnte (Fonnte webhook auto-reply format)
       return res.status(200).json({
         success: true,
         type: 'autonomous_reply',
         sender: cleanSender,
         incoming: incomingText,
         reply: aiReply,
-        read: true
+        read: true,
+        broadcasted: true
       });
     }
 
@@ -67,3 +106,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ success: false, error: error.message });
   }
 }
+

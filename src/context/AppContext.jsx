@@ -744,6 +744,21 @@ export const AppProvider = ({ children }) => {
         setWhatsappLogs(prev => [incomingEntry, ...prev]);
         setUnreadWaCount(prev => prev + 1);
       })
+      .on('broadcast', { event: 'whatsapp.ai_reply' }, ({ payload }) => {
+        if (!isMounted || !payload) return;
+        const replyEntry = {
+          id: payload.id || `AI-${Date.now()}`,
+          waktu: payload.waktu || getNowWIB(),
+          penerima: payload.namaWali || 'Wali Santri',
+          pengirim: 'Smart Ri\'ayah AI Bot',
+          nomor: payload.target,
+          tipe: 'BALASAN_AI_OTONOM',
+          pesan: payload.replyText,
+          apiStatus: payload.dispatched ? 'DELIVERED' : 'FAILED',
+          isIncoming: false
+        };
+        setWhatsappLogs(prev => [replyEntry, ...prev]);
+      })
       .subscribe((status) => {
         console.log('📡 [AppContext Supabase Realtime whatsapp-room] Status:', status);
       });
