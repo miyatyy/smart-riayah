@@ -107,6 +107,10 @@ export default defineConfig({
         target: 'http://localhost:5000',
         changeOrigin: true
       },
+      '/api/whatsapp': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      },
       '/api/users': {
         target: 'http://localhost:5000',
         changeOrigin: true

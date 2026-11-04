@@ -50,9 +50,17 @@ import {
   X,
   Lock,
   Eye,
-  UserCheck
+  UserCheck,
+  Loader2
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
+import {
+  fetchDeviceStatus,
+  fetchQrCode,
+  validateWhatsappNumber,
+  disconnectFonnteDevice,
+  sendManualOverrideMessage
+} from '../../services/fonnteService';
 
 export default function EngageAiWorkspace() {
   const {
@@ -72,11 +80,170 @@ export default function EngageAiWorkspace() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [copiedText, setCopiedText] = useState(null);
 
+  // ─── Real-Time Fonnte Gateway State ───
+  const [deviceData, setDeviceData] = useState({
+    isConnected: false,
+    status: 'disconnect',
+    device: '08813576012',
+    name: 'Smart Permit Pesantren',
+    quota: '931',
+    messages: 69,
+    package: 'Free',
+    expired: '16 November 2026',
+    isLoading: false
+  });
+
+  // ─── WhatsApp Safety Event History Logs ───
+  const [safetyLogs, setSafetyLogs] = useState([
+    { time: '16:12 WIB', event: 'outbound success', severity: 'info', intent: 'NOTIF_IZIN', ref: 'DU-PERMIT-8492' },
+    { time: '15:40 WIB', event: 'inbound received', severity: 'info', intent: 'QUERY_SALDO', ref: 'S-101' },
+    { time: '14:20 WIB', event: 'device keepalive', severity: 'info', intent: 'HEARTBEAT', ref: 'PING_OK' }
+  ]);
+
+  // ─── Global Workspace Toast ───
+  const [toast, setToast] = useState(null); // { type: 'success' | 'warning' | 'error' | 'info', message: '' }
+  const showToast = (message, type = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  const getNowWIB = () => new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
+
   const copyToClipboard = (text, id = 'default') => {
     navigator.clipboard?.writeText(text);
     setCopiedText(id);
     sound.playBeep?.();
+    showToast(`Nomor ${text} berhasil disalin ke clipboard!`, 'success');
     setTimeout(() => setCopiedText(null), 2500);
+  };
+
+  // Initial check Fonnte on mount
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const res = await fetchDeviceStatus(fonnteToken);
+        if (isMounted && res) {
+          setDeviceData(prev => ({
+            ...prev,
+            isConnected: res.isConnected,
+            status: res.status,
+            device: res.device || prev.device,
+            name: res.name || prev.name,
+            quota: res.quota || prev.quota,
+            messages: res.messages != null ? res.messages : prev.messages,
+            package: res.package || prev.package,
+            expired: res.expired || prev.expired
+          }));
+        }
+      } catch (e) {
+        console.warn('Initial Fonnte status check failed:', e);
+      }
+    })();
+    return () => { isMounted = false; };
+  }, [fonnteToken]);
+
+  // Handler: Refresh Status Device Fonnte
+  const handleRefreshStatus = async () => {
+    setDeviceData(prev => ({ ...prev, isLoading: true }));
+    sound.playBeep?.();
+    try {
+      const res = await fetchDeviceStatus(fonnteToken);
+      setDeviceData({
+        isConnected: res.isConnected,
+        status: res.status,
+        device: res.device || '08813576012',
+        name: res.name || 'Smart Permit Pesantren',
+        quota: res.quota || '931',
+        messages: res.messages != null ? res.messages : 0,
+        package: res.package || 'Free',
+        expired: res.expired || '-',
+        isLoading: false
+      });
+
+      if (res.isConnected) {
+        showToast(`Status Fonnte: TERHUBUNG (${res.name} - +62 ${res.device})`, 'success');
+        sound.playSuccess?.();
+      } else {
+        showToast('Status Fonnte: TERPUTUS (Offline / Perlu Scan QR)', 'warning');
+        setSafetyLogs(prev => [
+          { time: getNowWIB(), event: 'device disconnected', severity: 'warning', intent: 'STATUS_CHECK', ref: res.device || 'Fonnte' },
+          ...prev
+        ]);
+      }
+    } catch (err) {
+      setDeviceData(prev => ({ ...prev, isLoading: false }));
+      showToast(`Gagal refresh status: ${err.message}`, 'error');
+    }
+  };
+
+  // Handler: Disconnect Device Fonnte
+  const handleDisconnectDevice = async () => {
+    if (!window.confirm('Apakah Anda yakin ingin memutuskan koneksi perangkat WhatsApp ini?')) return;
+    setDeviceData(prev => ({ ...prev, isLoading: true }));
+    try {
+      await disconnectFonnteDevice(fonnteToken);
+      setDeviceData(prev => ({
+        ...prev,
+        isConnected: false,
+        status: 'disconnect',
+        isLoading: false
+      }));
+      setSafetyLogs(prev => [
+        { time: getNowWIB(), event: 'device disconnected (manual)', severity: 'warning', intent: 'DISCONNECT', ref: deviceData.device },
+        ...prev
+      ]);
+      showToast('Perangkat WhatsApp berhasil diputuskan dari Fonnte.', 'warning');
+      sound.playBeep?.();
+    } catch (err) {
+      setDeviceData(prev => ({ ...prev, isLoading: false }));
+      showToast(`Gagal memutuskan perangkat: ${err.message}`, 'error');
+    }
+  };
+
+  // Handler: Save Private Token
+  const handleSaveToken = async (newToken) => {
+    if (!newToken || !newToken.trim()) {
+      showToast('Token Fonnte tidak boleh kosong!', 'error');
+      return;
+    }
+    const cleanToken = newToken.trim();
+    setFonnteToken(cleanToken);
+    localStorage.setItem('sr_fonnte_token', cleanToken);
+    showToast('Token Privat Fonnte berhasil disimpan!', 'success');
+    sound.playSuccess?.();
+
+    // Langsung uji status dengan token baru
+    setDeviceData(prev => ({ ...prev, isLoading: true }));
+    try {
+      const res = await fetchDeviceStatus(cleanToken);
+      setDeviceData({
+        isConnected: res.isConnected,
+        status: res.status,
+        device: res.device || '08813576012',
+        name: res.name || 'Smart Permit Pesantren',
+        quota: res.quota || '931',
+        messages: res.messages != null ? res.messages : 0,
+        package: res.package || 'Free',
+        expired: res.expired || '-',
+        isLoading: false
+      });
+      if (res.isConnected) {
+        showToast(`Token Valid! Fonnte Terhubung ke ${res.name}`, 'success');
+      } else {
+        showToast(`Token tersimpan. Status: Disconnected (${res.quota} sisa kuota)`, 'info');
+      }
+    } catch (e) {
+      setDeviceData(prev => ({ ...prev, isLoading: false }));
+    }
+  };
+
+  // Add event to Safety Event History
+  const addSafetyLog = (event, severity, intent, ref) => {
+    setSafetyLogs(prev => [
+      { time: getNowWIB(), event, severity, intent, ref },
+      ...prev
+    ]);
   };
 
   // Dynamic Badge text based on active tab
@@ -108,6 +275,27 @@ export default function EngageAiWorkspace() {
 
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200">
+      {/* ─── TOAST NOTIFICATION BANNER ─── */}
+      {toast && (
+        <div className={`p-3.5 rounded-xl text-xs font-bold flex items-center justify-between gap-3 shadow-md animate-in slide-in-from-top-2 border ${
+          toast.type === 'success' ? 'bg-emerald-600 text-white border-emerald-700' :
+          toast.type === 'warning' ? 'bg-amber-500 text-white border-amber-600' :
+          toast.type === 'error' ? 'bg-rose-600 text-white border-rose-700' :
+          'bg-slate-800 text-white border-slate-900'
+        }`}>
+          <div className="flex items-center gap-2">
+            {toast.type === 'success' && <CheckCircle2 className="w-4 h-4 shrink-0 text-white" />}
+            {toast.type === 'warning' && <AlertTriangle className="w-4 h-4 shrink-0 text-white" />}
+            {toast.type === 'error' && <AlertCircle className="w-4 h-4 shrink-0 text-white" />}
+            {toast.type === 'info' && <BellRing className="w-4 h-4 shrink-0 text-white" />}
+            <span>{toast.message}</span>
+          </div>
+          <button onClick={() => setToast(null)} className="p-1 hover:bg-white/20 rounded">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* ─── A. TOP BANNER CARD & PILL TABS ─── */}
       <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-900 rounded-2xl p-6 text-white shadow-lg border border-emerald-700/50 relative overflow-hidden">
         {/* Subtle decorative background blur */}
@@ -131,7 +319,7 @@ export default function EngageAiWorkspace() {
             </p>
             <div className="flex items-center gap-2 mt-3 text-[11px] text-emerald-200/80 font-mono">
               <Clock className="w-3.5 h-3.5 text-emerald-300" />
-              <span>Paket Aktif: <strong className="text-white">Smart Riayah Pro</strong> (Berakhir 16 Nov 2026 - <span className="text-emerald-300 font-bold">Sisa 12 Hari</span>)</span>
+              <span>Paket Aktif: <strong className="text-white">${deviceData.name} (${deviceData.package})</strong> (Masa Aktif: <span className="text-emerald-300 font-bold">${deviceData.expired}</span> • Kuota: <span className="text-amber-300 font-bold">${deviceData.quota}</span>)</span>
             </div>
           </div>
 
@@ -172,13 +360,41 @@ export default function EngageAiWorkspace() {
       </div>
 
       {/* ─── B. TAB 1: DASHBOARD ─── */}
-      {activeTab === 'dashboard' && <TabDashboard onSwitchTab={setActiveTab} onCopy={copyToClipboard} copiedText={copiedText} />}
+      {activeTab === 'dashboard' && (
+        <TabDashboard
+          onSwitchTab={setActiveTab}
+          onCopy={copyToClipboard}
+          copiedText={copiedText}
+          deviceData={deviceData}
+          onRefreshStatus={handleRefreshStatus}
+          showToast={showToast}
+        />
+      )}
 
       {/* ─── C. TAB 2: CHANNELS ─── */}
-      {activeTab === 'channels' && <TabChannels />}
+      {activeTab === 'channels' && (
+        <TabChannels
+          deviceData={deviceData}
+          setDeviceData={setDeviceData}
+          onRefreshStatus={handleRefreshStatus}
+          onDisconnectDevice={handleDisconnectDevice}
+          onSaveToken={handleSaveToken}
+          safetyLogs={safetyLogs}
+          addSafetyLog={addSafetyLog}
+          showToast={showToast}
+          fonnteToken={fonnteToken}
+        />
+      )}
 
       {/* ─── D. TAB 3: AI INBOX ─── */}
-      {activeTab === 'inbox' && <TabAiInbox />}
+      {activeTab === 'inbox' && (
+        <TabAiInbox
+          fonnteToken={fonnteToken}
+          deviceData={deviceData}
+          addSafetyLog={addSafetyLog}
+          showToast={showToast}
+        />
+      )}
 
       {/* ─── E. TAB 4: KNOWLEDGE BASE ─── */}
       {activeTab === 'knowledge' && <TabKnowledgeBase />}
@@ -213,37 +429,63 @@ export default function EngageAiWorkspace() {
 /* =========================================================================================
    SUB-COMPONENT: TAB 1 - DASHBOARD
    ========================================================================================= */
-function TabDashboard({ onSwitchTab, onCopy, copiedText }) {
-  const { isFonnteEnabled, fonnteTargetNumber, santriList } = useApp();
+function TabDashboard({ onSwitchTab, onCopy, copiedText, deviceData, onRefreshStatus, showToast }) {
+  const isConnected = Boolean(deviceData?.isConnected);
 
   return (
     <div className="space-y-6">
       {/* 1. Alert Banner Status Channel */}
-      <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
-        <div className="flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-          <div>
-            <h4 className="text-xs font-bold text-amber-950 uppercase tracking-wide">Channel Perlu Perhatian</h4>
-            <p className="text-xs text-amber-800 mt-0.5">
-              Status gateway: <strong>{isFonnteEnabled ? 'Fonnte Connected & Standby' : 'Device Disconnected'}</strong>. Lakukan refresh atau scan QR ulang bila diperlukan untuk memastikan notifikasi wali santri lancar.
-            </p>
+      {!isConnected ? (
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <h4 className="text-xs font-bold text-amber-950 uppercase tracking-wide">Channel Perlu Perhatian (Offline)</h4>
+              <p className="text-xs text-amber-800 mt-0.5">
+                Status gateway: <strong className="text-rose-700">Device Disconnected</strong>. Sisa kuota Fonnte: <strong>{deviceData?.quota || '931'}</strong> pesan. Lakukan refresh atau scan QR ulang untuk memastikan notifikasi santri terkirim lancar.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => onSwitchTab('channels')}
+              className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition shadow-sm"
+            >
+              Scan QR
+            </button>
+            <button
+              onClick={onRefreshStatus}
+              disabled={deviceData?.isLoading}
+              className="px-3 py-1.5 rounded-lg bg-white hover:bg-amber-100 text-amber-800 border border-amber-300 font-bold text-xs transition flex items-center gap-1.5"
+            >
+              {deviceData?.isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              <span>Refresh Status</span>
+            </button>
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={() => onSwitchTab('channels')}
-            className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition shadow-sm"
-          >
-            Scan QR
-          </button>
-          <button
-            onClick={() => sound.playBeep?.()}
-            className="px-3 py-1.5 rounded-lg bg-white hover:bg-amber-100 text-amber-800 border border-amber-300 font-bold text-xs transition"
-          >
-            Refresh Status
-          </button>
+      ) : (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+            <div>
+              <h4 className="text-xs font-bold text-emerald-950 uppercase tracking-wide">Channel Fonnte Terhubung &amp; Siap</h4>
+              <p className="text-xs text-emerald-800 mt-0.5">
+                Perangkat <strong>{deviceData?.name || 'Smart Permit'}</strong> aktif (+62 {deviceData?.device}) • Kuota: <strong>{deviceData?.quota}</strong> pesan • Paket: <strong>{deviceData?.package}</strong>.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={onRefreshStatus}
+              disabled={deviceData?.isLoading}
+              className="px-3 py-1.5 rounded-lg bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-xs transition flex items-center gap-1.5"
+            >
+              {deviceData?.isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              <span>Periksa Koneksi</span>
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 2. Paket Engage AI Aktif (4 Summary Cards + Panel Report WA Campaign) */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
@@ -251,25 +493,29 @@ function TabDashboard({ onSwitchTab, onCopy, copiedText }) {
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
             <span className="text-[10px] uppercase font-bold text-slate-400 block">Nama Paket</span>
             <span className="text-sm font-extrabold text-slate-800 mt-1 block">Smart Riayah Pro</span>
-            <span className="text-[10px] text-emerald-600 font-semibold">Enterprise Pesantren</span>
+            <span className="text-[10px] text-emerald-600 font-semibold">{deviceData?.package || 'Free'} Fonnte</span>
           </div>
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
             <span className="text-[10px] uppercase font-bold text-slate-400 block">Status Subscription</span>
-            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 mt-1.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Active
+            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 mt-1.5 rounded-full text-xs font-bold border ${
+              isConnected
+                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                : 'bg-rose-100 text-rose-800 border-rose-300'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+              {isConnected ? 'Connected' : 'Disconnected'}
             </span>
           </div>
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
-            <span className="text-[10px] uppercase font-bold text-slate-400 block">Mulai Aktif</span>
-            <span className="text-xs font-bold text-slate-700 mt-1 block">16 Okt 2026</span>
-            <span className="text-[10px] text-slate-400 font-mono">10:00 WIB</span>
+            <span className="text-[10px] uppercase font-bold text-slate-400 block">Sisa Kuota Pesan</span>
+            <span className="text-sm font-extrabold text-slate-800 mt-1 block">{deviceData?.quota || '931'} Pesan</span>
+            <span className="text-[10px] text-slate-400 font-mono">Terkirim: {deviceData?.messages || 0}</span>
           </div>
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
-            <span className="text-[10px] uppercase font-bold text-slate-400 block">Berakhir</span>
-            <span className="text-xs font-bold text-slate-700 mt-1 block">16 Nov 2026</span>
+            <span className="text-[10px] uppercase font-bold text-slate-400 block">Masa Aktif Paket</span>
+            <span className="text-xs font-bold text-slate-700 mt-1 block">{deviceData?.expired || '16 Nov 2026'}</span>
             <span className="inline-block mt-1 text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800">
-              Sisa 12 Hari
+              Live Verified
             </span>
           </div>
         </div>
@@ -314,7 +560,7 @@ function TabDashboard({ onSwitchTab, onCopy, copiedText }) {
       <div className="space-y-3">
         <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-3 text-emerald-900 text-xs flex items-center gap-2">
           <HelpCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>Kalau wali santri bertanya akun mana yang aktif, admin bisa langsung copy nama akun atau nomor berikut dari dashboard ini.</span>
+          <span>Kalau wali santri bertanya akun mana yang aktif, admin bisa langsung copy nama akun atau nomor resmi dari kartu ini.</span>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -324,21 +570,25 @@ function TabDashboard({ onSwitchTab, onCopy, copiedText }) {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h4 className="font-extrabold text-sm text-slate-900">Pesantren Modern Darul Ulum Official</h4>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Connected
+                <h4 className="font-extrabold text-sm text-slate-900">{deviceData?.name || 'Pesantren Modern Darul Ulum Official'}</h4>
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                  isConnected
+                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                    : 'bg-rose-100 text-rose-800 border-rose-300'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                  {isConnected ? 'Connected' : 'Disconnected'}
                 </span>
               </div>
               <p className="text-xs font-mono font-extrabold text-slate-700 mt-0.5">
-                +62 {fonnteTargetNumber || '881-3576-012'}
+                +62 {deviceData?.device || '881-3576-012'}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => onCopy(fonnteTargetNumber || '08813576012', 'phone')}
+              onClick={() => onCopy(deviceData?.device || '08813576012', 'phone')}
               className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition flex items-center gap-1.5"
             >
               {copiedText === 'phone' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
@@ -359,92 +609,97 @@ function TabDashboard({ onSwitchTab, onCopy, copiedText }) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <button
           onClick={() => onSwitchTab('channels')}
-          className="p-4 rounded-2xl bg-white hover:bg-slate-50 border border-slate-200 text-left transition shadow-sm group"
+          className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm hover:border-emerald-300 hover:shadow-md transition text-left group"
         >
-          <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center group-hover:scale-105 transition">
-            <Radio className="w-4 h-4" />
+          <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold mb-2 group-hover:scale-110 transition">
+            <QrCode className="w-4 h-4" />
           </div>
-          <h4 className="font-extrabold text-xs text-slate-900 mt-2.5">WhatsApp Channel</h4>
+          <span className="font-bold text-xs text-slate-800 block">Scan QR Code</span>
           <p className="text-[11px] text-slate-500 mt-0.5">Device QR &amp; API Fonnte</p>
         </button>
-        <button
-          onClick={() => onSwitchTab('customers')}
-          className="p-4 rounded-2xl bg-white hover:bg-slate-50 border border-slate-200 text-left transition shadow-sm group"
-        >
-          <div className="w-9 h-9 rounded-xl bg-teal-100 text-teal-700 flex items-center justify-center group-hover:scale-105 transition">
-            <Users className="w-4 h-4" />
-          </div>
-          <h4 className="font-extrabold text-xs text-slate-900 mt-2.5">Wali Santri / Customer</h4>
-          <p className="text-[11px] text-slate-500 mt-0.5">Database &amp; Consent</p>
-        </button>
+
         <button
           onClick={() => onSwitchTab('inbox')}
-          className="p-4 rounded-2xl bg-white hover:bg-slate-50 border border-slate-200 text-left transition shadow-sm group"
+          className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm hover:border-emerald-300 hover:shadow-md transition text-left group"
         >
-          <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center group-hover:scale-105 transition">
+          <div className="w-8 h-8 rounded-xl bg-teal-100 text-teal-700 flex items-center justify-center font-bold mb-2 group-hover:scale-110 transition">
             <MessageSquare className="w-4 h-4" />
           </div>
-          <h4 className="font-extrabold text-xs text-slate-900 mt-2.5">AI Inbox</h4>
-          <p className="text-[11px] text-slate-500 mt-0.5">Chat &amp; Manual Override</p>
+          <span className="font-bold text-xs text-slate-800 block">AI Inbox Stream</span>
+          <p className="text-[11px] text-slate-500 mt-0.5">Monitoring Chat Wali</p>
         </button>
+
         <button
           onClick={() => onSwitchTab('campaigns')}
-          className="p-4 rounded-2xl bg-white hover:bg-slate-50 border border-slate-200 text-left transition shadow-sm group"
+          className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm hover:border-emerald-300 hover:shadow-md transition text-left group"
         >
-          <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center group-hover:scale-105 transition">
+          <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold mb-2 group-hover:scale-110 transition">
             <Zap className="w-4 h-4" />
           </div>
-          <h4 className="font-extrabold text-xs text-slate-900 mt-2.5">Campaigns</h4>
-          <p className="text-[11px] text-slate-500 mt-0.5">Broadcast Syahriah &amp; Izin</p>
+          <span className="font-bold text-xs text-slate-800 block">Kirim Broadcast</span>
+          <p className="text-[11px] text-slate-500 mt-0.5">Pengumuman &amp; Edukasi</p>
+        </button>
+
+        <button
+          onClick={() => onSwitchTab('knowledge')}
+          className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm hover:border-emerald-300 hover:shadow-md transition text-left group"
+        >
+          <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold mb-2 group-hover:scale-110 transition">
+            <HelpCircle className="w-4 h-4" />
+          </div>
+          <span className="font-bold text-xs text-slate-800 block">Knowledge Base</span>
+          <p className="text-[11px] text-slate-500 mt-0.5">SOP &amp; Jawaban Santri</p>
         </button>
       </div>
 
-      {/* 5. Grid 8 Kartu Metrik Utama (2 Baris x 4 Kolom) */}
-      <div className="space-y-3">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Ringkasan Metrik Operasional Real-Time</h3>
+      {/* 5. Metrik Kuantitatif Workspace (8 Cards Grid: 2 Baris x 4 Kolom) */}
+      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] uppercase font-bold text-slate-400 block">Messaging Status</span>
+          <span className="text-[10px] text-slate-500 font-mono">Fonnte Live API</span>
+        </div>
+
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {/* Row 1 */}
-          <div className="p-3.5 bg-white rounded-2xl border border-slate-200 shadow-sm">
-            <span className="text-[10px] uppercase font-bold text-slate-400 block">Subscription</span>
-            <span className="text-sm font-extrabold text-slate-900 mt-1 block">Active</span>
-            <span className="text-[10px] text-emerald-600 font-semibold">Pro Enterprise</span>
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+            <span className="text-[10px] text-slate-400 block">Wali Terdaftar</span>
+            <strong className="text-base font-extrabold text-slate-800">1,482</strong>
+            <span className="text-[9px] text-emerald-600 font-semibold block mt-0.5">100% Tercatat</span>
           </div>
-          <div className="p-3.5 bg-white rounded-2xl border border-slate-200 shadow-sm">
-            <span className="text-[10px] uppercase font-bold text-slate-400 block">Messaging Status</span>
-            <span className="text-sm font-extrabold text-emerald-700 mt-1 block">Connected</span>
-            <span className="text-[10px] text-slate-500 font-mono">Fonnte Live API</span>
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+            <span className="text-[10px] text-slate-400 block">Total Santri</span>
+            <strong className="text-base font-extrabold text-slate-800">1,482</strong>
+            <span className="text-[9px] text-slate-500 block mt-0.5">Putra &amp; Putri</span>
           </div>
-          <div className="p-3.5 bg-white rounded-2xl border border-slate-200 shadow-sm">
-            <span className="text-[10px] uppercase font-bold text-slate-400 block">Wali Santri Terdaftar</span>
-            <span className="text-sm font-extrabold text-slate-900 mt-1 block">{santriList.length || 142} Kontak</span>
-            <span className="text-[10px] text-teal-600 font-semibold">100% Terverifikasi</span>
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+            <span className="text-[10px] text-slate-400 block">Izin Aktif</span>
+            <strong className="text-base font-extrabold text-amber-600">4</strong>
+            <span className="text-[9px] text-slate-500 block mt-0.5">Di Luar Pesantren</span>
           </div>
-          <div className="p-3.5 bg-white rounded-2xl border border-slate-200 shadow-sm">
-            <span className="text-[10px] uppercase font-bold text-slate-400 block">AI Services</span>
-            <span className="text-sm font-extrabold text-slate-900 mt-1 block">6 Layanan Aktif</span>
-            <span className="text-[10px] text-indigo-600 font-semibold">Izin, Tahfidz, POS, Medis</span>
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+            <span className="text-[10px] text-slate-400 block">Kamar Asrama</span>
+            <strong className="text-base font-extrabold text-slate-800">71</strong>
+            <span className="text-[9px] text-emerald-600 block mt-0.5">6 Gedung Asrama</span>
           </div>
 
-          {/* Row 2 */}
-          <div className="p-3.5 bg-white rounded-2xl border border-slate-200 shadow-sm">
-            <span className="text-[10px] uppercase font-bold text-rose-500 block">Urgent Inbox</span>
-            <span className="text-sm font-extrabold text-rose-700 mt-1 block">3 Chat Review</span>
-            <span className="text-[10px] text-rose-600 font-semibold">Butuh Respon Cepat</span>
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+            <span className="text-[10px] text-slate-400 block">Auto-Reply AI</span>
+            <strong className="text-base font-extrabold text-indigo-600">892</strong>
+            <span className="text-[9px] text-indigo-500 block mt-0.5">94% Tingkat Akurasi</span>
           </div>
-          <div className="p-3.5 bg-white rounded-2xl border border-slate-200 shadow-sm">
-            <span className="text-[10px] uppercase font-bold text-amber-500 block">Unread Inbox</span>
-            <span className="text-sm font-extrabold text-amber-700 mt-1 block">5 Pesan Baru</span>
-            <span className="text-[10px] text-slate-500">Dari Wali Santri</span>
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+            <span className="text-[10px] text-slate-400 block">Manual Override</span>
+            <strong className="text-base font-extrabold text-slate-800">18</strong>
+            <span className="text-[9px] text-slate-500 block mt-0.5">Ditangani Admin</span>
           </div>
-          <div className="p-3.5 bg-white rounded-2xl border border-slate-200 shadow-sm">
-            <span className="text-[10px] uppercase font-bold text-slate-400 block">AI Usage Periode Aktif</span>
-            <span className="text-sm font-extrabold text-slate-900 mt-1 block">1,842 Tokens</span>
-            <span className="text-[10px] text-emerald-600 font-semibold">42 Percakapan AI</span>
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+            <span className="text-[10px] text-slate-400 block">Rata-rata Latensi</span>
+            <strong className="text-base font-extrabold text-teal-600">~240 ms</strong>
+            <span className="text-[9px] text-teal-700 block mt-0.5">Real-time Fast</span>
           </div>
-          <div className="p-3.5 bg-white rounded-2xl border border-slate-200 shadow-sm">
-            <span className="text-[10px] uppercase font-bold text-slate-400 block">Message Sent Periode Aktif</span>
-            <span className="text-sm font-extrabold text-slate-900 mt-1 block">386 Pesan</span>
-            <span className="text-[10px] text-emerald-600 font-semibold">Outbound Sukses</span>
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+            <span className="text-[10px] text-slate-400 block">Sisa Kuota API</span>
+            <strong className="text-base font-extrabold text-emerald-700">{deviceData?.quota || '931'}</strong>
+            <span className="text-[9px] text-slate-500 block mt-0.5">Live Sync Fonnte</span>
           </div>
         </div>
       </div>
@@ -452,97 +707,60 @@ function TabDashboard({ onSwitchTab, onCopy, copiedText }) {
       {/* 6. Activation Status & Recent Requests */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Kiri: Activation Status */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
           <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Activation Status</h4>
-          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold">
-                <Radio className="w-4 h-4" />
+          <div className="space-y-2 text-xs">
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                <div>
+                  <h5 className="font-extrabold text-xs text-slate-900">{deviceData?.name || 'Darul Ulum Main Fonnte Channel'}</h5>
+                  <span className="text-[10px] font-mono text-slate-500">+62 {deviceData?.device}</span>
+                </div>
               </div>
-              <div>
-                <h5 className="font-extrabold text-xs text-slate-900">Darul Ulum Main Fonnte Channel</h5>
-                <span className="text-[11px] text-slate-500 font-mono">+62 881-***-6012</span>
-              </div>
+              <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${
+                isConnected ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-rose-100 text-rose-800 border-rose-300'
+              }`}>
+                {isConnected ? 'Active & Ready' : 'Standby / Disconnected'}
+              </span>
             </div>
-            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-              Active Channel
-            </span>
+
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-sky-500" />
+                <div>
+                  <h5 className="font-extrabold text-xs text-slate-900">Telegram Bot Channel</h5>
+                  <span className="text-[10px] font-mono text-slate-500">@DarulUlumRiayahBot</span>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-300">
+                Ready for Handoff
+              </span>
+            </div>
           </div>
-          <p className="text-[11px] text-slate-500 mt-3 leading-relaxed">
-            Perangkat terhubung penuh dengan webhook inbound &amp; outbound. Siap melayani pesan pengajuan izin, mutaba'ah, dan konsultasi otomatis.
-          </p>
         </div>
 
         {/* Kanan: Recent Requests */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">Recent Requests</h4>
-            <div className="flex items-center gap-1">
-              <span className="text-[9px] px-2 py-0.5 rounded font-bold bg-amber-100 text-amber-800">Pending (3)</span>
-              <span className="text-[9px] px-2 py-0.5 rounded font-bold bg-emerald-100 text-emerald-800">Approved (12)</span>
-              <span className="text-[9px] px-2 py-0.5 rounded font-bold bg-slate-100 text-slate-600">All</span>
-            </div>
-          </div>
-          <div className="space-y-2">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Recent Requests</h4>
+          <div className="space-y-2 text-xs">
             {[
               { id: '1', name: 'Ibu Fatimah (Ahmad Fauzi)', phone: '+62 881-3576-012', type: 'Izin Pulang', time: '10:14 WIB', status: 'Approved' },
               { id: '2', name: 'Bpk. Hendra (M. Rayhan)', phone: '+62 812-4455-890', type: 'Perpanjangan Liburan', time: '09:45 WIB', status: 'Pending' },
               { id: '3', name: 'Ibu Siti (Aisyah Putri)', phone: '+62 856-7890-123', type: 'Konsultasi Medis', time: 'Kemarin', status: 'Pending' }
             ].map(req => (
-              <div key={req.id} className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between text-xs">
+              <div key={req.id} className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between">
                 <div>
-                  <strong className="text-slate-800 block text-xs">{req.name}</strong>
-                  <span className="text-[10px] text-slate-400 font-mono">{req.phone} • {req.type}</span>
+                  <strong className="text-slate-800 text-xs block">{req.name}</strong>
+                  <span className="text-[10px] text-slate-400 font-mono">{req.type} • {req.time}</span>
                 </div>
-                <div className="text-right">
-                  <span className={`inline-block text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                    req.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                  }`}>
-                    {req.status}
-                  </span>
-                  <span className="text-[9px] text-slate-400 block mt-0.5">{req.time}</span>
-                </div>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                  req.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {req.status}
+                </span>
               </div>
             ))}
-          </div>
-        </div>
-      </div>
-
-      {/* 7. Customer Consent Snapshot (3 Cards) */}
-      <div className="space-y-2">
-        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">Customer Consent Snapshot</h4>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm flex items-center justify-between">
-            <div>
-              <span className="text-[10px] uppercase font-bold text-slate-400 block">Granted (Disetujui)</span>
-              <span className="text-xl font-black text-emerald-700 mt-1 block">128 Wali</span>
-              <span className="text-[10px] text-slate-500">Menerima broadcast resmi</span>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
-              <CheckCircle2 className="w-5 h-5" />
-            </div>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm flex items-center justify-between">
-            <div>
-              <span className="text-[10px] uppercase font-bold text-slate-400 block">Pending (Menunggu)</span>
-              <span className="text-xl font-black text-amber-700 mt-1 block">11 Wali</span>
-              <span className="text-[10px] text-slate-500">Verifikasi nomor HP</span>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
-              <Clock className="w-5 h-5" />
-            </div>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm flex items-center justify-between">
-            <div>
-              <span className="text-[10px] uppercase font-bold text-slate-400 block">Revoked (Dicabut)</span>
-              <span className="text-xl font-black text-rose-700 mt-1 block">3 Wali</span>
-              <span className="text-[10px] text-slate-500">Opt-out dari pesan broadcast</span>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center font-bold">
-              <X className="w-5 h-5" />
-            </div>
           </div>
         </div>
       </div>
@@ -553,8 +771,18 @@ function TabDashboard({ onSwitchTab, onCopy, copiedText }) {
 /* =========================================================================================
    SUB-COMPONENT: TAB 2 - CHANNELS
    ========================================================================================= */
-function TabChannels() {
-  const { fonnteToken, setFonnteToken, fonnteTargetNumber, isFonnteEnabled } = useApp();
+function TabChannels({
+  deviceData,
+  setDeviceData,
+  onRefreshStatus,
+  onDisconnectDevice,
+  onSaveToken,
+  safetyLogs,
+  addSafetyLog,
+  showToast,
+  fonnteToken
+}) {
+  const isConnected = Boolean(deviceData?.isConnected);
 
   const [subTab, setSubTab] = useState('overview');
   const [telegramToken, setTelegramToken] = useState('');
@@ -576,9 +804,143 @@ function TabChannels() {
 
   // Channel Role state
   const [channelRole, setChannelRole] = useState('Legacy Campaign + Chatbot');
+
+  // Token privat form state
+  const [tokenInput, setTokenInput] = useState(fonnteToken || 'XvFjdLyyvBgNUbXBZYzZ');
+  const [isTestingToken, setIsTestingToken] = useState(false);
+
+  // QR Code state & auto-polling
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrImage, setQrImage] = useState(null);
+  const [qrCode, setQrCode] = useState(null);
+  const [countdown, setCountdown] = useState(45);
+
+  // Number validation state
   const [validateInput, setValidateInput] = useState('08813576012');
+  const [isValidating, setIsValidating] = useState(false);
   const [validateResult, setValidateResult] = useState(null);
-  const [qrCodeGenerated, setQrCodeGenerated] = useState(false);
+
+  // Fetch QR Code handler
+  const handleFetchQr = async () => {
+    setAccordions(prev => ({ ...prev, scanQr: true }));
+    setQrLoading(true);
+    setQrImage(null);
+    sound.playBeep?.();
+    showToast('Meminta QR Code resmi dari server Fonnte...', 'info');
+
+    try {
+      const res = await fetchQrCode('', fonnteToken);
+      setQrLoading(false);
+
+      if (res.status === 'connected' || res.isConnected) {
+        setDeviceData(prev => ({ ...prev, isConnected: true, status: 'connect' }));
+        showToast('Device WhatsApp sudah terhubung di Fonnte!', 'success');
+        sound.playSuccess?.();
+        return;
+      }
+
+      if (res.qrImage) {
+        setQrImage(res.qrImage);
+        setQrCode(res.code || '164WE4BM');
+        setCountdown(45);
+        showToast('QR Code siap di-scan dari aplikasi WhatsApp HP!', 'info');
+
+        // Start countdown & auto-polling status every 5 seconds
+        let counter = 45;
+        const timerInterval = setInterval(() => {
+          counter -= 1;
+          setCountdown(counter);
+          if (counter <= 0) {
+            clearInterval(timerInterval);
+          }
+        }, 1000);
+
+        const pollInterval = setInterval(async () => {
+          try {
+            const check = await fetchDeviceStatus(fonnteToken);
+            if (check.isConnected) {
+              clearInterval(pollInterval);
+              clearInterval(timerInterval);
+              setDeviceData(prev => ({
+                ...prev,
+                isConnected: true,
+                status: 'connect',
+                name: check.name || prev.name,
+                device: check.device || prev.device,
+                quota: check.quota || prev.quota
+              }));
+              setQrImage(null);
+              showToast('Perangkat WhatsApp berhasil terhubung!', 'success');
+              sound.playSuccess?.();
+            }
+          } catch (e) {
+            console.warn('Poll error:', e);
+          }
+        }, 5000);
+
+        // Stop polling after 45s
+        setTimeout(() => {
+          clearInterval(pollInterval);
+          clearInterval(timerInterval);
+        }, 46000);
+      } else {
+        showToast(res.message || 'Gagal memuat QR Code dari Fonnte', 'error');
+      }
+    } catch (err) {
+      setQrLoading(false);
+      showToast(`Gagal memuat QR: ${err.message}`, 'error');
+    }
+  };
+
+  // Validate number handler
+  const handleValidateNumber = async () => {
+    if (!validateInput || !validateInput.trim()) {
+      showToast('Masukkan nomor WhatsApp yang ingin divalidasi!', 'warning');
+      return;
+    }
+    setIsValidating(true);
+    setValidateResult(null);
+    sound.playBeep?.();
+
+    try {
+      const res = await validateWhatsappNumber(validateInput, fonnteToken);
+      setIsValidating(false);
+      setValidateResult(res);
+
+      if (res.isRegistered) {
+        showToast(`Nomor ${res.phone} AKTIF dan terdaftar di WhatsApp!`, 'success');
+        sound.playSuccess?.();
+        addSafetyLog('validate number (active)', 'info', 'VALIDATE', res.phone);
+      } else if (res.isDeviceConnected === false) {
+        showToast(res.message || 'Perangkat Fonnte sedang terputus. Scan QR terlebih dahulu.', 'warning');
+      } else {
+        showToast(`Nomor ${res.phone} TIDAK terdaftar di WhatsApp!`, 'warning');
+        addSafetyLog('validate number (inactive)', 'warning', 'VALIDATE', res.phone);
+      }
+    } catch (err) {
+      setIsValidating(false);
+      showToast(`Gagal validasi nomor: ${err.message}`, 'error');
+    }
+  };
+
+  // Test token handler
+  const handleTestToken = async () => {
+    setIsTestingToken(true);
+    sound.playBeep?.();
+    try {
+      const res = await fetchDeviceStatus(tokenInput);
+      setIsTestingToken(false);
+      if (res.success || res.status) {
+        showToast(`Token Valid! Status: ${res.status} (${res.name} - Kuota: ${res.quota})`, 'success');
+        sound.playSuccess?.();
+      } else {
+        showToast('Token tidak merespons atau tidak valid.', 'error');
+      }
+    } catch (err) {
+      setIsTestingToken(false);
+      showToast(`Uji token gagal: ${err.message}`, 'error');
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -611,13 +973,19 @@ function TabChannels() {
         </div>
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm">
           <span className="text-[10px] font-bold text-slate-400 uppercase block">WhatsApp</span>
-          <span className="text-lg font-extrabold text-slate-800 mt-1 block">Official 0 / Fonnte 1</span>
-          <span className="text-[10px] text-emerald-600 font-bold">Fonnte 3rd Party Active</span>
+          <span className="text-lg font-extrabold text-slate-800 mt-1 block">
+            {isConnected ? '1 Official Active' : '0 Connected / 1 Standby'}
+          </span>
+          <span className="text-[10px] text-emerald-600 font-bold">{deviceData?.package || 'Free'} Fonnte Active</span>
         </div>
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm">
           <span className="text-[10px] font-bold text-slate-400 uppercase block">Connected</span>
-          <span className="text-lg font-extrabold text-emerald-700 mt-1 block">1 Channel Aktif</span>
-          <span className="text-[10px] text-slate-500">Standby Outbound &amp; Inbound</span>
+          <span className={`text-lg font-extrabold mt-1 block ${isConnected ? 'text-emerald-700' : 'text-rose-600'}`}>
+            {isConnected ? '1 Channel Aktif' : '0 Channel Aktif'}
+          </span>
+          <span className="text-[10px] text-slate-500">
+            {isConnected ? 'Standby Outbound & Inbound' : 'Perlu Scan QR ulang'}
+          </span>
         </div>
       </div>
 
@@ -645,9 +1013,10 @@ function TabChannels() {
             <div className="flex items-end">
               <button
                 onClick={() => {
-                  if (!telegramToken.trim()) return alert('Masukkan token bot Telegram terlebih dahulu.');
+                  if (!telegramToken.trim()) return showToast('Masukkan token bot Telegram terlebih dahulu.', 'warning');
                   setIsTelegramConnected(true);
                   sound.playSuccess?.();
+                  showToast('Bot Telegram berhasil diverifikasi via getMe()!', 'success');
                 }}
                 className="w-full py-2.5 px-4 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs transition shadow-sm"
               >
@@ -665,7 +1034,7 @@ function TabChannels() {
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-200 flex items-center justify-between">
           <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">Inventaris Channel Aktif</h4>
-          <span className="text-[10px] font-mono text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded">1 Channel Tersimpan</span>
+          <span className="text-[10px] font-mono text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded">1 Channel Fonnte Terpasang</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -678,13 +1047,13 @@ function TabChannels() {
                 <th className="py-2.5 px-3 font-bold">Status</th>
                 <th className="py-2.5 px-3 font-bold">Safety</th>
                 <th className="py-2.5 px-3 font-bold">Device</th>
-                <th className="py-2.5 px-3 font-bold">Updated</th>
+                <th className="py-2.5 px-3 font-bold">Kuota</th>
                 <th className="py-2.5 px-3 font-bold text-right">Lifecycle</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               <tr className="hover:bg-slate-50/50">
-                <td className="py-3 px-3 font-extrabold text-slate-800">Pesantren Darul Ulum</td>
+                <td className="py-3 px-3 font-extrabold text-slate-800">{deviceData?.name || 'Pesantren Darul Ulum'}</td>
                 <td className="py-3 px-3 font-mono text-slate-500 text-[11px]">fonnte-main-01</td>
                 <td className="py-3 px-3">
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
@@ -697,23 +1066,23 @@ function TabChannels() {
                   </span>
                 </td>
                 <td className="py-3 px-3">
-                  <span className="inline-flex items-center gap-1 font-bold text-emerald-700 text-[11px]">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                    Connected
+                  <span className={`inline-flex items-center gap-1 font-bold text-[11px] ${isConnected ? 'text-emerald-700' : 'text-rose-600'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                    {isConnected ? 'Connected' : 'Disconnected'}
                   </span>
                 </td>
                 <td className="py-3 px-3">
                   <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-blue-100 text-blue-800">Cold</span>
                   <span className="text-[9px] text-slate-400 block mt-0.5 font-mono">Bgt: 2/5 • Rsk: 0</span>
                 </td>
-                <td className="py-3 px-3 font-mono font-bold text-slate-700">+62 {fonnteTargetNumber || '8813576012'}</td>
-                <td className="py-3 px-3 text-slate-400 font-mono text-[10px]">Hari ini, 16:34 WIB</td>
+                <td className="py-3 px-3 font-mono font-bold text-slate-700">+62 {deviceData?.device || '8813576012'}</td>
+                <td className="py-3 px-3 font-mono text-slate-600 text-[11px] font-bold">{deviceData?.quota || '931'}</td>
                 <td className="py-3 px-3 text-right">
                   <button
-                    onClick={() => { if (window.confirm('Ajukan hapus channel ini?')) alert('Permohonan hapus dikirim.'); }}
-                    className="px-2.5 py-1 rounded text-[10px] font-bold text-rose-600 border border-rose-300 hover:bg-rose-50 transition"
+                    onClick={() => { if (window.confirm('Ajukan restart koneksi channel ini?')) onRefreshStatus(); }}
+                    className="px-2.5 py-1 rounded text-[10px] font-bold text-emerald-700 border border-emerald-300 hover:bg-emerald-50 transition"
                   >
-                    Ajukan Hapus
+                    Restart
                   </button>
                 </td>
               </tr>
@@ -733,30 +1102,30 @@ function TabChannels() {
             <div>
               <div className="flex items-center gap-2">
                 <h4 className="font-extrabold text-xs text-emerald-950">Operasional Device Fonnte Terpasang</h4>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-200/70 text-emerald-900">
-                  Campaign ON
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${isConnected ? 'bg-emerald-200/70 text-emerald-900' : 'bg-rose-100 text-rose-800'}`}>
+                  {isConnected ? 'Campaign & Bot ON' : 'Offline / Standby'}
                 </span>
               </div>
-              <p className="text-[11px] text-emerald-800 font-mono">Device: 08813576012 • Status: connected</p>
+              <p className="text-[11px] text-emerald-800 font-mono">
+                Device: {deviceData?.device || '08813576012'} • Status: <strong className={isConnected ? 'text-emerald-700' : 'text-rose-700'}>{deviceData?.status}</strong> • Kuota: {deviceData?.quota}
+              </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => {
-                toggleAccordion('scanQr');
-                setQrCodeGenerated(true);
-              }}
-              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-sm flex items-center gap-1.5"
+              onClick={handleFetchQr}
+              className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-sm flex items-center gap-1.5"
             >
               <QrCode className="w-3.5 h-3.5" />
               <span>Ambil QR</span>
             </button>
             <button
-              onClick={() => { sound.playBeep?.(); alert('Status koneksi Fonnte berhasil diperbarui: ONLINE.'); }}
-              className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-xs transition flex items-center gap-1.5"
+              onClick={onRefreshStatus}
+              disabled={deviceData?.isLoading}
+              className="px-3.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-xs transition flex items-center gap-1.5"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
+              {deviceData?.isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
               <span>Refresh Status</span>
             </button>
           </div>
@@ -770,28 +1139,83 @@ function TabChannels() {
           >
             <span className="flex items-center gap-2">
               <Radio className="w-3.5 h-3.5 text-emerald-600" />
-              1. Status Koneksi Detail Fonnte
+              1. Status Koneksi Detail Fonnte &amp; Pengaturan Token Privat
             </span>
             {accordions.statusDetail ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
           </button>
           {accordions.statusDetail && (
-            <div className="p-4 bg-slate-50/50 space-y-3 text-xs text-slate-600 border-t border-slate-100">
-              <p>
-                Nomor WhatsApp terhubung melalui layanan Fonnte REST API Gateway. Status sinkronisasi real-time memeriksa webhook incoming and outgoing setiap detik.
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="p-4 bg-slate-50/50 space-y-4 text-xs text-slate-600 border-t border-slate-100">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                 <div className="p-3 bg-white rounded-xl border border-slate-200">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Token API Fonnte</span>
-                  <span className="font-mono text-xs font-bold text-slate-700 block mt-1">
-                    {fonnteToken ? `${fonnteToken.slice(0, 6)}••••••••••••` : 'XvFjdLyyvBgNUbXBZYzZ'}
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Status Device</span>
+                  <span className={`font-bold text-xs block mt-1 ${isConnected ? 'text-emerald-700' : 'text-rose-600'}`}>
+                    {isConnected ? '✓ Connected' : '✕ Disconnected'}
                   </span>
                 </div>
-                <div className="p-3 bg-white rounded-xl border border-slate-200 flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Webhook Endpoint</span>
-                    <span className="font-mono text-[11px] text-emerald-700 font-bold block mt-0.5">https://smart-riayah.vercel.app/api/wa/webhook</span>
+                <div className="p-3 bg-white rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Nama Akun</span>
+                  <span className="font-bold text-xs text-slate-800 block mt-1 truncate">{deviceData?.name}</span>
+                </div>
+                <div className="p-3 bg-white rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Nomor WhatsApp</span>
+                  <span className="font-bold text-xs font-mono text-slate-700 block mt-1">+62 {deviceData?.device}</span>
+                </div>
+                <div className="p-3 bg-white rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Sisa Kuota</span>
+                  <span className="font-extrabold text-xs text-emerald-700 block mt-1">{deviceData?.quota} Pesan</span>
+                </div>
+                <div className="p-3 bg-white rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Masa Aktif</span>
+                  <span className="font-bold text-xs text-slate-700 block mt-1">{deviceData?.expired}</span>
+                </div>
+              </div>
+
+              {/* Form Input Token Privat Fonnte */}
+              <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    <span>Token Privat Fonnte (Tersimpan di Sistem):</span>
+                  </label>
+                  <span className="text-[10px] font-mono text-slate-400">Endpoint: https://api.fonnte.com</span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center gap-2">
+                  <input
+                    type="text"
+                    value={tokenInput}
+                    onChange={(e) => setTokenInput(e.target.value)}
+                    placeholder="Masukkan Device Token Fonnte..."
+                    className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-300 font-mono focus:outline-none focus:ring-1 focus:ring-emerald-500 w-full"
+                  />
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <button
+                      onClick={() => onSaveToken(tokenInput)}
+                      className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-sm"
+                    >
+                      Simpan Token
+                    </button>
+                    <button
+                      onClick={handleTestToken}
+                      disabled={isTestingToken}
+                      className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition flex items-center gap-1 justify-center"
+                    >
+                      {isTestingToken ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 text-amber-500" />}
+                      <span>Uji Token</span>
+                    </button>
+                    <button
+                      onClick={onRefreshStatus}
+                      disabled={deviceData?.isLoading}
+                      className="px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs transition flex items-center gap-1 justify-center border border-emerald-200"
+                    >
+                      {deviceData?.isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                      <span>Refresh Status</span>
+                    </button>
                   </div>
                 </div>
+                <p className="text-[10px] text-slate-400 leading-relaxed">
+                  Token ini disimpan di sistem dashboard. Setiap kali pesantren berganti akun atau token Fonnte, masukkan token baru di sini dan klik Simpan.
+                </p>
               </div>
             </div>
           )}
@@ -835,7 +1259,7 @@ function TabChannels() {
                     Mode: Hybrid
                   </span>
                   <button
-                    onClick={() => { sound.playSuccess?.(); alert('Role channel Fonnte berhasil disimpan!'); }}
+                    onClick={() => { sound.playSuccess?.(); showToast('Role channel Fonnte berhasil disimpan!', 'success'); }}
                     className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition"
                   >
                     Simpan Role
@@ -893,42 +1317,61 @@ function TabChannels() {
           >
             <span className="flex items-center gap-2">
               <QrCode className="w-3.5 h-3.5 text-emerald-600" />
-              4. Scan QR WhatsApp Fonnte
+              4. Scan QR WhatsApp Fonnte (Auto-Polling &amp; Live Connect)
             </span>
             {accordions.scanQr ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
           </button>
           {accordions.scanQr && (
             <div className="p-4 bg-slate-50/50 space-y-4 text-xs border-t border-slate-100">
               <div className="flex flex-col sm:flex-row items-center gap-6">
-                <div className="w-44 h-44 bg-white p-3 rounded-2xl border border-slate-300 flex items-center justify-center shadow-inner">
-                  {qrCodeGenerated ? (
-                    <img
-                      src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=FONNTE-SMART-RIAYAH-PAIRING-SESSION"
-                      alt="Fonnte QR"
-                      className="w-full h-full object-contain rounded-lg"
-                    />
+                <div className="w-52 h-52 bg-white p-3 rounded-2xl border border-slate-300 flex items-center justify-center shadow-inner relative">
+                  {qrLoading ? (
+                    <div className="text-center p-3 text-slate-500 space-y-2">
+                      <Loader2 className="w-8 h-8 animate-spin mx-auto text-emerald-600" />
+                      <span className="text-[11px] font-bold block">Meminta QR resmi dari Fonnte...</span>
+                    </div>
+                  ) : qrImage ? (
+                    <div className="relative w-full h-full flex flex-col items-center justify-center">
+                      <img
+                        src={qrImage}
+                        alt="Fonnte QR Code"
+                        className="w-full h-full object-contain rounded-lg"
+                      />
+                      <span className="absolute bottom-1 bg-slate-900/80 text-white font-mono text-[9px] px-2 py-0.5 rounded-full font-bold">
+                        ⏱️ {countdown}s
+                      </span>
+                    </div>
                   ) : (
-                    <div className="text-center p-3 text-slate-400">
+                    <div className="text-center p-3 text-slate-400 space-y-1">
                       <QrCode className="w-10 h-10 mx-auto text-slate-300" />
-                      <span className="text-[11px] block mt-1 font-semibold">Klik "Ambil QR" untuk memuat barcode</span>
+                      <span className="text-[11px] block font-semibold text-slate-600">Barcode belum dimuat</span>
+                      <span className="text-[10px] text-slate-400 block">Klik tombol "Ambil QR" di samping</span>
                     </div>
                   )}
                 </div>
+
                 <div className="space-y-2 text-left max-w-md">
-                  <h5 className="font-bold text-sm text-slate-900">Petunjuk Menautkan Perangkat:</h5>
-                  <ol className="list-decimal list-inside space-y-1 text-slate-600 text-xs">
-                    <li>Buka aplikasi WhatsApp di HP Admin Pesantren.</li>
-                    <li>Buka Menu Titik Tiga / Pengaturan &gt; Perangkat Tertaut.</li>
-                    <li>Ketuk <strong>Tautkan Perangkat</strong> lalu arahkan kamera ke barcode di samping.</li>
+                  <h5 className="font-bold text-sm text-slate-900">Petunjuk Menautkan Perangkat WhatsApp:</h5>
+                  <ol className="list-decimal list-inside space-y-1.5 text-slate-600 text-xs">
+                    <li>Buka aplikasi WhatsApp di HP Admin / Pengasuh Pesantren.</li>
+                    <li>Buka <strong>Menu Titik Tiga (Android)</strong> atau <strong>Pengaturan (iOS) &gt; Perangkat Tertaut</strong>.</li>
+                    <li>Ketuk <strong>Tautkan Perangkat</strong> lalu arahkan kamera ke barcode QR di samping.</li>
+                    <li>Sistem otomatis mendeteksi koneksi dalam 5 detik dan memperbarui status menjadi <strong className="text-emerald-700">Connected</strong>.</li>
                   </ol>
                   <div className="pt-2 flex items-center gap-3">
                     <button
-                      onClick={() => { setQrCodeGenerated(true); sound.playBeep?.(); }}
-                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-sm"
+                      onClick={handleFetchQr}
+                      disabled={qrLoading}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-sm flex items-center gap-1.5"
                     >
-                      Ambil QR Baru
+                      {qrLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <QrCode className="w-3.5 h-3.5" />}
+                      <span>{qrImage ? 'Minta QR Baru' : 'Ambil QR Resmi Fonnte'}</span>
                     </button>
-                    <span className="text-slate-400 font-mono text-[11px]">Pairing Code: <strong>164WE4BM</strong></span>
+                    {qrCode && (
+                      <span className="text-slate-500 font-mono text-[11px] bg-slate-200/80 px-2 py-1 rounded-lg">
+                        Pairing Code: <strong>{qrCode}</strong>
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -944,7 +1387,7 @@ function TabChannels() {
           >
             <span className="flex items-center gap-2">
               <CheckCircle2 className="w-3.5 h-3.5 text-teal-600" />
-              5. Validate Number (Validasi Nomor Terdaftar WhatsApp)
+              5. Validate Number (Validasi Nomor Terdaftar WhatsApp via Fonnte)
             </span>
             {accordions.validateNumber ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
           </button>
@@ -955,23 +1398,43 @@ function TabChannels() {
                   type="text"
                   value={validateInput}
                   onChange={(e) => setValidateInput(e.target.value)}
-                  placeholder="08xxxxxxxxxx"
+                  placeholder="08xxxxxxxxxx atau 628xxxxxxxxxx"
                   className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-300 font-mono focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 />
                 <button
-                  onClick={() => {
-                    setValidateResult({ valid: true, number: validateInput, name: 'Wali Santri Aktif' });
-                    sound.playSuccess?.();
-                  }}
-                  className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs transition shrink-0"
+                  onClick={handleValidateNumber}
+                  disabled={isValidating}
+                  className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs transition shrink-0 flex items-center gap-1.5 shadow-sm"
                 >
-                  Validasi Nomor
+                  {isValidating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  <span>Validasi Nomor</span>
                 </button>
               </div>
+
               {validateResult && (
-                <div className="p-3 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-xl text-xs flex items-center gap-2">
-                  <Check className="w-4 h-4 text-emerald-600" />
-                  <span>Nomor <strong>{validateResult.number}</strong> terdaftar aktif di WhatsApp!</span>
+                <div className={`p-3 rounded-xl text-xs flex items-center gap-2.5 border ${
+                  validateResult.isRegistered
+                    ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
+                    : validateResult.isDeviceConnected === false
+                    ? 'bg-amber-50 text-amber-900 border-amber-200'
+                    : 'bg-rose-50 text-rose-900 border-rose-200'
+                }`}>
+                  {validateResult.isRegistered ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>✅ Nomor <strong>{validateResult.phone}</strong> aktif dan terdaftar di WhatsApp.</span>
+                    </>
+                  ) : validateResult.isDeviceConnected === false ? (
+                    <>
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>⚠️ <strong>{validateResult.message}</strong></span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>❌ Nomor <strong>{validateResult.phone}</strong> tidak terdaftar di WhatsApp.</span>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -992,14 +1455,16 @@ function TabChannels() {
           </button>
           {accordions.disconnectDevice && (
             <div className="p-4 bg-rose-50/40 space-y-3 text-xs border-t border-slate-100">
-              <p className="text-rose-900">
+              <p className="text-rose-900 leading-relaxed">
                 Memutuskan tautan perangkat akan menghentikan pengiriman pesan otomatis dan notifikasi perizinan real-time sampai Anda melakukan scan QR ulang.
               </p>
               <button
-                onClick={() => { if (window.confirm('Yakin ingin memutuskan koneksi Fonnte?')) alert('Device disconnected.'); }}
-                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition shadow-sm"
+                onClick={onDisconnectDevice}
+                disabled={deviceData?.isLoading}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition shadow-sm flex items-center gap-1.5"
               >
-                Disconnect Device Sekarang
+                {deviceData?.isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                <span>Disconnect Device Sekarang</span>
               </button>
             </div>
           )}
@@ -1011,19 +1476,19 @@ function TabChannels() {
         {/* Safety Event History */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
           <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3">WhatsApp Safety Event History</h4>
-          <div className="space-y-2 text-xs">
-            {[
-              { time: '16:12 WIB', event: 'outbound success', severity: 'info', intent: 'NOTIF_IZIN', ref: 'DU-PERMIT-8492' },
-              { time: '15:40 WIB', event: 'inbound received', severity: 'info', intent: 'QUERY_SALDO', ref: 'S-101' },
-              { time: '14:20 WIB', event: 'device keepalive', severity: 'info', intent: 'HEARTBEAT', ref: 'PING_OK' }
-            ].map((log, idx) => (
+          <div className="space-y-2 text-xs max-h-80 overflow-y-auto">
+            {safetyLogs.map((log, idx) => (
               <div key={idx} className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between">
                 <div>
                   <span className="font-mono text-slate-400 text-[10px] block">{log.time}</span>
                   <strong className="text-slate-800 text-xs">{log.event}</strong>
                 </div>
                 <div className="text-right">
-                  <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800 uppercase">
+                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
+                    log.severity === 'warning' ? 'bg-amber-100 text-amber-800' :
+                    log.severity === 'error' ? 'bg-rose-100 text-rose-800' :
+                    'bg-emerald-100 text-emerald-800'
+                  }`}>
                     {log.severity}
                   </span>
                   <span className="font-mono text-[10px] text-slate-400 block mt-0.5">{log.ref}</span>
@@ -1057,8 +1522,10 @@ function TabChannels() {
 /* =========================================================================================
    SUB-COMPONENT: TAB 3 - AI INBOX (LIST & DETAIL)
    ========================================================================================= */
-function TabAiInbox() {
+function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
   const [selectedChat, setSelectedChat] = useState(null);
+  const [isSendingOverride, setIsSendingOverride] = useState(false);
+  const [isManualOverrideActive, setIsManualOverrideActive] = useState(false);
   const [globalHandling, setGlobalHandling] = useState('autonomous'); // 'manual' | 'semi_auto' | 'autonomous'
   const [channelFilter, setChannelFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -1120,23 +1587,69 @@ function TabAiInbox() {
     }
   ]);
 
-  const handleSendOverride = (e) => {
+  const applyFormat = (syntax) => {
+    setOverrideMessage(prev => {
+      switch (syntax) {
+        case 'bold': return prev ? prev + ' *teks*' : '*teks*';
+        case 'italic': return prev ? prev + ' _teks_' : '_teks_';
+        case 'strike': return prev ? prev + ' ~teks~' : '~teks~';
+        case 'code': return prev ? prev + ' `teks`' : '`teks`';
+        case 'list': return prev ? prev + '\n• Poin info' : '• Poin info';
+        case 'quote': return prev ? prev + '\n> Kutipan' : '> Kutipan';
+        default: return prev;
+      }
+    });
+  };
+
+  const handleSendOverride = async (e) => {
     e.preventDefault();
     if (!overrideMessage.trim() || !selectedChat) return;
 
-    const newMsg = {
-      sender: 'admin',
-      time: 'Baru saja',
-      text: overrideMessage
-    };
+    const targetPhone = selectedChat.phone || '08813576012';
+    const textToSend = overrideMessage.trim();
+    setIsSendingOverride(true);
+    sound.playBeep?.();
 
-    setSelectedChat(prev => ({
-      ...prev,
-      messages: [...prev.messages, newMsg]
-    }));
+    try {
+      const res = await sendManualOverrideMessage(targetPhone, textToSend, fonnteToken);
+      setIsSendingOverride(false);
 
-    setOverrideMessage('');
-    sound.playWhatsApp?.();
+      if (res.success || res.data?.status === true || res.data?.status === 'true' || res.data?.id) {
+        const newMsg = {
+          sender: 'admin',
+          time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB',
+          text: textToSend
+        };
+
+        setSelectedChat(prev => ({
+          ...prev,
+          messages: [...prev.messages, newMsg]
+        }));
+
+        addSafetyLog?.(
+          'outbound success',
+          'info',
+          'MANUAL_OVERRIDE',
+          selectedChat.santri?.split(' ')[0] || targetPhone
+        );
+
+        showToast?.(`Pesan berhasil dikirim ke WhatsApp ${targetPhone} via Fonnte API!`, 'success');
+        sound.playWhatsApp?.();
+        setOverrideMessage('');
+      } else {
+        const errMsg = res.data?.reason || res.data?.message || res.message || 'Error API Fonnte';
+        showToast?.(`Gagal mengirim WhatsApp: ${errMsg}`, 'error');
+        addSafetyLog?.(
+          'outbound failed',
+          'warning',
+          'MANUAL_OVERRIDE',
+          targetPhone
+        );
+      }
+    } catch (err) {
+      setIsSendingOverride(false);
+      showToast?.(`Koneksi pengiriman gagal: ${err.message}`, 'error');
+    }
   };
 
   // If viewing Conversation Detail
@@ -1187,10 +1700,28 @@ function TabAiInbox() {
                 Live Conversation Stream (WhatsApp Fonnte)
               </span>
               <button
-                onClick={() => alert('Mode ambil alih manual aktif! AI diistirahatkan untuk percakapan ini.')}
-                className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold text-[10px] transition"
+                type="button"
+                onClick={() => {
+                  const nextState = !isManualOverrideActive;
+                  setIsManualOverrideActive(nextState);
+                  setSelectedChat(prev => ({
+                    ...prev,
+                    handling: nextState ? 'Manual Override (Admin Ri\'ayah)' : 'Otonom - Mengikuti Global'
+                  }));
+                  if (nextState) {
+                    showToast?.('Mode Ambil Alih Manual aktif! AI diistirahatkan untuk percakapan ini.', 'info');
+                    sound.playSuccess?.();
+                  } else {
+                    showToast?.('Mode Otonom AI aktif kembali.', 'info');
+                  }
+                }}
+                className={`px-3 py-1 rounded-lg font-bold text-[10px] transition flex items-center gap-1.5 shadow-xs ${
+                  isManualOverrideActive
+                    ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                    : 'bg-amber-500 hover:bg-amber-600 text-white'
+                }`}
               >
-                Ambil Alih dari AI
+                <span>{isManualOverrideActive ? '✓ Mode Manual Aktif' : 'Ambil Alih dari AI'}</span>
               </button>
             </div>
 
@@ -1228,12 +1759,12 @@ function TabAiInbox() {
             <form onSubmit={handleSendOverride} className="p-3 bg-slate-900 border-t border-slate-800 space-y-2">
               <div className="flex items-center justify-between text-slate-400 text-xs">
                 <div className="flex items-center gap-1">
-                  <button type="button" className="p-1.5 hover:text-white rounded" title="Tebal (*teks*)"><Bold className="w-3.5 h-3.5" /></button>
-                  <button type="button" className="p-1.5 hover:text-white rounded" title="Miring (_teks_)"><Italic className="w-3.5 h-3.5" /></button>
-                  <button type="button" className="p-1.5 hover:text-white rounded" title="Coret (~teks~)"><Strikethrough className="w-3.5 h-3.5" /></button>
-                  <button type="button" className="p-1.5 hover:text-white rounded" title="Kode (`teks`)"><Code className="w-3.5 h-3.5" /></button>
-                  <button type="button" className="p-1.5 hover:text-white rounded" title="List"><ListIcon className="w-3.5 h-3.5" /></button>
-                  <button type="button" className="p-1.5 hover:text-white rounded" title="Quote"><Quote className="w-3.5 h-3.5" /></button>
+                  <button type="button" onClick={() => applyFormat('bold')} className="p-1.5 hover:text-white rounded hover:bg-slate-800" title="Tebal (*teks*)"><Bold className="w-3.5 h-3.5" /></button>
+                  <button type="button" onClick={() => applyFormat('italic')} className="p-1.5 hover:text-white rounded hover:bg-slate-800" title="Miring (_teks_)"><Italic className="w-3.5 h-3.5" /></button>
+                  <button type="button" onClick={() => applyFormat('strike')} className="p-1.5 hover:text-white rounded hover:bg-slate-800" title="Coret (~teks~)"><Strikethrough className="w-3.5 h-3.5" /></button>
+                  <button type="button" onClick={() => applyFormat('code')} className="p-1.5 hover:text-white rounded hover:bg-slate-800" title="Kode (`teks`)"><Code className="w-3.5 h-3.5" /></button>
+                  <button type="button" onClick={() => applyFormat('list')} className="p-1.5 hover:text-white rounded hover:bg-slate-800" title="List (• teks)"><ListIcon className="w-3.5 h-3.5" /></button>
+                  <button type="button" onClick={() => applyFormat('quote')} className="p-1.5 hover:text-white rounded hover:bg-slate-800" title="Quote (> teks)"><Quote className="w-3.5 h-3.5" /></button>
                 </div>
                 <span className="text-[10px] font-mono text-slate-400">
                   Format WA: *tebal*, _miring_, ~coret~
@@ -1250,10 +1781,11 @@ function TabAiInbox() {
                 />
                 <button
                   type="submit"
-                  className="px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs transition flex items-center gap-1.5 shadow-md shrink-0"
+                  disabled={isSendingOverride || !overrideMessage.trim()}
+                  className="px-4 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs transition flex items-center gap-1.5 shadow-md shrink-0"
                 >
-                  <Send className="w-4 h-4" />
-                  <span>Kirim Override</span>
+                  {isSendingOverride ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  <span>{isSendingOverride ? 'Mengirim...' : 'Kirim Manual Override'}</span>
                 </button>
               </div>
             </form>

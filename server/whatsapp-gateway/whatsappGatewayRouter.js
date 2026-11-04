@@ -131,4 +131,318 @@ router.post('/webhook', async (req, res) => {
   }
 });
 
+
+/**
+ * ============================================================================
+ * FONNTE OFFICIAL REST API PROXY ENDPOINTS (/api/whatsapp/fonnte/...)
+ * ============================================================================
+ */
+
+function resolveFonnteToken(req) {
+  const headerToken = req.headers['x-fonnte-token'] || req.headers['authorization'];
+  if (headerToken) {
+    const clean = headerToken.replace(/^Bearer\s+/i, '').trim();
+    if (clean) return clean;
+  }
+  if (req.body?.token && typeof req.body.token === 'string') {
+    return req.body.token.trim();
+  }
+  return (process.env.FONNTE_TOKEN || 'XvFjdLyyvBgNUbXBZYzZ').trim();
+}
+
+function normalizeIndonesianPhone(phone) {
+  let clean = String(phone || '').replace(/[^0-9]/g, '');
+  if (clean.startsWith('08')) {
+    clean = '628' + clean.slice(2);
+  } else if (clean.startsWith('8')) {
+    clean = '628' + clean.slice(1);
+  }
+  return clean;
+}
+
+/**
+ * 1. GET & POST /api/whatsapp/fonnte/status
+ * Refresh status koneksi Fonnte Device
+ */
+router.all('/fonnte/status', async (req, res) => {
+  const token = resolveFonnteToken(req);
+  try {
+    const response = await fetch('https://api.fonnte.com/device', {
+      method: 'POST',
+      headers: {
+        Authorization: token,
+      },
+    });
+
+    const data = await response.json().catch(() => ({}));
+    const isConnected = data.device_status === 'connect';
+
+    const statusPayload = {
+      success: response.ok && (data.status === true || data.status === 'true'),
+      status: data.device_status || (isConnected ? 'connect' : 'disconnect'),
+      isConnected,
+      device: data.device || '08813576012',
+      name: data.name || 'Smart Permit Pesantren',
+      quota: data.quota || (data.messages != null ? String(data.messages) : '931'),
+      messages: data.messages != null ? data.messages : 0,
+      package: data.package || 'Free',
+      expired: data.expired || '-',
+      raw: data,
+      log: !isConnected ? {
+        event: 'device disconnected',
+        severity: 'warning',
+        timestamp: new Date().toISOString(),
+        details: 'Perangkat WhatsApp terdeteksi terputus dari Fonnte'
+      } : null
+    };
+
+    return res.json(statusPayload);
+  } catch (error) {
+    console.error('❌ [Fonnte Status Error]:', error);
+    return res.status(500).json({
+      success: false,
+      status: 'disconnect',
+      isConnected: false,
+      error: error.message,
+      log: {
+        event: 'device disconnected',
+        severity: 'warning',
+        timestamp: new Date().toISOString(),
+        details: `Gagal memverifikasi status Fonnte: ${error.message}`
+      }
+    });
+  }
+});
+
+/**
+ * 2. POST /api/whatsapp/fonnte/qr
+ * Mengambil QR Code resmi dari Fonnte API (Base64)
+ */
+router.post('/fonnte/qr', async (req, res) => {
+  const token = resolveFonnteToken(req);
+  const whatsappNumber = req.body?.whatsapp ? normalizeIndonesianPhone(req.body.whatsapp) : '';
+
+  try {
+    const formData = new FormData();
+    formData.append('type', 'qr');
+    if (whatsappNumber) {
+      formData.append('whatsapp', whatsappNumber);
+    }
+
+    const response = await fetch('https://api.fonnte.com/qr', {
+      method: 'POST',
+      headers: {
+        Authorization: token,
+      },
+      body: formData,
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    // Cek jika response berisi gambar base64
+    if (data.url) {
+      return res.json({
+        success: true,
+        status: 'qr',
+        qrImage: data.url.startsWith('data:image') ? data.url : `data:image/png;base64,${data.url}`,
+        code: data.code || null,
+        message: 'QR Code resmi Fonnte berhasil dimuat',
+        raw: data
+      });
+    }
+
+    // Cek jika device sudah terhubung
+    const msg = (data.message || data.reason || '').toLowerCase();
+    if (data.connected === true || msg.includes('already connected') || msg.includes('device connected')) {
+      return res.json({
+        success: true,
+        status: 'connected',
+        isConnected: true,
+        message: 'Device already connected',
+        raw: data
+      });
+    }
+
+    return res.status(400).json({
+      success: false,
+      status: 'error',
+      message: data.reason || data.message || 'Gagal memuat QR Code dari Fonnte',
+      raw: data
+    });
+  } catch (error) {
+    console.error('❌ [Fonnte QR Error]:', error);
+    return res.status(500).json({
+      success: false,
+      status: 'error',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * 3. POST /api/whatsapp/fonnte/validate
+ * Validasi apakah nomor terdaftar di WhatsApp
+ */
+router.post('/fonnte/validate', async (req, res) => {
+  const token = resolveFonnteToken(req);
+  const rawPhone = req.body?.phone || req.body?.target || '';
+  const normalized = normalizeIndonesianPhone(rawPhone);
+
+  if (!normalized) {
+    return res.status(400).json({
+      success: false,
+      message: 'Nomor WhatsApp wajib diisi!'
+    });
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append('target', normalized);
+    formData.append('countryCode', '62');
+
+    const response = await fetch('https://api.fonnte.com/validate', {
+      method: 'POST',
+      headers: {
+        Authorization: token,
+      },
+      body: formData,
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    // Cek apakah device disconnected di server Fonnte
+    if (data.reason === 'device disconnected' || (data.status === false && !data.registered)) {
+      return res.json({
+        success: false,
+        isDeviceConnected: false,
+        phone: normalized,
+        message: data.reason || 'Perangkat Fonnte sedang terputus. Scan QR terlebih dahulu untuk validasi.',
+        raw: data
+      });
+    }
+
+    const regList = Array.isArray(data.registered) ? data.registered : [];
+    const notRegList = Array.isArray(data.not_registered) ? data.not_registered : [];
+    const isRegistered = regList.includes(normalized) || (regList.length > 0 && !notRegList.includes(normalized));
+
+    return res.json({
+      success: true,
+      phone: normalized,
+      isRegistered,
+      registered: regList,
+      not_registered: notRegList,
+      message: isRegistered
+        ? `Nomor ${normalized} aktif dan terdaftar di WhatsApp.`
+        : `Nomor ${normalized} tidak terdaftar di WhatsApp.`,
+      raw: data
+    });
+  } catch (error) {
+    console.error('❌ [Fonnte Validate Error]:', error);
+    return res.status(500).json({
+      success: false,
+      message: `Gagal memvalidasi nomor: ${error.message}`
+    });
+  }
+});
+
+/**
+ * 4. POST /api/whatsapp/fonnte/disconnect
+ * Memutuskan koneksi perangkat dari Fonnte
+ */
+router.post('/fonnte/disconnect', async (req, res) => {
+  const token = resolveFonnteToken(req);
+
+  try {
+    const response = await fetch('https://api.fonnte.com/disconnect', {
+      method: 'POST',
+      headers: {
+        Authorization: token,
+      },
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    return res.json({
+      success: true,
+      status: 'disconnected',
+      isConnected: false,
+      message: data.detail || data.message || 'Perangkat WhatsApp berhasil diputuskan',
+      log: {
+        event: 'device disconnected (manual)',
+        severity: 'warning',
+        timestamp: new Date().toISOString(),
+        details: 'Admin melakukan pemutusan manual tautan Fonnte dari dashboard'
+      },
+      raw: data
+    });
+  } catch (error) {
+    console.error('❌ [Fonnte Disconnect Error]:', error);
+    return res.status(500).json({
+      success: false,
+      message: `Gagal memutuskan perangkat: ${error.message}`
+    });
+  }
+});
+
+/**
+ * 5. POST /api/whatsapp/fonnte/send
+ * Mengirim pesan Manual Override dari AI Inbox
+ */
+router.post('/fonnte/send', async (req, res) => {
+  const token = resolveFonnteToken(req);
+  const { target, message } = req.body;
+
+  if (!target || !message) {
+    return res.status(400).json({
+      success: false,
+      message: 'Parameter "target" dan "message" wajib diisi!'
+    });
+  }
+
+  const normalized = normalizeIndonesianPhone(target);
+
+  try {
+    const formData = new FormData();
+    formData.append('target', normalized);
+    formData.append('message', message);
+    formData.append('countryCode', '62');
+    formData.append('preview', 'false');
+
+    const response = await fetch('https://api.fonnte.com/send', {
+      method: 'POST',
+      headers: {
+        Authorization: token,
+      },
+      body: formData,
+    });
+
+    const data = await response.json().catch(() => ({}));
+    const isSuccess = response.ok && (data.status === true || data.status === 'true' || Boolean(data.id));
+
+    return res.json({
+      success: isSuccess,
+      target: normalized,
+      data,
+      log: isSuccess ? {
+        event: 'outbound success',
+        severity: 'info',
+        timestamp: new Date().toISOString(),
+        details: `Pesan manual override AI Inbox terkirim ke ${normalized}`
+      } : {
+        event: 'outbound failed',
+        severity: 'warning',
+        timestamp: new Date().toISOString(),
+        details: `Gagal mengirim ke ${normalized}: ${data.reason || data.message || 'Error response'}`
+      }
+    });
+  } catch (error) {
+    console.error('❌ [Fonnte Send Error]:', error);
+    return res.status(500).json({
+      success: false,
+      message: `Gagal mengirim pesan: ${error.message}`
+    });
+  }
+});
+
 export default router;
+

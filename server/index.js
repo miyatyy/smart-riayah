@@ -581,3 +581,5 @@ app.listen(PORT, () => {
   console.log(`🩺 [API Health] Status DB: http://localhost:${PORT}/api/health`);
 });
 
+
+export default app;
