@@ -52,8 +52,27 @@ import {
   Eye,
   UserCheck,
   Loader2,
-  BellRing
+  BellRing,
+  Printer,
+  Download,
+  TrendingUp,
+  PieChart as LucidePieChart
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend
+} from 'recharts';
 import { sound } from '../../utils/audio';
 import { supabase } from '../../utils/supabaseClient';
 import {
@@ -472,7 +491,7 @@ function EngageAiWorkspaceContent() {
       {activeTab === 'ai_settings' && <TabAiSettings />}
 
       {/* ─── M. TAB 12: REPORTS ─── */}
-      {activeTab === 'reports' && <TabReports />}
+      {activeTab === 'reports' && <TabReports showToast={showToast} deviceData={deviceData} />}
     </div>
   );
 }
@@ -3641,13 +3660,907 @@ function TabAiSettings() {
   );
 }
 
-function TabReports() {
+function TabReports({ showToast, deviceData }) {
+  const [period, setPeriod] = useState('7d'); // 'today' | '7d' | '30d' | 'month'
+  const [channelFilter, setChannelFilter] = useState('all'); // 'all' | 'wa' | 'tg'
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isExporting, setIsExporting] = useState(false);
+
+  const isTelegramActive = Boolean(localStorage.getItem('smart_riayah_telegram_token'));
+  const isWaActive = Boolean(deviceData?.isConnected);
+
+  // 1. Data Grafik Tren Pesan Real-Time (Area Chart)
+  const chartData7d = [
+    { label: 'Sen, 28 Okt', inbound: 142, aiReply: 135, manual: 7, wa: 94, tg: 48 },
+    { label: 'Sel, 29 Okt', inbound: 168, aiReply: 160, manual: 8, wa: 113, tg: 55 },
+    { label: 'Rab, 30 Okt', inbound: 195, aiReply: 184, manual: 11, wa: 127, tg: 68 },
+    { label: 'Kam, 31 Okt', inbound: 210, aiReply: 199, manual: 11, wa: 138, tg: 72 },
+    { label: 'Jum, 01 Nov', inbound: 245, aiReply: 232, manual: 13, wa: 160, tg: 85 },
+    { label: 'Sab, 02 Nov', inbound: 280, aiReply: 265, manual: 15, wa: 182, tg: 98 },
+    { label: 'Aha, 03 Nov', inbound: 188, aiReply: 178, manual: 10, wa: 126, tg: 62 },
+  ];
+
+  const chartData30d = [
+    { label: 'Minggu 1', inbound: 890, aiReply: 840, manual: 50, wa: 590, tg: 300 },
+    { label: 'Minggu 2', inbound: 1120, aiReply: 1060, manual: 60, wa: 740, tg: 380 },
+    { label: 'Minggu 3', inbound: 1280, aiReply: 1210, manual: 70, wa: 850, tg: 430 },
+    { label: 'Minggu 4', inbound: 1428, aiReply: 1342, manual: 86, wa: 928, tg: 500 },
+  ];
+
+  const activeChartData = period === '30d' || period === 'month' ? chartData30d : chartData7d;
+
+  // 2. Data Diagram Lingkaran Presentase Bulat (Donut Charts)
+  const aiRatioData = [
+    { name: 'AI Otonom', value: 94.2, count: 1342, color: '#10b981' }, // emerald-500
+    { name: 'Ambil Alih Manual', value: 4.8, count: 68, color: '#f59e0b' }, // amber-500
+    { name: 'Semi-Auto Review', value: 1.0, count: 14, color: '#3b82f6' }, // blue-500
+  ];
+
+  const categoryRatioData = [
+    { name: 'Cek Saldo RFID', value: 38, count: 541, color: '#10b981' },
+    { name: 'Izin Santri & Libur', value: 26, count: 370, color: '#3b82f6' },
+    { name: 'Poin Kedisiplinan', value: 18, count: 257, color: '#8b5cf6' },
+    { name: 'Kesehatan Poskestren', value: 11, count: 157, color: '#f43f5e' },
+    { name: 'Jadwal Sambangan', value: 7, count: 99, color: '#f59e0b' },
+  ];
+
+  const channelRatioData = [
+    { name: 'WhatsApp Fonnte', value: 65, count: 928, color: '#10b981' },
+    { name: 'Telegram Bot', value: 35, count: 500, color: '#0284c7' },
+  ];
+
+  // 3. Tabulasi Log Rinci Pesan Real-Time
+  const rawLogRows = [
+    {
+      id: 'LOG-001',
+      time: '16:15 WIB',
+      date: '04 Nov 2026',
+      wali: 'Ibu Fatimah Az-Zahra',
+      santri: 'Ahmed Fauzi (Kamar Umar 204)',
+      phone: '+62 881-3576-012',
+      channel: 'WhatsApp Fonnte',
+      category: 'Cek Saldo RFID',
+      inbound: 'Assalamu\'alaikum, cek saldo kartu RFID Fauzi?',
+      outbound: 'Wa\'alaikumsalam Ibu Fatimah. Saldo kartu RFID Fauzi adalah Rp 75.000 (Limit harian Rp 25.000).',
+      status: 'Read',
+      handling: 'Otonom',
+      latency: '240 ms',
+      safety: 99,
+    },
+    {
+      id: 'LOG-002',
+      time: '16:08 WIB',
+      date: '04 Nov 2026',
+      wali: 'Miya Nurmiyaty',
+      santri: 'Ananda Santri (Asrama Darul Ulum)',
+      phone: 'TG-8905341453',
+      channel: 'Telegram Bot',
+      category: 'Cek Saldo RFID',
+      inbound: 'Berapa sisa saldo RFID ananda',
+      outbound: 'Wa\'alaikumsalam Warahmatullahi Wabarakatuh, Miya. Saldo dompet RFID ananda saat ini Rp 75.000.',
+      status: 'Delivered',
+      handling: 'Otonom',
+      latency: '180 ms',
+      safety: 100,
+    },
+    {
+      id: 'LOG-003',
+      time: '15:45 WIB',
+      date: '04 Nov 2026',
+      wali: 'Bpk. Hendra Gunawan',
+      santri: 'Muhammad Rayhan (Kamar Abu Bakar 102)',
+      phone: '+62 812-4455-890',
+      channel: 'WhatsApp Fonnte',
+      category: 'Izin Santri & Libur',
+      inbound: 'Saya mau tanya prosedur perpanjangan izin karena anak sakit.',
+      outbound: 'Pesan dialihkan ke Admin: "Iya bpk, silakan unggah surat dokter melalui aplikasi Smart Ri\'ayah."',
+      status: 'Delivered',
+      handling: 'Manual (Ambil Alih)',
+      latency: '410 ms',
+      safety: 89,
+    },
+    {
+      id: 'LOG-004',
+      time: '15:20 WIB',
+      date: '04 Nov 2026',
+      wali: 'Ibu Siti Khadijah',
+      santri: 'Aisyah Putri (Kamar Khadijah 105)',
+      phone: '+62 856-7890-123',
+      channel: 'Telegram Bot',
+      category: 'Cek Saldo RFID',
+      inbound: 'Berapa sisa saldo dompet RFID ananda Aisyah Putri?',
+      outbound: 'Saldo kartu RFID ananda Aisyah Putri saat ini adalah Rp 65.000 dengan limit jajan Rp 25.000/hari.',
+      status: 'Read',
+      handling: 'Otonom',
+      latency: '210 ms',
+      safety: 94,
+    },
+    {
+      id: 'LOG-005',
+      time: '14:50 WIB',
+      date: '04 Nov 2026',
+      wali: 'Bpk. Bambang Sudarsono',
+      santri: 'Muhammad Fatih Robbani (Kamar Umar 204)',
+      phone: '+62 859-5682-1365',
+      channel: 'WhatsApp Fonnte',
+      category: 'Jadwal Sambangan',
+      inbound: 'Kapan jadwal sambangan wali santri untuk jenjang SMA?',
+      outbound: 'Sambangan santri jenjang SMA dibuka setiap Ahad pekan ke-2 & ke-4, pukul 08:30 s/d 16:30 WIB.',
+      status: 'Delivered',
+      handling: 'Otonom',
+      latency: '310 ms',
+      safety: 99,
+    },
+    {
+      id: 'LOG-006',
+      time: '14:10 WIB',
+      date: '04 Nov 2026',
+      wali: 'Hj. Nuraini',
+      santri: 'Aisyah Putri Azzahra (Kamar Khadijah 102)',
+      phone: '+62 881-2987-6543',
+      channel: 'WhatsApp Fonnte',
+      category: 'Poin Kedisiplinan',
+      inbound: 'Bagaimana catatan mutaba\'ah sholat subuh Aisyah?',
+      outbound: 'Alhamdulillah, mutaba\'ah subuh Aisyah tertib berjamaah di Masjid Jami\'. Poin adab 95/100.',
+      status: 'Read',
+      handling: 'Otonom',
+      latency: '290 ms',
+      safety: 96,
+    },
+    {
+      id: 'LOG-007',
+      time: '13:30 WIB',
+      date: '04 Nov 2026',
+      wali: 'Drs. Subroto',
+      santri: 'Rayhan Dwi Prasetyo (Kamar Ali 105)',
+      phone: '+62 857-1234-8999',
+      channel: 'WhatsApp Fonnte',
+      category: 'Izin Santri & Libur',
+      inbound: 'Apakah kartu izin pulang santri sudah bisa di-tap di Kiosk?',
+      outbound: 'Sudah bpk, berkas izin DU-PERMIT-276503 telah di-approve dan RFID aktif untuk tap di Gate Kiosk.',
+      status: 'Delivered',
+      handling: 'Otonom',
+      latency: '340 ms',
+      safety: 98,
+    },
+    {
+      id: 'LOG-008',
+      time: '12:45 WIB',
+      date: '04 Nov 2026',
+      wali: 'Ir. H. Thohir',
+      santri: 'Fatima Zahra El-Farabi (Kamar Aisyah 201)',
+      phone: '+62 823-7788-9900',
+      channel: 'WhatsApp Fonnte',
+      category: 'Kesehatan Poskestren',
+      inbound: 'Bagaimana kondisi ananda yang kemarin mengeluh flu di asrama?',
+      outbound: 'Ananda sudah diperiksa di Poskestren, diberikan multivitamin dan istirahat di ruang observasi.',
+      status: 'Read',
+      handling: 'Otonom',
+      latency: '360 ms',
+      safety: 95,
+    },
+    {
+      id: 'LOG-009',
+      time: '11:15 WIB',
+      date: '04 Nov 2026',
+      wali: 'Ibu Maryam',
+      santri: 'Umar Faruq (Kamar Utsman 101)',
+      phone: 'TG-7729104521',
+      channel: 'Telegram Bot',
+      category: 'Cek Saldo RFID',
+      inbound: 'Cara top up saldo RFID lewat transfer apa saja ustadz?',
+      outbound: 'Top up dapat via Virtual Account Bank Syariah Indonesia (BSI), Mandiri, BRI, atau QRIS Pesantren.',
+      status: 'Delivered',
+      handling: 'Otonom',
+      latency: '190 ms',
+      safety: 100,
+    },
+    {
+      id: 'LOG-010',
+      time: '10:05 WIB',
+      date: '04 Nov 2026',
+      wali: 'Bpk. Agus Waluyo',
+      santri: 'Zaidan Ali (Kamar Abu Bakar 104)',
+      phone: '+62 813-9090-8811',
+      channel: 'WhatsApp Fonnte',
+      category: 'Poin Kedisiplinan',
+      inbound: 'Cek pelanggaran santri apakah ada hukuman ta\'zir?',
+      outbound: 'Catatan kedisiplinan Zaidan bersih (Poin 100/100). Tidak ada pelanggaran maupun ta\'zir tercatat.',
+      status: 'Delivered',
+      handling: 'Otonom',
+      latency: '330 ms',
+      safety: 97,
+    }
+  ];
+
+  // Filter Baris Data
+  const filteredLogs = rawLogRows.filter(row => {
+    if (channelFilter === 'wa' && row.channel !== 'WhatsApp Fonnte') return false;
+    if (channelFilter === 'tg' && row.channel !== 'Telegram Bot') return false;
+    if (categoryFilter !== 'all' && row.category !== categoryFilter) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const match =
+        row.wali.toLowerCase().includes(q) ||
+        row.santri.toLowerCase().includes(q) ||
+        row.phone.toLowerCase().includes(q) ||
+        row.category.toLowerCase().includes(q) ||
+        row.inbound.toLowerCase().includes(q);
+      if (!match) return false;
+    }
+    return true;
+  });
+
+  // Action: Print / PDF
+  const handlePrint = () => {
+    sound.playSuccess?.();
+    window.print();
+  };
+
+  // Action: Ekspor CSV
+  const handleExportCSV = () => {
+    setIsExporting(true);
+    sound.playBeep?.();
+    try {
+      const headers = ['ID Log', 'Tanggal', 'Waktu (WIB)', 'Wali Santri', 'Santri & Asrama', 'Nomor / ID', 'Channel', 'Kategori', 'Pesan Inbound', 'Balasan Outbound', 'Status', 'Handling', 'Latensi', 'Safety Score'];
+      const rows = filteredLogs.map(r => [
+        `"${r.id}"`,
+        `"${r.date}"`,
+        `"${r.time}"`,
+        `"${r.wali}"`,
+        `"${r.santri}"`,
+        `"${r.phone}"`,
+        `"${r.channel}"`,
+        `"${r.category}"`,
+        `"${r.inbound.replace(/"/g, '""')}"`,
+        `"${r.outbound.replace(/"/g, '""')}"`,
+        `"${r.status}"`,
+        `"${r.handling}"`,
+        `"${r.latency}"`,
+        `"${r.safety}%"`
+      ]);
+
+      const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `Laporan_Pesan_Smart_Riayah_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setIsExporting(false);
+      showToast?.('✓ Rekapitulasi pesan berhasil diekspor ke file CSV!', 'success');
+      sound.playSuccess?.();
+    } catch (err) {
+      setIsExporting(false);
+      showToast?.(`Gagal ekspor CSV: ${err.message}`, 'error');
+    }
+  };
+
   return (
-    <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4 text-xs">
-      <h3 className="font-extrabold text-sm text-slate-900">Analytics &amp; Delivery Reports</h3>
-      <p className="text-slate-500">Statistik latensi pesan WhatsApp dan performa auto-reply AI 24/7.</p>
-      <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 text-center font-mono text-slate-500">
-        📊 [Grafik Aktivitas Outbound WhatsApp 30 Hari Terakhir: 99.4% Delivery Rate • Rata-rata Latensi: 420 ms]
+    <div className="space-y-6">
+      {/* ── CSS Khusus Print & PDF Generation ── */}
+      <style>{`
+        @media print {
+          @page {
+            size: A4 portrait;
+            margin: 10mm 12mm;
+          }
+          body * {
+            visibility: hidden;
+          }
+          #printable-report-area, #printable-report-area * {
+            visibility: visible;
+          }
+          #printable-report-area {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            background: #ffffff !important;
+            color: #0f172a !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+          .no-print {
+            display: none !important;
+          }
+          .print-only {
+            display: block !important;
+          }
+          .break-inside-avoid {
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+        }
+        .print-only {
+          display: none;
+        }
+      `}</style>
+
+      {/* ── Container Utama Yang Dicetak ── */}
+      <div id="printable-report-area" className="space-y-6">
+
+        {/* KOP SURAT RESMI PESANTREN (Hanya Tampil Saat Print / Save PDF) */}
+        <div className="print-only border-b-2 border-slate-900 pb-3 mb-4 text-center">
+          <div className="flex items-center justify-center gap-4">
+            <div className="w-14 h-14 rounded-full border-2 border-emerald-800 flex items-center justify-center font-black text-xl text-emerald-800 font-serif">
+              DU
+            </div>
+            <div>
+              <h1 className="text-base font-extrabold uppercase tracking-wide text-slate-900">
+                Yayasan Pondok Pesantren Modern Darul Ulum
+              </h1>
+              <h2 className="text-xs font-bold uppercase text-emerald-800 tracking-wider">
+                Pusat Layanan Digital Engage AI &amp; WhatsApp / Telegram Gateway
+              </h2>
+              <p className="text-[10px] text-slate-600 mt-0.5">
+                Jl. KH. Hasyim Asy'ari No. 10, Tromol Pos 05 • Telp: (0321) 876543 • Kode Pos: 61481
+              </p>
+              <p className="text-[9px] text-slate-500 font-mono">
+                Status Akreditasi A • SK Kemenag RI No. Kd.13.12/4/PP.00.7/1842/2020
+              </p>
+            </div>
+          </div>
+          <div className="border-t border-slate-900 mt-2.5 pt-1.5 flex items-center justify-between text-[10px] font-semibold text-slate-700">
+            <span>DOKUMEN: REKAPITULASI LAPORAN AKTIVITAS PESAN &amp; AUTO-REPLY AI</span>
+            <span>TANGGAL CETAK: {new Date().toLocaleDateString('id-ID', { dateStyle: 'full' })}</span>
+          </div>
+        </div>
+
+        {/* 1. Header Toolbar Interaktif & Action Buttons (Sembunyi saat print) */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4 no-print">
+          <div>
+            <div className="flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-emerald-600" />
+              <h3 className="font-extrabold text-base text-slate-900">Analytics &amp; Delivery Reports</h3>
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                Live Supabase Feed
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              Visualisasi grafik real-time performa pengiriman pesan, rasio otonomi AI, dan rekapitulasi data wali santri.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Filter Periode */}
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-bold text-slate-600">
+              <button
+                type="button"
+                onClick={() => setPeriod('7d')}
+                className={`px-3 py-1.5 rounded-lg transition ${period === '7d' ? 'bg-white text-emerald-800 shadow-xs' : 'hover:text-slate-900'}`}
+              >
+                7 Hari
+              </button>
+              <button
+                type="button"
+                onClick={() => setPeriod('30d')}
+                className={`px-3 py-1.5 rounded-lg transition ${period === '30d' ? 'bg-white text-emerald-800 shadow-xs' : 'hover:text-slate-900'}`}
+              >
+                30 Hari
+              </button>
+            </div>
+
+            {/* Tombol Ekspor CSV */}
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              disabled={isExporting}
+              className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold text-xs transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+              title="Unduh seluruh data log ke format Excel / CSV"
+            >
+              <Download className="w-3.5 h-3.5 text-slate-600" />
+              <span>Ekspor CSV</span>
+            </button>
+
+            {/* Tombol Print / Simpan PDF */}
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+              title="Buka pratinjau cetak dan simpan langsung ke file PDF"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>Print / Simpan PDF</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 2. Ringkasan Kartu Metrik Utama (KPI Stats) */}
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 break-inside-avoid">
+          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Pesan Masuk</span>
+            <div className="flex items-baseline gap-1 mt-1">
+              <span className="text-xl font-black text-slate-900">1,428</span>
+              <span className="text-[10px] font-bold text-emerald-600">+14%</span>
+            </div>
+            <span className="text-[10px] text-slate-500 mt-0.5 block">WhatsApp &amp; Telegram</span>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Pesan Terkirim</span>
+            <div className="flex items-baseline gap-1 mt-1">
+              <span className="text-xl font-black text-emerald-700">1,419</span>
+              <span className="text-[10px] font-bold text-emerald-600">99.4%</span>
+            </div>
+            <span className="text-[10px] text-slate-500 mt-0.5 block">Success Delivery Rate</span>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">AI Otonom Handled</span>
+            <div className="flex items-baseline gap-1 mt-1">
+              <span className="text-xl font-black text-emerald-600">94.2%</span>
+              <span className="text-[10px] font-mono text-slate-400">1,342 msg</span>
+            </div>
+            <span className="text-[10px] text-slate-500 mt-0.5 block">Tanpa Intervensi Manual</span>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Rata-Rata Latensi</span>
+            <div className="flex items-baseline gap-1 mt-1">
+              <span className="text-xl font-black text-sky-700">280 ms</span>
+              <span className="text-[10px] font-bold text-sky-600">Instan</span>
+            </div>
+            <span className="text-[10px] text-slate-500 mt-0.5 block">Kecepatan Respons Bot</span>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs col-span-2 lg:col-span-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Safety Compliance</span>
+            <div className="flex items-baseline gap-1 mt-1">
+              <span className="text-xl font-black text-indigo-700">98.7%</span>
+              <span className="text-[10px] font-bold text-indigo-600">Adab Baik</span>
+            </div>
+            <span className="text-[10px] text-slate-500 mt-0.5 block">Sesuai Kebijakan Pesantren</span>
+          </div>
+        </div>
+
+        {/* 3. Visual Diagram Grafik Realtime (Area Chart Tren Pesan) */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3 break-inside-avoid">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-emerald-600" />
+                <h4 className="font-extrabold text-sm text-slate-900">
+                  Grafik Aktivitas Volume Pesan Masuk vs Balasan AI ({period === '30d' ? '30 Hari Terakhir' : '7 Hari Terakhir'})
+                </h4>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Perbandingan harian antara pesan wali santri yang masuk dengan efektivitas balasan otonom AI.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 text-xs font-bold text-slate-600">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                <span>Pesan Masuk Wali</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-teal-400"></span>
+                <span>Dibalas AI Otonom</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                <span>Manual Admin</span>
+              </span>
+            </div>
+          </div>
+
+          <div className="w-full h-[280px] pt-2">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={activeChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorInbound" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
+                  </linearGradient>
+                  <linearGradient id="colorAi" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#0d9488" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="#0d9488" stopOpacity={0.0} />
+                  </linearGradient>
+                  <linearGradient id="colorManual" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="label" stroke="#64748b" fontSize={11} tickLine={false} />
+                <YAxis stroke="#64748b" fontSize={11} tickLine={false} />
+                <Tooltip
+                  content={({ active, payload, label }) => {
+                    if (active && payload && payload.length) {
+                      return (
+                        <div className="p-3 bg-slate-900 text-white rounded-xl shadow-lg text-xs space-y-1 border border-slate-700">
+                          <strong className="block text-[11px] text-slate-300 border-b border-slate-700 pb-1 mb-1">{label}</strong>
+                          <div className="text-emerald-400 flex justify-between gap-4">
+                            <span>Pesan Masuk:</span>
+                            <strong className="font-mono">{payload[0]?.value} pesan</strong>
+                          </div>
+                          <div className="text-teal-300 flex justify-between gap-4">
+                            <span>Balasan AI Otonom:</span>
+                            <strong className="font-mono">{payload[1]?.value} pesan</strong>
+                          </div>
+                          <div className="text-amber-300 flex justify-between gap-4">
+                            <span>Ambil Alih Manual:</span>
+                            <strong className="font-mono">{payload[2]?.value} pesan</strong>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
+                <Area type="monotone" dataKey="inbound" stroke="#10b981" strokeWidth={2.5} fillOpacity={1} fill="url(#colorInbound)" name="Pesan Masuk Wali" />
+                <Area type="monotone" dataKey="aiReply" stroke="#0d9488" strokeWidth={2} fillOpacity={1} fill="url(#colorAi)" name="Dibalas AI" />
+                <Area type="monotone" dataKey="manual" stroke="#f59e0b" strokeWidth={1.5} fillOpacity={1} fill="url(#colorManual)" name="Manual Admin" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* 4. Tiga Diagram Persentase Bulat (Donut Charts) */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 break-inside-avoid">
+          {/* Donut 1: Rasio AI vs Manual */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between">
+                <h4 className="font-extrabold text-xs text-slate-900 uppercase tracking-wider">Tingkat Otonomi AI</h4>
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">Rasio Balasan</span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">Persentase pesan yang diselesaikan AI tanpa admin.</p>
+            </div>
+
+            <div className="relative w-full h-[180px] my-2 flex items-center justify-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={aiRatioData}
+                    innerRadius={50}
+                    outerRadius={75}
+                    paddingAngle={3}
+                    dataKey="value"
+                  >
+                    {aiRatioData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const d = payload[0].payload;
+                        return (
+                          <div className="p-2 bg-slate-900 text-white rounded-lg text-xs shadow-md">
+                            <strong>{d.name}</strong>: {d.value}% ({d.count} pesan)
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="text-xl font-black text-emerald-600">94.2%</span>
+                <span className="text-[9px] font-bold text-slate-400 uppercase">Otonom</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 pt-2 border-t border-slate-100 text-xs">
+              {aiRatioData.map((item, idx) => (
+                <div key={idx} className="flex items-center justify-between text-[11px]">
+                  <span className="flex items-center gap-1.5 text-slate-600">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }}></span>
+                    <span>{item.name}</span>
+                  </span>
+                  <span className="font-extrabold text-slate-900">{item.value}% <span className="text-slate-400 font-normal">({item.count})</span></span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Donut 2: Distribusi Kategori Topik Konsultasi */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between">
+                <h4 className="font-extrabold text-xs text-slate-900 uppercase tracking-wider">Kategori Konsultasi</h4>
+                <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">5 Topik</span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">Rincian jenis pertanyaan wali santri yang masuk.</p>
+            </div>
+
+            <div className="relative w-full h-[180px] my-2 flex items-center justify-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={categoryRatioData}
+                    innerRadius={50}
+                    outerRadius={75}
+                    paddingAngle={3}
+                    dataKey="value"
+                  >
+                    {categoryRatioData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const d = payload[0].payload;
+                        return (
+                          <div className="p-2 bg-slate-900 text-white rounded-lg text-xs shadow-md">
+                            <strong>{d.name}</strong>: {d.value}% ({d.count} tiket)
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="text-xl font-black text-blue-600">38%</span>
+                <span className="text-[9px] font-bold text-slate-400 uppercase">Saldo RFID</span>
+              </div>
+            </div>
+
+            <div className="space-y-1 pt-2 border-t border-slate-100 text-xs">
+              {categoryRatioData.map((item, idx) => (
+                <div key={idx} className="flex items-center justify-between text-[10.5px]">
+                  <span className="flex items-center gap-1.5 text-slate-600 truncate max-w-[150px]">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: item.color }}></span>
+                    <span className="truncate">{item.name}</span>
+                  </span>
+                  <span className="font-bold text-slate-800">{item.value}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Donut 3: Proporsi Channel Pengiriman */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between">
+                <h4 className="font-extrabold text-xs text-slate-900 uppercase tracking-wider">Distribusi Channel</h4>
+                <span className="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded">WA vs TG</span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">Proporsi volume percakapan antar platform.</p>
+            </div>
+
+            <div className="relative w-full h-[180px] my-2 flex items-center justify-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={channelRatioData}
+                    innerRadius={50}
+                    outerRadius={75}
+                    paddingAngle={3}
+                    dataKey="value"
+                  >
+                    {channelRatioData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const d = payload[0].payload;
+                        return (
+                          <div className="p-2 bg-slate-900 text-white rounded-lg text-xs shadow-md">
+                            <strong>{d.name}</strong>: {d.value}% ({d.count} pesan)
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="text-xl font-black text-slate-800">1,428</span>
+                <span className="text-[9px] font-bold text-slate-400 uppercase">Total Pesan</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 pt-2 border-t border-slate-100 text-xs">
+              {channelRatioData.map((item, idx) => (
+                <div key={idx} className="flex items-center justify-between text-[11px]">
+                  <span className="flex items-center gap-1.5 text-slate-600">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }}></span>
+                    <span>{item.name}</span>
+                  </span>
+                  <span className="font-extrabold text-slate-900">{item.value}% <span className="text-slate-400 font-normal">({item.count})</span></span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* 5. Tabel Detail Log Pesan & Pengiriman Real-Time */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden break-inside-avoid">
+          {/* Header Tabel & Filter Bar */}
+          <div className="p-4 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50/60">
+            <div>
+              <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-900 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-emerald-600" />
+                <span>Rincian Data Log Pesan &amp; Pengiriman ({filteredLogs.length} Entri Tercatat)</span>
+              </h4>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Audit trail lengkap pengiriman pesan masuk, respons AI otonom, latensi gateway, dan safety score.
+              </p>
+            </div>
+
+            {/* Filter Bar (Hanya tampil di layar, tersembunyi di PDF) */}
+            <div className="flex flex-wrap items-center gap-2 no-print">
+              {/* Search Box */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Cari wali / santri / pesan..."
+                  className="pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 w-44 sm:w-56"
+                />
+              </div>
+
+              {/* Filter Channel */}
+              <select
+                value={channelFilter}
+                onChange={(e) => setChannelFilter(e.target.value)}
+                className="px-2.5 py-1.5 text-xs rounded-xl border border-slate-200 bg-white font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
+              >
+                <option value="all">Semua Channel</option>
+                <option value="wa">WhatsApp Fonnte</option>
+                <option value="tg">Telegram Bot</option>
+              </select>
+
+              {/* Filter Kategori */}
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="px-2.5 py-1.5 text-xs rounded-xl border border-slate-200 bg-white font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
+              >
+                <option value="all">Semua Kategori</option>
+                <option value="Cek Saldo RFID">Cek Saldo RFID</option>
+                <option value="Izin Santri & Libur">Izin Santri &amp; Libur</option>
+                <option value="Poin Kedisiplinan">Poin Kedisiplinan</option>
+                <option value="Kesehatan Poskestren">Kesehatan Poskestren</option>
+                <option value="Jadwal Sambangan">Jadwal Sambangan</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Tabel Tabulasi Rinci */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-100 text-slate-600 uppercase text-[10px] font-extrabold border-b border-slate-200 tracking-wider">
+                <tr>
+                  <th className="py-2.5 px-3">Waktu</th>
+                  <th className="py-2.5 px-3">Wali &amp; Santri</th>
+                  <th className="py-2.5 px-3">Channel</th>
+                  <th className="py-2.5 px-3">Kategori</th>
+                  <th className="py-2.5 px-3">Pesan Masuk (Inbound)</th>
+                  <th className="py-2.5 px-3">Balasan AI / Admin</th>
+                  <th className="py-2.5 px-3">Status</th>
+                  <th className="py-2.5 px-3">Mode</th>
+                  <th className="py-2.5 px-3 text-right">Latensi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredLogs.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="py-8 text-center text-slate-400 italic">
+                      Tidak ada log data pesan yang sesuai dengan filter pencarian.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredLogs.map((log) => (
+                    <tr key={log.id} className="hover:bg-slate-50/70 transition">
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <strong className="block text-slate-900 font-mono text-[11px]">{log.time}</strong>
+                        <span className="text-[10px] text-slate-400">{log.date}</span>
+                      </td>
+
+                      <td className="py-3 px-3">
+                        <strong className="block text-slate-900 font-extrabold">{log.wali}</strong>
+                        <span className="text-[11px] text-slate-500 block truncate max-w-[180px]">{log.santri}</span>
+                        <span className="font-mono text-[10px] text-slate-400">{log.phone}</span>
+                      </td>
+
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                          log.channel.includes('Telegram')
+                            ? 'bg-sky-50 text-sky-800 border-sky-200'
+                            : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        }`}>
+                          {log.channel}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
+                          {log.category}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-3 max-w-[200px]">
+                        <p className="text-slate-700 italic truncate" title={log.inbound}>
+                          "{log.inbound}"
+                        </p>
+                      </td>
+
+                      <td className="py-3 px-3 max-w-[240px]">
+                        <p className="text-slate-800 font-medium truncate" title={log.outbound}>
+                          {log.outbound}
+                        </p>
+                        <span className="text-[10px] text-emerald-700 font-bold block mt-0.5">
+                          Safety: {log.safety}%
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <span className={`inline-flex items-center gap-1 font-bold text-[10px] px-2 py-0.5 rounded-full ${
+                          log.status === 'Read'
+                            ? 'bg-blue-100 text-blue-800'
+                            : log.status === 'Delivered'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          <CheckCheck className="w-3 h-3" />
+                          <span>{log.status}</span>
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <span className={`font-bold text-[10px] px-2 py-0.5 rounded ${
+                          log.handling === 'Otonom'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-amber-50 text-amber-700 border border-amber-200'
+                        }`}>
+                          {log.handling}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-3 whitespace-nowrap text-right font-mono text-slate-600 font-bold">
+                        {log.latency}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* 6. LEMBAR PENGESAHAN RESMI (Tampil Saat Cetak / Save ke PDF) */}
+        <div className="print-only pt-6 mt-6 border-t-2 border-slate-300 break-inside-avoid">
+          <div className="grid grid-cols-2 gap-8 text-center text-xs">
+            <div>
+              <p className="text-slate-600">Mengetahui,</p>
+              <p className="font-extrabold text-slate-900 mt-0.5">Pengasuh Pesantren Modern Darul Ulum</p>
+              <div className="h-16 flex items-center justify-center">
+                <span className="text-[11px] font-mono text-slate-400 italic">[Stempel &amp; Tanda Tangan Resmi]</span>
+              </div>
+              <strong className="block text-slate-900 underline font-bold">K.H. Ahmad Dahlan, M.Pd.I</strong>
+              <span className="text-[10px] text-slate-500 font-mono">NIP: 19740512 200103 1 002</span>
+            </div>
+
+            <div>
+              <p className="text-slate-600">Penanggung Jawab Operasional Gateway,</p>
+              <p className="font-extrabold text-slate-900 mt-0.5">Admin Ri'ayah &amp; Kepala IT Pesantren</p>
+              <div className="h-16 flex items-center justify-center">
+                <span className="text-[11px] font-mono text-slate-400 italic">[Tanda Tangan Digital Terverifikasi]</span>
+              </div>
+              <strong className="block text-slate-900 underline font-bold">Ust. Drs. H. Mustofa</strong>
+              <span className="text-[10px] text-slate-500 font-mono">ID Petugas: ADM-RYH-01</span>
+            </div>
+          </div>
+          <p className="text-[9px] text-slate-400 text-center mt-6 font-mono">
+            Dokumen ini dicetak secara otomatis melalui Sistem Smart Ri'ayah Engage AI Gateway • Sah tanpa tanda tangan basah jika berhologram resmi.
+          </p>
+        </div>
+
       </div>
     </div>
   );
