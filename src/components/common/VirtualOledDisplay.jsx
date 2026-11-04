@@ -24,7 +24,9 @@ import { sound } from '../../utils/audio';
 
 export default function VirtualOledDisplay({ className = '' }) {
   const { 
-    oledState, 
+    oledState,
+    setOledState,
+    STANDBY_OLED, 
     lastScannedUid, 
     lastScannedTime, 
     isSerialConnected, 

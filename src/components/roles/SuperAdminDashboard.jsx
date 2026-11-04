@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { sound } from '../../utils/audio';
 import { 
   Cpu, 
   Terminal, 

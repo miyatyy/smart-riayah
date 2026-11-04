@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   MessageSquare,
@@ -51,7 +51,8 @@ import {
   Lock,
   Eye,
   UserCheck,
-  Loader2
+  Loader2,
+  BellRing
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
 import {
