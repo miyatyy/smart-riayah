@@ -855,7 +855,19 @@ export default function FonnteDeviceManager() {
               {qrMode === 'qr' ? (
                 <div className="space-y-3 flex flex-col items-center">
                   <div className="p-4 bg-white border-2 border-slate-200 rounded-2xl shadow-inner">
-                    {qrCodeUrl ? (
+                    {qrCountdown <= 0 ? (
+                      <div className="w-48 h-48 bg-rose-50 border border-rose-200 rounded-xl flex flex-col items-center justify-center p-4 space-y-2">
+                        <Clock className="w-8 h-8 text-rose-500 animate-pulse" />
+                        <span className="text-xs font-black text-rose-600">Barcode Kedaluwarsa!</span>
+                        <span className="text-[10px] text-slate-500 leading-tight">Waktu scan telah habis. Barcode otomatis dihapus demi keamanan.</span>
+                        <button
+                          onClick={() => handleReconnect(activeDevice)}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold transition shadow-xs"
+                        >
+                          Minta QR Baru
+                        </button>
+                      </div>
+                    ) : qrCodeUrl ? (
                       <img src={qrCodeUrl} alt="Fonnte QR" className="w-48 h-48 object-contain" />
                     ) : (
                       <div className="w-48 h-48 bg-slate-50 border border-slate-200 rounded-xl flex flex-col items-center justify-center p-3 relative">
@@ -878,10 +890,14 @@ export default function FonnteDeviceManager() {
                     )}
                   </div>
 
-                  <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-500">
-                    <Clock className="w-3.5 h-3.5 text-amber-500" />
-                    <span>Kadaluarsa QR: <b className="text-amber-600">{qrCountdown}s</b></span>
-                  </div>
+                  {qrCountdown > 0 ? (
+                    <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-500">
+                      <Clock className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Kadaluarsa QR: <b className="text-amber-600">{qrCountdown}s</b></span>
+                    </div>
+                  ) : (
+                    <span className="text-[11px] font-bold text-rose-600">Barcode Expired</span>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-3 py-3 flex flex-col items-center">

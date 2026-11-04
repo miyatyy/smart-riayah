@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   MessageSquare,
@@ -974,6 +974,18 @@ function TabChannels({
   const [qrImage, setQrImage] = useState(null);
   const [qrCode, setQrCode] = useState(null);
   const [countdown, setCountdown] = useState(45);
+  const [isQrExpired, setIsQrExpired] = useState(false);
+
+  const qrTimerRef = useRef(null);
+  const qrPollRef = useRef(null);
+
+  // Bersihkan interval saat unmount
+  useEffect(() => {
+    return () => {
+      if (qrTimerRef.current) clearInterval(qrTimerRef.current);
+      if (qrPollRef.current) clearInterval(qrPollRef.current);
+    };
+  }, []);
 
   // Number validation state
   const [validateInput, setValidateInput] = useState('08813576012');
@@ -982,9 +994,15 @@ function TabChannels({
 
   // Fetch QR Code handler
   const handleFetchQr = async () => {
+    if (qrTimerRef.current) clearInterval(qrTimerRef.current);
+    if (qrPollRef.current) clearInterval(qrPollRef.current);
+
     setAccordions(prev => ({ ...prev, scanQr: true }));
     setQrLoading(true);
     setQrImage(null);
+    setQrCode(null);
+    setIsQrExpired(false);
+    setCountdown(45);
     sound.playBeep?.();
     showToast('Meminta QR Code resmi dari server Fonnte...', 'info');
 
@@ -1003,24 +1021,37 @@ function TabChannels({
         setQrImage(res.qrImage);
         setQrCode(res.code || '164WE4BM');
         setCountdown(45);
+        setIsQrExpired(false);
         showToast('QR Code siap di-scan dari aplikasi WhatsApp HP!', 'info');
 
-        // Start countdown & auto-polling status every 5 seconds
+        // Start countdown 45 detik
         let counter = 45;
-        const timerInterval = setInterval(() => {
+        qrTimerRef.current = setInterval(() => {
           counter -= 1;
           setCountdown(counter);
           if (counter <= 0) {
-            clearInterval(timerInterval);
+            // Otomatis bersihkan timer & interval polling
+            if (qrTimerRef.current) clearInterval(qrTimerRef.current);
+            if (qrPollRef.current) clearInterval(qrPollRef.current);
+            
+            // Barcode LANGSUNG HILANG OTOMATIS pada detik ke-0 (tidak bisa di-scan lagi)
+            setCountdown(0);
+            setQrImage(null);
+            setQrCode(null);
+            setIsQrExpired(true);
+            
+            sound.playBeep?.();
+            showToast('⏱️ Batas waktu scan 45 detik telah habis. Barcode otomatis dihapus & tidak dapat di-scan lagi demi keamanan.', 'warning');
           }
         }, 1000);
 
-        const pollInterval = setInterval(async () => {
+        // Auto-polling status koneksi Fonnte setiap 5 detik
+        qrPollRef.current = setInterval(async () => {
           try {
             const check = await fetchDeviceStatus(fonnteToken);
             if (check.isConnected) {
-              clearInterval(pollInterval);
-              clearInterval(timerInterval);
+              if (qrPollRef.current) clearInterval(qrPollRef.current);
+              if (qrTimerRef.current) clearInterval(qrTimerRef.current);
               setDeviceData(prev => ({
                 ...prev,
                 isConnected: true,
@@ -1030,6 +1061,8 @@ function TabChannels({
                 quota: check.quota || prev.quota
               }));
               setQrImage(null);
+              setQrCode(null);
+              setIsQrExpired(false);
               showToast('Perangkat WhatsApp berhasil terhubung!', 'success');
               sound.playSuccess?.();
             }
@@ -1037,12 +1070,6 @@ function TabChannels({
             console.warn('Poll error:', e);
           }
         }, 5000);
-
-        // Stop polling after 45s
-        setTimeout(() => {
-          clearInterval(pollInterval);
-          clearInterval(timerInterval);
-        }, 46000);
       } else {
         showToast(res.message || 'Gagal memuat QR Code dari Fonnte', 'error');
       }
@@ -1595,21 +1622,46 @@ function TabChannels({
           {accordions.scanQr && (
             <div className="p-4 bg-slate-50/50 space-y-4 text-xs border-t border-slate-100">
               <div className="flex flex-col sm:flex-row items-center gap-6">
-                <div className="w-52 h-52 bg-white p-3 rounded-2xl border border-slate-300 flex items-center justify-center shadow-inner relative">
+                <div className="w-52 h-52 bg-white p-3 rounded-2xl border border-slate-300 flex items-center justify-center shadow-inner relative overflow-hidden">
                   {qrLoading ? (
                     <div className="text-center p-3 text-slate-500 space-y-2">
                       <Loader2 className="w-8 h-8 animate-spin mx-auto text-emerald-600" />
                       <span className="text-[11px] font-bold block">Meminta QR resmi dari Fonnte...</span>
                     </div>
-                  ) : qrImage ? (
+                  ) : (isQrExpired || countdown <= 0) && !qrImage ? (
+                    <div className="text-center p-3 space-y-2">
+                      <div className="w-11 h-11 mx-auto rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-500 shadow-xs">
+                        <Clock className="w-5 h-5 animate-pulse text-rose-600" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-black block text-rose-600">Barcode Kedaluwarsa!</span>
+                        <span className="text-[10px] text-slate-500 block leading-tight mt-0.5">
+                          Batas waktu scan 45s habis. Barcode telah dihapus otomatis demi keamanan.
+                        </span>
+                      </div>
+                      <button
+                        onClick={handleFetchQr}
+                        disabled={qrLoading}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] transition shadow-xs flex items-center gap-1 mx-auto mt-1"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        <span>Minta Barcode Baru</span>
+                      </button>
+                    </div>
+                  ) : (qrImage && countdown > 0) ? (
                     <div className="relative w-full h-full flex flex-col items-center justify-center">
                       <img
                         src={qrImage}
                         alt="Fonnte QR Code"
                         className="w-full h-full object-contain rounded-lg"
                       />
-                      <span className="absolute bottom-1 bg-slate-900/80 text-white font-mono text-[9px] px-2 py-0.5 rounded-full font-bold">
-                        ⏱️ {countdown}s
+                      <span className={`absolute bottom-1 font-mono text-[9px] px-2 py-0.5 rounded-full font-bold shadow-sm flex items-center gap-1 ${
+                        countdown <= 10
+                          ? 'bg-rose-600 text-white animate-pulse'
+                          : 'bg-slate-900/85 text-white'
+                      }`}>
+                        <Clock className="w-2.5 h-2.5" />
+                        <span>⏱️ {countdown}s tersisa</span>
                       </span>
                     </div>
                   ) : (
@@ -1636,9 +1688,15 @@ function TabChannels({
                       className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-sm flex items-center gap-1.5"
                     >
                       {qrLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <QrCode className="w-3.5 h-3.5" />}
-                      <span>{qrImage ? 'Minta QR Baru' : 'Ambil QR Resmi Fonnte'}</span>
+                      <span>
+                        {qrImage && countdown > 0
+                          ? 'Minta QR Baru'
+                          : isQrExpired
+                          ? 'Minta QR Baru (Kedaluwarsa)'
+                          : 'Ambil QR Resmi Fonnte'}
+                      </span>
                     </button>
-                    {qrCode && (
+                    {qrCode && countdown > 0 && !isQrExpired && (
                       <span className="text-slate-500 font-mono text-[11px] bg-slate-200/80 px-2 py-1 rounded-lg">
                         Pairing Code: <strong>{qrCode}</strong>
                       </span>
