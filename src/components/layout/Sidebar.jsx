@@ -450,7 +450,10 @@ export default function Sidebar({ onOpenFlutterModal }) {
           {!isCollapsed ? (
             <button
               onClick={() => {
-                setIsWaDrawerOpen(true);
+                setActiveRoleTab('whatsapp_manager');
+                if (role !== 'admin_riayah') {
+                  setRole('admin_riayah');
+                }
                 setUnreadWaCount(0);
                 sound.playBeep?.();
                 if (window.innerWidth < 1024) setIsMobileSidebarOpen(false);
@@ -484,7 +487,10 @@ export default function Sidebar({ onOpenFlutterModal }) {
             <div className="flex justify-center">
               <button
                 onClick={() => {
-                  setIsWaDrawerOpen(true);
+                  setActiveRoleTab('whatsapp_manager');
+                  if (role !== 'admin_riayah') {
+                    setRole('admin_riayah');
+                  }
                   setUnreadWaCount(0);
                   sound.playBeep?.();
                 }}
@@ -566,41 +572,6 @@ export default function Sidebar({ onOpenFlutterModal }) {
                   ))}
                 </div>
               )}
-            </div>
-          )}
-
-          {/* Flutter Mobile Connector */}
-          {!isCollapsed ? (
-            <button
-              onClick={() => {
-                onOpenFlutterModal?.();
-                if (window.innerWidth < 1024) setIsMobileSidebarOpen(false);
-              }}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition
-                ${isLight
-                  ? 'bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200'
-                  : 'bg-sky-950/40 hover:bg-sky-900/50 text-sky-300 border border-sky-800/40'
-                }`}
-            >
-              <div className="flex items-center gap-2">
-                <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Flutter Mobile API</span>
-              </div>
-              <span className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold bg-cyan-500/20 text-cyan-300">
-                Dart
-              </span>
-            </button>
-          ) : (
-            <div className="flex justify-center">
-              <button
-                onClick={() => onOpenFlutterModal?.()}
-                className={`p-2 rounded-xl transition ${
-                  isLight ? 'bg-sky-50 hover:bg-sky-100 text-sky-600' : 'bg-sky-950/40 hover:bg-sky-900/50 text-cyan-400'
-                }`}
-                title="Integrasi Flutter Mobile"
-              >
-                <Smartphone className="w-4 h-4" />
-              </button>
             </div>
           )}
 

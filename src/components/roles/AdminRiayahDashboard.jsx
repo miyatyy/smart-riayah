@@ -39,7 +39,7 @@ import { sound } from '../../utils/audio';
 import RfidCardManager from '../modules/RfidCardManager';
 import ExpressPermitKiosk from '../modules/ExpressPermitKiosk';
 import RealtimeGateLogsManager from '../modules/RealtimeGateLogsManager';
-import FonnteDeviceManager from '../modules/FonnteDeviceManager';
+import EngageAiWorkspace from '../modules/EngageAiWorkspace';
 import SantriActivityAnalytics from '../modules/SantriActivityAnalytics';
 import EditRoomModal from '../modules/EditRoomModal';
 import DeleteConfirmModal from '../common/DeleteConfirmModal';
@@ -516,7 +516,7 @@ export default function AdminRiayahDashboard() {
           }`}
         >
           <Smartphone className="w-4 h-4 text-emerald-600" />
-          <span>9. Fonnte WA Gateway</span>
+          <span>9. WhatsApp Gateway</span>
         </button>
 
         <button
@@ -1363,7 +1363,7 @@ export default function AdminRiayahDashboard() {
       {/* BUILDER 9: 📱 EMBEDDED FONNTE WHATSAPP DEVICE & QR MANAGER */}
       {activeTab === 'whatsapp_manager' && (
         <div className="space-y-6 animate-fade-in">
-          <FonnteDeviceManager />
+          <EngageAiWorkspace />
         </div>
       )}
 
