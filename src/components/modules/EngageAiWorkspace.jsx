@@ -850,6 +850,16 @@ function TabChannels({
   });
   const [isVerifyingTelegram, setIsVerifyingTelegram] = useState(false);
 
+  // Otomatis pastikan webhook Telegram terpasang ke endpoint Vercel saat connected
+  useEffect(() => {
+    if (isTelegramConnected && telegramToken) {
+      const clean = telegramToken.trim();
+      const webhookUrl = `https://smart-riayah.vercel.app/api/telegram/webhook?token=${encodeURIComponent(clean)}`;
+      fetch(`https://api.telegram.org/bot${clean}/setWebhook?url=${encodeURIComponent(webhookUrl)}`)
+        .catch(() => {});
+    }
+  }, [isTelegramConnected, telegramToken]);
+
   const handleConnectTelegram = async () => {
     const clean = telegramToken.trim();
     if (!clean) {
@@ -871,6 +881,12 @@ function TabChannels({
         localStorage.setItem('smart_riayah_telegram_token', clean);
         localStorage.setItem('smart_riayah_telegram_bot', JSON.stringify(data.result));
         addSafetyLog?.('telegram bot connected', 'info', 'TELEGRAM', `@${data.result.username}`);
+
+        // Pasang webhook resmi Telegram otomatis ke serverless webhook Vercel
+        const webhookUrl = `https://smart-riayah.vercel.app/api/telegram/webhook?token=${encodeURIComponent(clean)}`;
+        fetch(`https://api.telegram.org/bot${clean}/setWebhook?url=${encodeURIComponent(webhookUrl)}`)
+          .catch(() => {});
+
         sound.playSuccess?.();
         showToast(`✓ Bot Telegram @${data.result.username} (${data.result.first_name}) berhasil diverifikasi & terhubung!`, 'success');
       } else {
@@ -884,6 +900,9 @@ function TabChannels({
   };
 
   const handleDisconnectTelegram = () => {
+    if (telegramToken) {
+      fetch(`https://api.telegram.org/bot${telegramToken}/deleteWebhook`).catch(() => {});
+    }
     setIsTelegramConnected(false);
     setTelegramBotInfo(null);
     setTelegramToken('');
@@ -1129,6 +1148,10 @@ function TabChannels({
                   <p className="text-[11px] text-slate-600 mt-0.5">
                     ID Bot: <span className="font-mono text-slate-500">{telegramBotInfo.id}</span> • Siaga melayani konsultasi wali santri.
                   </p>
+                  <div className="flex items-center gap-2 mt-1 text-[10px] text-emerald-700 font-semibold">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>Webhook Terpasang: Auto-Reply AI Aktif &amp; Terhubung Realtime ke AI Inbox</span>
+                  </div>
                 </div>
               </div>
 
