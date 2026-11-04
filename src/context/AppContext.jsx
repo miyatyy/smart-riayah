@@ -320,7 +320,28 @@ export const AppProvider = ({ children }) => {
   }, []);
 
   // 5. UI Modals, Drawers & Sidebar
-  const [isWaDrawerOpen, setIsWaDrawerOpen] = useState(false);
+  const [isWaDrawerOpen, _setIsWaDrawerOpen] = useState(false);
+  const [engageActiveTab, setEngageActiveTab] = useState('dashboard');
+
+  const navigateToAiInbox = () => {
+    if (role !== 'admin_riayah') {
+      setRole('admin_riayah');
+    }
+    setActiveRoleTab('whatsapp_manager');
+    setEngageActiveTab('inbox');
+    _setIsWaDrawerOpen(false);
+    setUnreadWaCount(0);
+    sound.playBeep?.();
+  };
+
+  const setIsWaDrawerOpen = (open) => {
+    if (open) {
+      // Langsung alihkan ke AI Inbox tanpa memunculkan floating drawer popup
+      navigateToAiInbox();
+    } else {
+      _setIsWaDrawerOpen(false);
+    }
+  };
   const [unreadWaCount, setUnreadWaCount] = useState(0);
   const [isRfidModalOpen, setIsRfidModalOpen] = useState(false);
   const [isSerialMonitorOpen, setIsSerialMonitorOpen] = useState(false);
@@ -2827,6 +2848,9 @@ export const AppProvider = ({ children }) => {
         // UI Modals, Drawers & Sidebar
         isWaDrawerOpen,
         setIsWaDrawerOpen,
+        engageActiveTab,
+        setEngageActiveTab,
+        navigateToAiInbox,
         unreadWaCount,
         setUnreadWaCount,
         isRfidModalOpen,

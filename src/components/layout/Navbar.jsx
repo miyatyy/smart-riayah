@@ -104,6 +104,9 @@ export default function Navbar({ onOpenFlutterModal }) {
     setUnreadWaCount,
     isWaDrawerOpen,
     setIsWaDrawerOpen,
+    engageActiveTab,
+    setEngageActiveTab,
+    navigateToAiInbox,
     setActiveRoleTab,
     setIsMobileSidebarOpen,
     isSerialConnected,
@@ -234,11 +237,22 @@ export default function Navbar({ onOpenFlutterModal }) {
 
           <div className="w-px h-5 bg-slate-200 mx-1 hidden sm:block" />
 
-          {/* WhatsApp Gateway */}
+          {/* AI Inbox (Percakapan Realtime WhatsApp & Telegram) */}
           <NavBtn
             icon={MessageSquare}
-            onClick={() => { setIsWaDrawerOpen(!isWaDrawerOpen); setUnreadWaCount(0); }}
-            tooltip="WhatsApp Gateway"
+            onClick={() => {
+              if (navigateToAiInbox) {
+                navigateToAiInbox();
+              } else {
+                if (role !== 'admin_riayah') setRole('admin_riayah');
+                setActiveRoleTab('whatsapp_manager');
+                if (setEngageActiveTab) setEngageActiveTab('inbox');
+                setIsWaDrawerOpen(false);
+                setUnreadWaCount(0);
+                sound.playBeep?.();
+              }
+            }}
+            tooltip="AI Inbox (Live WhatsApp & Telegram)"
             badge={unreadWaCount}
             variant="wa"
           />

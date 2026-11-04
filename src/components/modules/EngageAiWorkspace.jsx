@@ -143,11 +143,31 @@ function EngageAiWorkspaceContent() {
     santriList,
     permits,
     rooms,
-    sendWhatsAppNotification
+    sendWhatsAppNotification,
+    engageActiveTab,
+    setEngageActiveTab
   } = useApp();
 
   // ─── Main Tabs Navigation ───
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTabState] = useState(() => {
+    if (engageActiveTab === 'ai_inbox') return 'inbox';
+    return engageActiveTab || 'dashboard';
+  });
+
+  // Sinkronisasi jika tombol bar navigasi luar mengubah engageActiveTab
+  useEffect(() => {
+    if (engageActiveTab) {
+      const target = engageActiveTab === 'ai_inbox' ? 'inbox' : engageActiveTab;
+      setActiveTabState(target);
+    }
+  }, [engageActiveTab]);
+
+  const setActiveTab = (tab) => {
+    setActiveTabState(tab);
+    if (setEngageActiveTab) {
+      setEngageActiveTab(tab);
+    }
+  };
   const [copiedText, setCopiedText] = useState(null);
 
   // ─── Real-Time Fonnte Gateway State ───
