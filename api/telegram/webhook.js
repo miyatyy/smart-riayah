@@ -1,4 +1,4 @@
-import { generateAutonomousReply, isPhoneInManualTakeover } from '../../server/whatsapp-gateway/aiAutonomousResponder.js';
+import { generateAutonomousReply, isPhoneInManualTakeover, setManualTakeover } from '../../server/whatsapp-gateway/aiAutonomousResponder.js';
 import { broadcastToSupabaseRealtime } from '../../server/whatsapp-gateway/supabaseBroadcaster.js';
 import { createClient } from '@supabase/supabase-js';
 
@@ -84,24 +84,27 @@ export default async function handler(req, res) {
       console.warn('Realtime broadcast warning:', e.message);
     }
 
-    // 2. Cek apakah percakapan sedang diambil alih manual oleh Admin
-    let inTakeover = false;
-    try {
-      inTakeover = await isPhoneInManualTakeover(String(chatId));
-    } catch (e) {
-      inTakeover = false;
-    }
-    if (inTakeover) {
-      console.log(`⏸️ [Telegram Takeover]: Chat ${chatId} sedang diambil alih manual oleh Admin. AI diistirahatkan.`);
-      await safeLog('Takeover Shield', 'shield', `TAKEOVER ACTIVE for ${chatId}. AI reply suppressed.`, 'SUPPRESSED');
-      return res.status(200).json({ ok: true, status: 'manual_takeover' });
-    }
-
-    // 3. Tangani perintah khusus /start
+    // 2. Tangani perintah khusus /start (Selalu unblock / reset takeover ke Otonom)
     let aiReply = '';
     if (incomingText === '/start') {
+      try {
+        await setManualTakeover(String(chatId), false);
+      } catch (e) {}
       aiReply = `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${senderName}.\n\nSelamat datang di Layanan AI Resmi Pesantren Modern Darul Ulum.\n\nSaya adalah *Smart Ri'ayah AI Bot* yang siap membantu Bapak/Ibu 24 jam untuk:\n1. 💳 *Cek Saldo Dompet RFID & Limit Jajan*\n2. 📈 *Kondisi & Poin Kedisiplinan Santri*\n3. 📋 *Prosedur Perizinan & Liburan*\n4. 🏥 *Layanan Kesehatan Poskestren*\n5. 📅 *Jadwal Sambangan & Kunjungan Wali*\n\nSilakan ketik pertanyaan Bapak/Ibu secara langsung di sini.`;
     } else {
+      // 3. Cek apakah percakapan sedang diambil alih manual oleh Admin
+      let inTakeover = false;
+      try {
+        inTakeover = await isPhoneInManualTakeover(String(chatId));
+      } catch (e) {
+        inTakeover = false;
+      }
+      if (inTakeover) {
+        console.log(`⏸️ [Telegram Takeover]: Chat ${chatId} sedang diambil alih manual oleh Admin. AI diistirahatkan.`);
+        await safeLog('Takeover Shield', 'shield', `TAKEOVER ACTIVE for ${chatId}. AI reply suppressed.`, 'SUPPRESSED');
+        return res.status(200).json({ ok: true, status: 'manual_takeover' });
+      }
+
       // Generate balasan cerdas Smart Ri'ayah
       aiReply = await generateAutonomousReply(String(chatId), incomingText, senderName);
     }
