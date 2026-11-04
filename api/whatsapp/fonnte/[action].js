@@ -1,3 +1,5 @@
+import { setManualTakeover } from '../../../server/whatsapp-gateway/aiAutonomousResponder.js';
+
 /**
  * Vercel Serverless Function: /api/whatsapp/fonnte/[action]
  * Handles status, qr, validate, disconnect, send for Fonnte WhatsApp Gateway
@@ -259,6 +261,7 @@ export default async function handler(req, res) {
     }
     const clean = normalizeIndonesianPhone(phone);
     const active = Boolean(isManual);
+    await setManualTakeover(clean, active);
     return res.status(200).json({
       success: true,
       phone: clean,

@@ -1659,6 +1659,32 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
   // ─── Realtime Listener untuk Webhook WhatsApp & Balasan AI Otonom ───
   useEffect(() => {
     if (!supabase) return;
+
+    // Muat daftar nomor yang sedang dalam status Mode Ambil Alih dari Supabase messages table
+    supabase
+      .from('messages')
+      .select('message_text')
+      .eq('room_id', 'whatsapp_takeover')
+      .then(({ data, error }) => {
+        if (!error && Array.isArray(data) && data.length > 0) {
+          const activeTakeovers = data.map(d => normalizeDigits(d.message_text));
+          setConversations(prev => prev.map(c => {
+            const cDigits = normalizeDigits(c.phone);
+            const isTaken = activeTakeovers.some(t => t.endsWith(cDigits.slice(-8)) || cDigits.endsWith(t.slice(-8)));
+            if (isTaken) {
+              return {
+                ...c,
+                isManual: true,
+                handling: 'Manual (Ambil Alih)',
+                status: 'Ditangani Admin'
+              };
+            }
+            return c;
+          }));
+        }
+      })
+      .catch(() => {});
+
     const channel = supabase.channel('whatsapp-room');
 
     channel
@@ -1757,6 +1783,17 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
         if (!rep) return;
 
         const targetDigits = normalizeDigits(rep.target);
+
+        // 🛡️ FRONTEND SHIELD: Cek apakah target ini sedang dalam Mode Ambil Alih Manual
+        // Jika sedang ditangani manual oleh Admin, cegah balasan AI agar tidak menyela di percakapan!
+        if (selectedChat) {
+          const selDigits = normalizeDigits(selectedChat.phone);
+          if ((selDigits === targetDigits || selDigits.endsWith(targetDigits.slice(-8)) || targetDigits.endsWith(selDigits.slice(-8))) && (selectedChat.isManual || isManualOverrideActive)) {
+            console.log(`🛡️ [Frontend Shield]: Mengabaikan AI reply untuk ${rep.target} karena Admin sedang dalam Mode Ambil Alih Manual.`);
+            return;
+          }
+        }
+
         const nowWIB = rep.waktu || (new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB');
 
         const newMsg = {
@@ -2135,9 +2172,40 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
       sound.playSuccess?.();
     }
 
-    // 5. Sinkronisasi Realtime & Backend Fonnte API
+    // 5. Sinkronisasi Langsung ke Supabase Database & Realtime
     try {
+      const cleanPhone = normalizeDigits(selectedChat.phone);
+      const last8 = cleanPhone.slice(-8);
+
       if (supabase) {
+        if (nextManual) {
+          // Bersihkan record lama untuk nomor ini, lalu insert penanda takeover manual
+          await supabase
+            .from('messages')
+            .delete()
+            .eq('room_id', 'whatsapp_takeover')
+            .like('message_text', `%${last8}%`);
+
+          await supabase
+            .from('messages')
+            .insert([{
+              room_id: 'whatsapp_takeover',
+              sender_email: 'admin@smartriayah.com',
+              sender_name: 'Admin Ri\'ayah',
+              sender_role: 'admin',
+              message_text: cleanPhone,
+              reaction: 'MANUAL_TAKEOVER',
+              is_read: false
+            }]);
+        } else {
+          // Hapus penanda takeover saat kembali ke mode otonom
+          await supabase
+            .from('messages')
+            .delete()
+            .eq('room_id', 'whatsapp_takeover')
+            .like('message_text', `%${last8}%`);
+        }
+
         supabase.channel('whatsapp-room').send({
           type: 'broadcast',
           event: 'whatsapp.takeover',

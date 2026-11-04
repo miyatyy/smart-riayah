@@ -68,7 +68,8 @@ export default async function handler(req, res) {
       await broadcastToSupabaseRealtime('whatsapp.incoming', incomingData);
 
       // Cek apakah nomor sedang dalam Mode Ambil Alih (Manual Override) oleh Admin
-      if (isPhoneInManualTakeover(cleanSender)) {
+      const inTakeover = await isPhoneInManualTakeover(cleanSender);
+      if (inTakeover) {
         console.log(`⏸️ [Vercel Takeover Aktif]: Chat dari ${cleanSender} tidak dibalas AI karena sedang diambil alih Admin Ri'ayah.`);
         return res.status(200).json({
           success: true,

@@ -131,7 +131,8 @@ router.post('/webhook', async (req, res) => {
       await broadcastToSupabaseRealtime('whatsapp.incoming', incomingData);
 
       // Cek apakah nomor sedang dalam Mode Ambil Alih (Manual Override) oleh Admin Ri'ayah
-      if (isPhoneInManualTakeover(cleanSender)) {
+      const inTakeover = await isPhoneInManualTakeover(cleanSender);
+      if (inTakeover) {
         console.log(`⏸️ [Manual Takeover Aktif]: Chat dari ${cleanSender} tidak dibalas AI karena sedang diambil alih Admin Ri'ayah.`);
         return res.json({
           success: true,
@@ -520,7 +521,7 @@ router.post('/fonnte/takeover', async (req, res) => {
 
   const clean = normalizeIndonesianPhone(phone);
   const active = Boolean(isManual);
-  setManualTakeover(clean, active);
+  await setManualTakeover(clean, active);
 
   console.log(`👤 [Fonnte Route Takeover]: Nomor ${clean} diubah status takeover-nya menjadi: ${active ? 'MANUAL' : 'OTONOM'}`);
 

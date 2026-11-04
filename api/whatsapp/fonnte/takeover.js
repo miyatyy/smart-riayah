@@ -17,7 +17,7 @@ export default async function handler(req, res) {
 
   const clean = normalizePhone(phone);
   const active = Boolean(isManual);
-  setManualTakeover(clean, active);
+  await setManualTakeover(clean, active);
 
   try {
     await broadcastToSupabaseRealtime('whatsapp.takeover', {
@@ -38,3 +38,4 @@ export default async function handler(req, res) {
       : `Nomor ${clean} berhasil dikembalikan ke Mode Otonom AI.`
   });
 }
+

@@ -14,26 +14,112 @@ const DEFAULT_FONNTE_TOKEN = 'XvFjdLyyvBgNUbXBZYzZ';
 // In-memory set penyimpan nomor HP yang sedang diambil alih manual oleh Admin Ri'ayah
 export const manualTakeoverPhones = new Set();
 
-export function setManualTakeover(phone, isManual) {
+/**
+ * Simpan / perbarui status Mode Ambil Alih Manual ke Supabase & In-Memory Cache
+ */
+export async function setManualTakeover(phone, isManual) {
   const clean = normalizePhone(phone);
+  const digits = String(clean).replace(/[^0-9]/g, '');
+  if (!digits) return false;
+  const last8 = digits.slice(-8);
+
   if (isManual) {
     manualTakeoverPhones.add(clean);
+    try {
+      // 1. Bersihkan record lama untuk nomor ini di Supabase messages table
+      await supabase
+        .from('messages')
+        .delete()
+        .eq('room_id', 'whatsapp_takeover')
+        .like('message_text', `%${last8}%`);
+
+      // 2. Insert record baru sebagai penanda bahwa nomor ini sedang di-takeover manual
+      const { error } = await supabase
+        .from('messages')
+        .insert([{
+          room_id: 'whatsapp_takeover',
+          sender_email: 'admin@smartriayah.com',
+          sender_name: 'Admin Ri\'ayah',
+          sender_role: 'admin',
+          message_text: clean,
+          reaction: 'MANUAL_TAKEOVER',
+          is_read: false
+        }]);
+
+      if (error) {
+        console.warn('⚠️ [Supabase setManualTakeover insert error]:', error.message);
+      } else {
+        console.log(`✅ [Supabase setManualTakeover SUCCESS]: ${clean} kini dalam MODE AMBIL ALIH MANUAL`);
+      }
+    } catch (err) {
+      console.warn('⚠️ [Supabase setManualTakeover exception]:', err.message);
+    }
+    return true;
   } else {
     manualTakeoverPhones.delete(clean);
     const alt = clean.startsWith('62') ? '0' + clean.slice(2) : (clean.startsWith('0') ? '62' + clean.slice(1) : clean);
     manualTakeoverPhones.delete(alt);
+
+    try {
+      // Hapus status takeover dari Supabase messages table
+      const { error } = await supabase
+        .from('messages')
+        .delete()
+        .eq('room_id', 'whatsapp_takeover')
+        .like('message_text', `%${last8}%`);
+
+      if (error) {
+        console.warn('⚠️ [Supabase removeManualTakeover error]:', error.message);
+      } else {
+        console.log(`✅ [Supabase removeManualTakeover SUCCESS]: ${clean} dikembalikan ke MODE OTONOM`);
+      }
+    } catch (err) {
+      console.warn('⚠️ [Supabase removeManualTakeover exception]:', err.message);
+    }
+    return false;
   }
-  return isPhoneInManualTakeover(clean);
 }
 
-export function isPhoneInManualTakeover(phone) {
+/**
+ * Cek apakah nomor sedang dalam Mode Ambil Alih Manual (Cek In-Memory & Supabase)
+ */
+export async function isPhoneInManualTakeover(phone) {
   const clean = normalizePhone(phone);
+  const digits = String(clean).replace(/[^0-9]/g, '');
+  if (!digits) return false;
+  const last8 = digits.slice(-8);
+
+  // 1. Cek in-memory set (fast path)
   if (manualTakeoverPhones.has(clean)) return true;
   for (const p of manualTakeoverPhones) {
     if (clean.endsWith(p.slice(-8)) || p.endsWith(clean.slice(-8))) {
       return true;
     }
   }
+
+  // 2. Cek Supabase (persistent across all Vercel Serverless Lambdas)
+  try {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('message_text, reaction')
+      .eq('room_id', 'whatsapp_takeover');
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      const match = data.some(row => {
+        const rowDigits = String(row.message_text || '').replace(/[^0-9]/g, '');
+        return rowDigits && (rowDigits.endsWith(last8) || digits.endsWith(rowDigits.slice(-8)));
+      });
+
+      if (match) {
+        console.log(`🔒 [Supabase Verified]: Nomor ${clean} TERBUKTI sedang dalam MODE AMBIL ALIH MANUAL oleh Admin!`);
+        manualTakeoverPhones.add(clean);
+        return true;
+      }
+    }
+  } catch (err) {
+    console.warn('⚠️ [Check Takeover Supabase Error]:', err.message);
+  }
+
   return false;
 }
 
