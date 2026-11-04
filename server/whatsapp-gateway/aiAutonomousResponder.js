@@ -4,6 +4,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import { broadcastToSupabaseRealtime } from './supabaseBroadcaster.js';
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://htjnrpyuzkarigglgrxm.supabase.co';
 const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_WQ7Ix8DuKxlVdv_dnwBspw_cXbdkADI';
@@ -277,6 +278,53 @@ export async function generateAutonomousReply(senderPhone, incomingText, senderN
   };
 
   const textLower = String(incomingText || '').toLowerCase();
+
+  // ─── INTENT PRIORITAS TERTINGGI: CLOSINGAN / WALI INGIN BICARA DENGAN ADMIN ───
+  const isAdminRequest =
+    textLower.includes('bicara sama admin') ||
+    textLower.includes('bicara dengan admin') ||
+    textLower.includes('ngomong sama admin') ||
+    textLower.includes('ngomong dengan admin') ||
+    textLower.includes('hubungkan ke admin') ||
+    textLower.includes('hubungi admin') ||
+    textLower.includes('panggil admin') ||
+    textLower.includes('minta nomor admin') ||
+    textLower.includes('kontak admin') ||
+    textLower.includes('bicara ustadz') ||
+    textLower.includes('bicara dengan ustadz') ||
+    textLower.includes('ngomong sama ustadz') ||
+    textLower.includes('pengasuh pondok') ||
+    textLower.includes('apakah ini dengan admin') ||
+    textLower.includes('apakah ini admin') ||
+    textLower.includes('apakah dengan admin') ||
+    textLower.includes('ini admin kah') ||
+    textLower.includes('apakah admin') ||
+    textLower.includes('mau admin') ||
+    textLower.includes('bisa bicara langsung') ||
+    textLower.includes('bicara langsung');
+
+  if (isAdminRequest) {
+    console.log(`🔔 [Smart Handoff Triggered]: Wali ${cleanPhone} meminta bicara dengan Admin! Mengalihkan ke Mode Manual.`);
+
+    // 1. Simpan nomor ini ke Mode Ambil Alih Manual di Supabase & memory cache
+    await setManualTakeover(cleanPhone, true);
+
+    // 2. Siarkan event takeover otomatis ke dashboard admin secara real-time
+    try {
+      await broadcastToSupabaseRealtime('whatsapp.takeover', {
+        phone: cleanPhone,
+        isManual: true,
+        reason: 'WALI_REQUESTED_ADMIN',
+        senderName: waliData.namaWali,
+        admin: 'Ust. Drs. H. Mustofa',
+        timestamp: new Date().toISOString()
+      });
+    } catch (e) {
+      console.warn('Takeover broadcast warning:', e.message);
+    }
+
+    return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nBaik Bapak/Ibu, percakapan ini sekarang kami alihkan langsung ke *Admin Ri'ayah / Ustadz Musyrif Asrama*.\n\nUstadz akan segera membaca dan membalas pesan Bapak/Ibu secara langsung di sini. Mohon ditunggu sebentar ya Bapak/Ibu. 🙏\n\n_— Smart Ri'ayah Handoff System_`;
+  }
 
   // 1. Coba gunakan Gemini / DeepSeek API jika token tersedia di environment
   const geminiKey = process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;

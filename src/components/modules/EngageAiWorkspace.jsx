@@ -1609,8 +1609,9 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
       santri: 'Muhammad Rayhan (Kamar Abu Bakar 102)',
       phone: '+62 812-4455-890',
       channel: 'WhatsApp Fonnte',
-      status: 'Perlu Ambil Alih',
-      handling: 'Semi Auto',
+      status: 'Open',
+      handling: 'Otonom - Mengikuti Global',
+      isManual: false,
       aiSafety: 'AI Balas - Allow (Score: 89)',
       lastTime: '11:15 WIB',
       lastPreview: 'Saya mau tanya prosedur perpanjangan izin pulang karena anak demam di rumah.',
@@ -1904,6 +1905,11 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
         if (!t) return;
         const targetDigits = normalizeDigits(t.phone);
         const nextManual = Boolean(t.isManual);
+
+        if (nextManual && t.reason === 'WALI_REQUESTED_ADMIN') {
+          showToast?.(`🔔 Percakapan dialihkan: Wali Santri (${t.senderName || t.phone}) ingin berbicara langsung dengan Admin!`, 'info');
+          sound.playSuccess?.();
+        }
 
         setSelectedChat(prev => {
           if (!prev) return null;
