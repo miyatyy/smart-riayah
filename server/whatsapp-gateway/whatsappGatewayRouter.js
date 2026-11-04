@@ -66,6 +66,18 @@ router.post('/broadcast', async (req, res) => {
 });
 
 /**
+ * GET /api/whatsapp/webhook
+ * Health check & validasi URL webhook Fonnte
+ */
+router.get('/webhook', (req, res) => {
+  return res.status(200).json({
+    status: 'active',
+    service: 'Smart Riayah Autonomous WhatsApp AI Webhook',
+    timestamp: new Date().toISOString()
+  });
+});
+
+/**
  * POST /api/whatsapp/webhook
  * Menerima callback webhook status pesan atau pesan masuk dari provider WA (Fonnte/Waba)
  * lalu menyiarkannya secara real-time via Supabase Realtime channel 'whatsapp-room'.
