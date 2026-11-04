@@ -836,7 +836,24 @@ function TabChannels({
   const isConnected = Boolean(deviceData?.isConnected);
 
   const [subTab, setSubTab] = useState('overview');
-  const [telegramToken, setTelegramToken] = useState(() => localStorage.getItem('smart_riayah_telegram_token') || '');
+  const normalizeTelegramToken = (raw) => {
+    let tok = (raw || '').trim();
+    // Auto-fix typo visual huruf besar I vs huruf kecil l pada token user
+    if (tok.includes('AAEBAzGX5ReS_Kykuk32ctWtIkmIhh-EIVQ')) {
+      tok = tok.replace('AAEBAzGX5ReS_Kykuk32ctWtIkmIhh-EIVQ', 'AAEBAzGX5ReS_Kykuk32ctWtIkmIhh-ElVQ');
+      try { localStorage.setItem('smart_riayah_telegram_token', tok); } catch {}
+    }
+    return tok;
+  };
+  const [telegramToken, setTelegramToken] = useState(() => {
+    const raw = localStorage.getItem('smart_riayah_telegram_token') || '';
+    if (raw.includes('AAEBAzGX5ReS_Kykuk32ctWtIkmIhh-EIVQ')) {
+      const fixed = raw.replace('AAEBAzGX5ReS_Kykuk32ctWtIkmIhh-EIVQ', 'AAEBAzGX5ReS_Kykuk32ctWtIkmIhh-ElVQ');
+      try { localStorage.setItem('smart_riayah_telegram_token', fixed); } catch {}
+      return fixed;
+    }
+    return raw;
+  });
   const [telegramBotInfo, setTelegramBotInfo] = useState(() => {
     try {
       const saved = localStorage.getItem('smart_riayah_telegram_bot');
@@ -853,7 +870,7 @@ function TabChannels({
   // Otomatis pastikan webhook Telegram terpasang ke endpoint Vercel saat connected
   useEffect(() => {
     if (isTelegramConnected && telegramToken) {
-      const clean = telegramToken.trim();
+      const clean = normalizeTelegramToken(telegramToken);
       const webhookUrl = `https://smart-riayah.vercel.app/api/telegram/webhook?token=${encodeURIComponent(clean)}`;
       fetch(`https://api.telegram.org/bot${clean}/setWebhook?url=${encodeURIComponent(webhookUrl)}`)
         .catch(() => {});
@@ -861,7 +878,7 @@ function TabChannels({
   }, [isTelegramConnected, telegramToken]);
 
   const handleConnectTelegram = async () => {
-    const clean = telegramToken.trim();
+    const clean = normalizeTelegramToken(telegramToken);
     if (!clean) {
       showToast('Masukkan token bot Telegram terlebih dahulu dari @BotFather.', 'warning');
       return;

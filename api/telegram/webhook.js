@@ -66,7 +66,11 @@ export default async function handler(req, res) {
     }
 
     // 4. Kirim balasan otomatis ke pengguna di Telegram
-    const token = req.query?.token || process.env.TELEGRAM_BOT_TOKEN || '9079176204:AAEBAzGX5ReS_Kykuk32ctWtIkmIhh-EIVQ';
+    const token = req.query?.token || process.env.TELEGRAM_BOT_TOKEN;
+    if (!token) {
+      console.warn('⚠️ [Telegram Webhook]: Token bot tidak tersedia di query parameter (?token=...) maupun env.');
+      return res.status(200).json({ ok: true, chat_id: chatId, reply: aiReply, sent: false, note: 'Token missing' });
+    }
     const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
