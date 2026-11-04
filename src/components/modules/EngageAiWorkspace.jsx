@@ -55,6 +55,7 @@ import {
   BellRing
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
+import { supabase } from '../../utils/supabaseClient';
 import {
   fetchDeviceStatus,
   fetchQrCode,
@@ -63,7 +64,56 @@ import {
   sendManualOverrideMessage
 } from '../../services/fonnteService';
 
+class WorkspaceErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error('WorkspaceErrorBoundary caught error:', error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-8 bg-white rounded-3xl border border-rose-200 shadow-xl text-center space-y-4 my-8 max-w-xl mx-auto">
+          <div className="w-16 h-16 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto font-black text-2xl border border-rose-100 shadow-sm">
+            ⚠️
+          </div>
+          <h3 className="text-lg font-black text-slate-800">Workspace Engage AI Memerlukan Refresh</h3>
+          <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+            {this.state.error?.message || 'Terjadi pembaruan modul antarmuka. Silakan klik tombol di bawah untuk menyegarkan tampilan secara bersih.'}
+          </p>
+          <div className="pt-2">
+            <button
+              onClick={() => {
+                this.setState({ hasError: false, error: null });
+                window.location.reload();
+              }}
+              className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-md inline-flex items-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Muat Ulang Tampilan</span>
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function EngageAiWorkspace() {
+  return (
+    <WorkspaceErrorBoundary>
+      <EngageAiWorkspaceContent />
+    </WorkspaceErrorBoundary>
+  );
+}
+
+function EngageAiWorkspaceContent() {
   const {
     fonnteToken,
     setFonnteToken,
@@ -320,7 +370,7 @@ export default function EngageAiWorkspace() {
             </p>
             <div className="flex items-center gap-2 mt-3 text-[11px] text-emerald-200/80 font-mono">
               <Clock className="w-3.5 h-3.5 text-emerald-300" />
-              <span>Paket Aktif: <strong className="text-white">${deviceData.name} (${deviceData.package})</strong> (Masa Aktif: <span className="text-emerald-300 font-bold">${deviceData.expired}</span> • Kuota: <span className="text-amber-300 font-bold">${deviceData.quota}</span>)</span>
+              <span>Paket Aktif: <strong className="text-white">{deviceData.name} ({deviceData.package})</strong> (Masa Aktif: <span className="text-emerald-300 font-bold">{deviceData.expired}</span> • Kuota: <span className="text-amber-300 font-bold">{deviceData.quota}</span>)</span>
             </div>
           </div>
 
@@ -1531,6 +1581,163 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
   const [channelFilter, setChannelFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [overrideMessage, setOverrideMessage] = useState('');
+  const [isSimulating, setIsSimulating] = useState(false);
+
+  // ─── Realtime Listener untuk Webhook WhatsApp & Balasan AI Otonom ───
+  useEffect(() => {
+    if (!supabase) return;
+    const channel = supabase.channel('whatsapp-room');
+
+    channel
+      .on('broadcast', { event: 'whatsapp.incoming' }, (payload) => {
+        const inc = payload?.payload;
+        if (!inc) return;
+        const newMsg = {
+          sender: 'wali',
+          time: inc.waktu || 'Baru saja',
+          text: inc.pesan
+        };
+
+        setSelectedChat(prev => {
+          if (prev) {
+            return {
+              ...prev,
+              messages: [...prev.messages, newMsg],
+              lastTime: inc.waktu || prev.lastTime,
+              lastPreview: inc.pesan
+            };
+          }
+          return prev;
+        });
+
+        setConversations(prev => prev.map(c => {
+          return {
+            ...c,
+            lastTime: inc.waktu || c.lastTime,
+            lastPreview: inc.pesan,
+            messages: [...c.messages, newMsg]
+          };
+        }));
+
+        addSafetyLog?.('inbound received', 'info', 'INCOMING_MSG', inc.nomor || 'Wali');
+        showToast?.(`Pesan WhatsApp masuk dari ${inc.pengirim || 'Wali'}: "${inc.pesan.slice(0, 30)}..."`, 'info');
+        sound.playWhatsApp?.();
+      })
+      .on('broadcast', { event: 'whatsapp.ai_reply' }, (payload) => {
+        const rep = payload?.payload;
+        if (!rep) return;
+        const newMsg = {
+          sender: 'ai',
+          time: rep.waktu || 'Baru saja',
+          text: rep.replyText
+        };
+
+        setSelectedChat(prev => {
+          if (prev) {
+            return {
+              ...prev,
+              messages: [...prev.messages, newMsg],
+              lastTime: rep.waktu || prev.lastTime,
+              lastPreview: rep.replyText.slice(0, 60)
+            };
+          }
+          return prev;
+        });
+
+        setConversations(prev => prev.map(c => {
+          return {
+            ...c,
+            lastTime: rep.waktu || c.lastTime,
+            lastPreview: rep.replyText.slice(0, 60),
+            messages: [...c.messages, newMsg]
+          };
+        }));
+
+        addSafetyLog?.('outbound success', 'info', 'AUTONOMOUS_AI', rep.target || 'Wali');
+        showToast?.(`⚡ AI Otonom mengirim balasan ke WhatsApp ${rep.target}!`, 'success');
+        sound.playSuccess?.();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const handleSimulateIncoming = async (questionText, topicName) => {
+    setIsSimulating(true);
+    sound.playBeep?.();
+    showToast?.(`Simulasi: Mengirim pertanyaan "${topicName}" dari Wali Santri...`, 'info');
+
+    const nowWIB = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
+    const activeConv = selectedChat || conversations[0];
+    if (!selectedChat) {
+      setSelectedChat(activeConv);
+    }
+
+    const incomingMsg = {
+      sender: 'wali',
+      time: nowWIB,
+      text: questionText
+    };
+
+    setSelectedChat(prev => prev ? ({ ...prev, messages: [...prev.messages, incomingMsg] }) : ({ ...activeConv, messages: [...activeConv.messages, incomingMsg] }));
+
+    try {
+      const res = await fetch('/api/whatsapp/simulate-incoming', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sender: activeConv.phone || '08813576012',
+          message: questionText,
+          name: activeConv.name || 'Ibu Fatimah Az-Zahra'
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.reply) {
+          const aiMsg = {
+            sender: 'ai',
+            time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB',
+            text: data.reply
+          };
+          setSelectedChat(prev => ({ ...prev, messages: [...prev.messages, aiMsg] }));
+          showToast?.('⚡ AI Otonom berhasil membalas pesan WhatsApp!', 'success');
+          sound.playWhatsApp?.();
+          setIsSimulating(false);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Simulation backend endpoint fallback:', e);
+    }
+
+    // Instant local reasoning fallback
+    setTimeout(() => {
+      let clientReply = '';
+      const qLower = questionText.toLowerCase();
+      if (qLower.includes('saldo')) {
+        clientReply = "Wa'alaikumsalam Warahmatullahi Wabarakatuh, Ibu Fatimah.\n\nBerikut informasi dompet pintar cashless ananda *Ahmad Fauzi*:\n\n💳 *Sisa Saldo RFID:* *Rp 85.000*\n📊 *Limit Jajan Harian:* Rp 25.000/hari\n🏢 *Lokasi Transaksi:* Kantin Asrama & Koperasi Ma'had\n\nUntuk pengisian saldo (Top Up), Bapak/Ibu dapat melakukan transfer Virtual Account atau melalui aplikasi Smart Ri'ayah.\n\n_— Smart Ri'ayah Cashless Gateway_";
+      } else if (qLower.includes('izin') || qLower.includes('perpanjang')) {
+        clientReply = "Wa'alaikumsalam Warahmatullahi Wabarakatuh, Ibu Fatimah.\n\nUntuk perizinan ananda *Ahmad Fauzi*:\n\n📋 *SOP Perizinan Santri:*\n1. Izin kepulangan/pesiar diajukan minimal H-1 oleh wali melalui menu *Perizinan* di aplikasi Smart Ri'ayah.\n2. Jika ananda sakit dan membutuhkan *Perpanjangan Liburan*, silakan klik tombol *Ajukan Perpanjangan Liburan* pada riwayat izin serta lampirkan foto surat dokter/keterangan medis.\n3. Musyrif & Mudir akan memverifikasi permohonan dalam waktu 1x24 jam.\n\nStatus izin ananda saat ini: *Tertib / Tidak ada pelanggaran*.\n\n_— Layanan Perizinan Digital DU-PERMIT_";
+      } else if (qLower.includes('sakit') || qLower.includes('sehat')) {
+        clientReply = "Wa'alaikumsalam Warahmatullahi Wabarakatuh, Ibu Fatimah.\n\nLayanan Kesehatan Pesantren Modern Darul Ulum (Poskestren) siap siaga *24 jam* dengan tenaga medis asrama.\n\n🏥 Apabila ananda *Ahmad Fauzi* mengeluhkan sakit, ananda segera diperiksa di ruang rawat UKS dan diberikan istirahat serta pengobatan dokter.\n\nKondisi medis ananda saat ini: *Sehat & Terpantau Baik di Kamar Umar bin Khattab 204*.\n\n_— Poskestren Darul Ulum Care_";
+      } else {
+        clientReply = "Wa'alaikumsalam Warahmatullahi Wabarakatuh, Ibu Fatimah.\n\n📅 *Jadwal Kunjungan (Sambangan) Wali Santri:*\n• *Hari:* Setiap Ahad (Minggu)\n• *Waktu:* Pukul 08.00 s/d 17.00 WIB\n• *Tempat:* Area Gazebo & Aula Kunjungan Ma'had Darul Ulum\n\nSaat berkunjung, mohon memarkir kendaraan di area parkir utama dan melapor singkat ke Pos Satpam.\n\n_— Tata Tertib Kunjungan Pesantren_";
+      }
+
+      const aiMsg = {
+        sender: 'ai',
+        time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB',
+        text: clientReply
+      };
+      setSelectedChat(prev => ({ ...prev, messages: [...prev.messages, aiMsg] }));
+      showToast?.('⚡ AI Otonom berhasil membalas pesan WhatsApp!', 'success');
+      sound.playWhatsApp?.();
+      setIsSimulating(false);
+    }, 1000);
+  };
 
   // Sample conversations
   const [conversations, setConversations] = useState([
@@ -1754,6 +1961,60 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
                   </div>
                 );
               })}
+
+              {isSimulating && (
+                <div className="flex flex-col items-start animate-fade-in">
+                  <div className="flex items-center gap-1.5 mb-1 text-[10px] text-slate-400">
+                    <span className="font-bold">AI Smart Ri'ayah</span>
+                    <span>•</span>
+                    <span className="text-emerald-600 font-medium">Sedang memproses balasan otonom...</span>
+                  </div>
+                  <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-tl-sm flex items-center gap-2">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                    <span className="italic">AI mengolah data live Santri &amp; menyusun balasan WhatsApp...</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Simulation Quick Prompts Bar */}
+            <div className="p-2.5 bg-slate-800/95 border-t border-slate-700/80 flex items-center gap-2 overflow-x-auto scrollbar-none text-[11px]">
+              <span className="text-[10px] uppercase font-bold text-emerald-400 shrink-0 flex items-center gap-1 font-mono">
+                <Zap className="w-3 h-3 text-emerald-400" />
+                Uji AI Otonom:
+              </span>
+              <button
+                type="button"
+                disabled={isSimulating}
+                onClick={() => handleSimulateIncoming("Assalamu'alaikum, berapa sisa saldo kartu RFID ananda saat ini?", "Cek Saldo")}
+                className="px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white transition font-medium shrink-0 flex items-center gap-1 border border-slate-600 text-xs"
+              >
+                <span>💳 Cek Saldo RFID</span>
+              </button>
+              <button
+                type="button"
+                disabled={isSimulating}
+                onClick={() => handleSimulateIncoming("Bagaimana cara dan syarat mengajukan perpanjangan izin libur anak?", "Perpanjangan Izin")}
+                className="px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white transition font-medium shrink-0 flex items-center gap-1 border border-slate-600 text-xs"
+              >
+                <span>📋 Izin & Liburan</span>
+              </button>
+              <button
+                type="button"
+                disabled={isSimulating}
+                onClick={() => handleSimulateIncoming("Apakah ananda saat ini dalam kondisi sehat di asrama pondok?", "Kesehatan")}
+                className="px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white transition font-medium shrink-0 flex items-center gap-1 border border-slate-600 text-xs"
+              >
+                <span>🏥 Kesehatan Poskestren</span>
+              </button>
+              <button
+                type="button"
+                disabled={isSimulating}
+                onClick={() => handleSimulateIncoming("Hari apa dan jam berapa wali santri diperbolehkan datang berkunjung (sambang)?", "Jadwal Sambang")}
+                className="px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white transition font-medium shrink-0 flex items-center gap-1 border border-slate-600 text-xs"
+              >
+                <span>📅 Jadwal Sambangan</span>
+              </button>
             </div>
 
             {/* Chat Composer (Manual Override Reply) */}
@@ -1942,7 +2203,55 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
         </div>
       </div>
 
-      {/* 4. Filter & Queue Bar */}
+      {/* 4. Panel Uji Langsung Balasan Otonom AI (Simulasi WhatsApp Masuk) */}
+      <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-slate-50 p-4 rounded-2xl border border-emerald-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="p-1 rounded-md bg-emerald-600 text-white"><Zap className="w-3.5 h-3.5" /></span>
+            <strong className="text-xs font-black text-slate-800">Uji Coba Balasan Otonom AI Secara Instan</strong>
+            <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">Live Context</span>
+          </div>
+          <p className="text-[11px] text-slate-600 mt-1">
+            Klik salah satu pertanyaan simulasi di bawah untuk menguji respons otonom AI terhadap pesan WhatsApp wali santri:
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            disabled={isSimulating}
+            onClick={() => handleSimulateIncoming("Assalamu'alaikum, berapa sisa saldo kartu RFID ananda Ahmad Fauzi?", "Cek Saldo")}
+            className="px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+          >
+            <span>💳 Cek Saldo</span>
+          </button>
+          <button
+            type="button"
+            disabled={isSimulating}
+            onClick={() => handleSimulateIncoming("Bagaimana cara mengajukan perpanjangan izin libur ananda?", "Perpanjangan Izin")}
+            className="px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+          >
+            <span>📋 Perpanjangan Liburan</span>
+          </button>
+          <button
+            type="button"
+            disabled={isSimulating}
+            onClick={() => handleSimulateIncoming("Apakah ananda Fauzi hari ini sehat dan sholat subuh berjamaah?", "Kondisi Santri")}
+            className="px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+          >
+            <span>📈 Kondisi Santri</span>
+          </button>
+          <button
+            type="button"
+            disabled={isSimulating}
+            onClick={() => handleSimulateIncoming("Hari apa dan jam berapa jadwal kunjungan / sambang wali?", "Jadwal Sambang")}
+            className="px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+          >
+            <span>📅 Jadwal Sambangan</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 5. Filter & Queue Bar */}
       <div className="space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-1">

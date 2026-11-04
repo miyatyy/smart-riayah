@@ -1,5 +1,6 @@
 import express from 'express';
 import { broadcastToSupabaseRealtime } from './supabaseBroadcaster.js';
+import { generateAutonomousReply, sendFonnteAutoReply, normalizePhone } from './aiAutonomousResponder.js';
 
 /**
  * ============================================================================
@@ -96,24 +97,57 @@ router.post('/webhook', async (req, res) => {
       });
     }
 
-    // 2. Deteksi pesan masuk (Incoming Message dari Wali)
-    if (payload.message || payload.text) {
+    // 2. Deteksi pesan masuk (Incoming Message dari Wali) & EKSEKUSI AI OTONOM
+    const incomingText = payload.message || payload.text;
+    const sender = payload.sender || payload.phone || payload.target;
+    const senderName = payload.name || payload.sender_name || 'Wali Santri';
+
+    if (incomingText && sender) {
+      const cleanSender = normalizePhone(sender);
+      const nowWIB = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
+
       const incomingData = {
         id: payload.id || `IN-${Date.now()}`,
-        pengirim: payload.name || payload.sender || 'Wali Santri',
-        nomor: payload.sender || payload.phone || '08xxxxxxxxxx',
-        pesan: payload.message || payload.text,
-        waktu: new Date().toLocaleTimeString('id-ID'),
+        pengirim: senderName,
+        nomor: cleanSender,
+        pesan: incomingText,
+        waktu: nowWIB,
         tipe: 'INCOMING_REPLY'
       };
 
+      // Broadcast pesan masuk ke frontend via Supabase Realtime
       await broadcastToSupabaseRealtime('whatsapp.incoming', incomingData);
 
+      // ─── GENERATE BALASAN AI OTONOM (CONTEXT-AWARE SMART RI'AYAH) ───
+      console.log(`🤖 [Menjalankan AI Otonom untuk ${cleanSender}]: "${incomingText}"`);
+      const aiReply = await generateAutonomousReply(cleanSender, incomingText, senderName);
+
+      // Kirim pesan WhatsApp balasan otomatis via Fonnte REST API
+      const dispatchResult = await sendFonnteAutoReply(cleanSender, aiReply);
+
+      const aiReplyData = {
+        id: `AI-${Date.now()}`,
+        target: cleanSender,
+        namaWali: senderName,
+        incomingText: incomingText,
+        replyText: aiReply,
+        waktu: nowWIB,
+        dispatched: dispatchResult.success,
+        mode: 'AUTONOMOUS'
+      };
+
+      // Broadcast balasan AI ke dashboard AI Inbox
+      await broadcastToSupabaseRealtime('whatsapp.ai_reply', aiReplyData);
+
+      // Response ke Fonnte Webhook (Format Resmi Fonnte Auto-Reply)
       return res.json({
         success: true,
-        type: 'incoming_message',
+        type: 'autonomous_reply',
         broadcasted: true,
-        data: incomingData
+        read: true,
+        reply: aiReply,
+        incoming: incomingData,
+        outgoing: aiReplyData
       });
     }
 
@@ -441,6 +475,55 @@ router.post('/fonnte/send', async (req, res) => {
       success: false,
       message: `Gagal mengirim pesan: ${error.message}`
     });
+  }
+});
+
+
+/**
+ * POST /api/whatsapp/simulate-incoming
+ * Endpoint untuk menguji alur Autonomous AI secara langsung dari dashboard
+ */
+router.post('/simulate-incoming', async (req, res) => {
+  const { sender = '08813576012', message = 'Assalamu\'alaikum ustadz, bagaimana kabar ananda Fauzi hari ini?', name = 'Ibu Fatimah Az-Zahra' } = req.body;
+  const cleanSender = normalizePhone(sender);
+  const nowWIB = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
+
+  try {
+    const aiReply = await generateAutonomousReply(cleanSender, message, name);
+    const dispatch = await sendFonnteAutoReply(cleanSender, aiReply);
+
+    const incomingData = {
+      id: `IN-${Date.now()}`,
+      pengirim: name,
+      nomor: cleanSender,
+      pesan: message,
+      waktu: nowWIB,
+      tipe: 'INCOMING_REPLY'
+    };
+
+    const aiReplyData = {
+      id: `AI-${Date.now()}`,
+      target: cleanSender,
+      namaWali: name,
+      incomingText: message,
+      replyText: aiReply,
+      waktu: nowWIB,
+      dispatched: dispatch.success,
+      mode: 'AUTONOMOUS'
+    };
+
+    await broadcastToSupabaseRealtime('whatsapp.incoming', incomingData);
+    await broadcastToSupabaseRealtime('whatsapp.ai_reply', aiReplyData);
+
+    return res.json({
+      success: true,
+      sender: cleanSender,
+      incoming: message,
+      reply: aiReply,
+      dispatched: dispatch.success
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 
