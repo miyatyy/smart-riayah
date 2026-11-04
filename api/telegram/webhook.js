@@ -1,5 +1,10 @@
 import { generateAutonomousReply, isPhoneInManualTakeover } from '../../server/whatsapp-gateway/aiAutonomousResponder.js';
 import { broadcastToSupabaseRealtime } from '../../server/whatsapp-gateway/supabaseBroadcaster.js';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://htjnrpyuzkarigglgrxm.supabase.co';
+const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_WQ7Ix8DuKxlVdv_dnwBspw_cXbdkADI';
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 /**
  * Vercel Serverless Function: /api/telegram/webhook
@@ -44,6 +49,17 @@ export default async function handler(req, res) {
   const nowWIB = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
 
   try {
+    // 0. Catat ke log persistent Supabase messages
+    await supabase.from('messages').insert([{
+      room_id: 'telegram_log',
+      sender_email: 'telegram_webhook@smartriayah.com',
+      sender_name: senderName,
+      sender_role: 'system',
+      message_text: `INCOMING from ${chatId}: "${incomingText}"`,
+      reaction: 'RECEIVED',
+      is_read: false
+    }]).catch(() => {});
+
     // 1. Siarkan pesan masuk Telegram ke dashboard AI Inbox via Supabase Realtime
     const incomingData = {
       id: `TG-${msg.message_id || Date.now()}`,
@@ -69,6 +85,15 @@ export default async function handler(req, res) {
     }
     if (inTakeover) {
       console.log(`⏸️ [Telegram Takeover]: Chat ${chatId} sedang diambil alih manual oleh Admin. AI diistirahatkan.`);
+      await supabase.from('messages').insert([{
+        room_id: 'telegram_log',
+        sender_email: 'telegram_webhook@smartriayah.com',
+        sender_name: 'Takeover Shield',
+        sender_role: 'shield',
+        message_text: `TAKEOVER ACTIVE for ${chatId}. AI reply suppressed.`,
+        reaction: 'SUPPRESSED',
+        is_read: false
+      }]).catch(() => {});
       return res.status(200).json({ ok: true, status: 'manual_takeover' });
     }
 
@@ -95,6 +120,17 @@ export default async function handler(req, res) {
     const tgData = await tgRes.json().catch(() => ({}));
     console.log('📤 [Telegram sendMessage Result]:', JSON.stringify(tgData));
 
+    // Catat hasil pengiriman ke Supabase
+    await supabase.from('messages').insert([{
+      room_id: 'telegram_log',
+      sender_email: 'telegram_webhook@smartriayah.com',
+      sender_name: 'Smart Riayah AI Bot',
+      sender_role: 'bot',
+      message_text: `DISPATCH to ${chatId}: ok=${Boolean(tgData.ok)} - err=${tgData.description || 'none'}`,
+      reaction: tgData.ok ? 'SENT' : 'FAILED',
+      is_read: false
+    }]).catch(() => {});
+
     // 5. Siarkan balasan AI ke dashboard AI Inbox
     const aiReplyData = {
       id: `AI-TG-${Date.now()}`,
@@ -107,16 +143,30 @@ export default async function handler(req, res) {
       channel: 'Telegram Bot',
       mode: 'AUTONOMOUS'
     };
-    await broadcastToSupabaseRealtime('whatsapp.ai_reply', aiReplyData);
+    try {
+      await broadcastToSupabaseRealtime('whatsapp.ai_reply', aiReplyData);
+    } catch (e) {
+      console.warn('Realtime broadcast reply warning:', e.message);
+    }
 
     return res.status(200).json({
       ok: true,
       chat_id: chatId,
       reply: aiReply,
-      sent: Boolean(tgData.ok)
+      sent: Boolean(tgData.ok),
+      telegram_res: tgData
     });
   } catch (err) {
     console.error('❌ [Telegram Webhook Error]:', err);
+    await supabase.from('messages').insert([{
+      room_id: 'telegram_log',
+      sender_email: 'telegram_webhook@smartriayah.com',
+      sender_name: 'Webhook Exception',
+      sender_role: 'error',
+      message_text: `EXCEPTION: ${err.message}`,
+      reaction: 'EXCEPTION',
+      is_read: false
+    }]).catch(() => {});
     return res.status(500).json({ ok: false, error: err.message });
   }
 }
