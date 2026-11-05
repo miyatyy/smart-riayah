@@ -67,6 +67,7 @@ export default function VisitBookingManager({ isCompact = false }) {
     berat_barang_kg: 1.0,
     nama_penjenguk: '',
     status_penjenguk: 'Wali Santri',
+    status_penjenguk_lainnya: '',
     no_wa_penjenguk: '',
     tanggal_kunjungan: new Date().toISOString().slice(0, 10)
   });
@@ -133,8 +134,19 @@ export default function VisitBookingManager({ isCompact = false }) {
       alert('Nama Santri dan Nama Penjenguk wajib diisi!');
       return;
     }
+    if (manualForm.status_penjenguk === 'Lainnya' && !manualForm.status_penjenguk_lainnya?.trim()) {
+      alert('Silakan ketik keterangan status penjenguk lainnya!');
+      return;
+    }
+
+    const finalStatus = manualForm.status_penjenguk === 'Lainnya' && manualForm.status_penjenguk_lainnya?.trim()
+      ? `Lainnya (${manualForm.status_penjenguk_lainnya.trim()})`
+      : manualForm.status_penjenguk;
+
     addVisitBooking({
       ...manualForm,
+      status_penjenguk: finalStatus,
+      status_penjenguk_lainnya: manualForm.status_penjenguk_lainnya?.trim() || '',
       booking_source: 'MANUAL_SATPAM'
     });
     setIsManualModalOpen(false);
@@ -149,6 +161,7 @@ export default function VisitBookingManager({ isCompact = false }) {
       berat_barang_kg: 1.0,
       nama_penjenguk: '',
       status_penjenguk: 'Wali Santri',
+      status_penjenguk_lainnya: '',
       no_wa_penjenguk: '',
       tanggal_kunjungan: new Date().toISOString().slice(0, 10)
     });
@@ -898,6 +911,32 @@ export default function VisitBookingManager({ isCompact = false }) {
                   </select>
                 </div>
               </div>
+
+              {/* Input Spesifik jika memilih status 'Lainnya' */}
+              {manualForm.status_penjenguk === 'Lainnya' && (
+                <div className="bg-amber-50/80 border border-amber-300/80 rounded-2xl p-3 animate-fade-in space-y-1.5 shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-amber-900 text-xs flex items-center gap-1.5">
+                      <span>Ketik Status / Hubungan Lainnya *</span>
+                    </label>
+                    <span className="text-[10px] font-medium text-amber-700 bg-amber-100/70 px-2 py-0.5 rounded-full">
+                      Wajib diisi spesifik
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Contoh: Paman, Alumni, Tetangga, Sopir Jemputan, dll"
+                    value={manualForm.status_penjenguk_lainnya || ''}
+                    onChange={(e) => setManualForm(prev => ({ ...prev, status_penjenguk_lainnya: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-xl border border-amber-300 bg-white font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-xs shadow-xs"
+                    autoFocus
+                  />
+                  <p className="text-[10px] text-amber-700">
+                    💡 Keterangan ini akan langsung dicatat pada data kunjungan santri dan tiket barcode resmi.
+                  </p>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>

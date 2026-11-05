@@ -55,6 +55,7 @@ export default function SecurityVisitGateModule() {
     berat_barang_kg: 1.0,
     nama_penjenguk: '',
     status_penjenguk: 'Wali (Ayah/Ibu)',
+    status_penjenguk_lainnya: '',
     no_wa_penjenguk: '081234567890'
   });
 
@@ -115,9 +116,19 @@ export default function SecurityVisitGateModule() {
       alert('Nama Santri dan Nama Penjenguk wajib diisi!');
       return;
     }
+    if (satpamForm.status_penjenguk === 'Lainnya' && !satpamForm.status_penjenguk_lainnya?.trim()) {
+      alert('Silakan ketik keterangan status hubungan lainnya!');
+      return;
+    }
+
+    const finalStatus = satpamForm.status_penjenguk === 'Lainnya' && satpamForm.status_penjenguk_lainnya?.trim()
+      ? `Lainnya (${satpamForm.status_penjenguk_lainnya.trim()})`
+      : satpamForm.status_penjenguk;
 
     const created = addVisitBooking({
       ...satpamForm,
+      status_penjenguk: finalStatus,
+      status_penjenguk_lainnya: satpamForm.status_penjenguk_lainnya?.trim() || '',
       booking_source: 'MANUAL_SATPAM',
       tanggal_kunjungan: new Date().toISOString().slice(0, 10),
       status_kunjungan: 'Sedang Berkunjung' // Langsung check-in saat diinput satpam
@@ -142,6 +153,7 @@ export default function SecurityVisitGateModule() {
       berat_barang_kg: 1.0,
       nama_penjenguk: '',
       status_penjenguk: 'Wali (Ayah/Ibu)',
+      status_penjenguk_lainnya: '',
       no_wa_penjenguk: '081234567890'
     });
   };
@@ -436,6 +448,32 @@ export default function SecurityVisitGateModule() {
                 />
               </div>
             </div>
+
+            {/* Input Spesifik jika memilih status 'Lainnya' di Pos Satpam */}
+            {satpamForm.status_penjenguk === 'Lainnya' && (
+              <div className="bg-amber-50/80 border border-amber-300/80 rounded-2xl p-3 animate-fade-in space-y-1.5 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-amber-900 text-xs flex items-center gap-1.5">
+                    <span>Ketik Status Hubungan Lainnya *</span>
+                  </label>
+                  <span className="text-[10px] font-medium text-amber-700 bg-amber-100/70 px-2 py-0.5 rounded-full">
+                    Wajib diisi spesifik
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  required
+                  placeholder="Contoh: Paman, Alumni, Tetangga Asal, Sopir Jemputan, dll"
+                  value={satpamForm.status_penjenguk_lainnya || ''}
+                  onChange={(e) => setSatpamForm(prev => ({ ...prev, status_penjenguk_lainnya: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-xl border border-amber-300 bg-white font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-xs shadow-xs"
+                  autoFocus
+                />
+                <p className="text-[10px] text-amber-700">
+                  💡 Status ini akan langsung tersinkron ke log gerbang dan dashboard Admin Ri'ayah.
+                </p>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
               <div>

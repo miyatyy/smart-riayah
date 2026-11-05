@@ -2900,6 +2900,7 @@ export const AppProvider = ({ children }) => {
       berat_barang_kg: parseFloat(bookingData.berat_barang_kg) || 0,
       nama_penjenguk: bookingData.nama_penjenguk || 'Wali Santri',
       status_penjenguk: bookingData.status_penjenguk || 'Wali Santri',
+      status_penjenguk_lainnya: bookingData.status_penjenguk_lainnya || '',
       no_wa_penjenguk: bookingData.no_wa_penjenguk || fonnteTargetNumber || '081234567890',
       rfid_uid: bookingData.rfid_uid || null,
       barcode_token: barcodeToken,
