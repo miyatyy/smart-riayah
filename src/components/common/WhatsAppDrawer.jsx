@@ -33,8 +33,12 @@ export default function WhatsAppDrawer() {
     setUnreadWaCount,
     sendWhatsAppNotification,
     isFonnteEnabled,
-    fonnteTargetNumber
+    fonnteTargetNumber,
+    role
   } = useApp();
+
+  // Hanya tampil untuk role admin_riayah
+  if (role !== 'admin_riayah') return null;
 
   const [testCustomMsg, setTestCustomMsg] = useState('');
   const [showSettings, setShowSettings] = useState(false);

@@ -450,91 +450,63 @@ export default function Sidebar({ onOpenFlutterModal }) {
         {/* ═══ BOTTOM ACTIONS ═══ */}
         <div className={`shrink-0 border-t ${borderColor} px-2 py-3 space-y-1.5`}>
 
-          {/* Live WhatsApp Gateway Button in Sidebar */}
-          {!isCollapsed ? (
-            <button
-              onClick={() => {
-                setActiveRoleTab('whatsapp_manager');
-                if (role !== 'admin_riayah') {
-                  setRole('admin_riayah');
-                }
-                setUnreadWaCount(0);
-                sound.playBeep?.();
-                if (window.innerWidth < 1024) setIsMobileSidebarOpen(false);
-              }}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition group ${
-                isLight
-                  ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-sm'
-                  : 'bg-emerald-950/60 hover:bg-emerald-900/70 text-emerald-300 border border-emerald-800/60 shadow-sm'
-              }`}
-              title="Buka Live WhatsApp Gateway"
-            >
-              <div className="flex items-center gap-2">
-                <div className="relative">
-                  <MessageSquare className="w-3.5 h-3.5 text-emerald-500 group-hover:scale-110 transition" />
-                  {unreadWaCount > 0 && (
-                    <span className="animate-ping absolute -top-1 -right-1.5 bg-rose-500 text-white text-[8px] w-3.5 h-3.5 rounded-full flex items-center justify-center font-bold">
-                      {unreadWaCount}
-                    </span>
-                  )}
-                </div>
-                <span>WhatsApp Gateway</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              </div>
-              <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold ${
-                isLight ? 'bg-emerald-200/70 text-emerald-800' : 'bg-emerald-500/20 text-emerald-300'
-              }`}>
-                {isFonnteEnabled ? 'Live' : 'Simulasi'}
-              </span>
-            </button>
-          ) : (
-            <div className="flex justify-center">
+          {/* Live WhatsApp Gateway Button in Sidebar (HANYA DITAMPILKAN UNTUK ROLE ADMIN RI'AYAH) */}
+          {role === 'admin_riayah' && (
+            !isCollapsed ? (
               <button
                 onClick={() => {
                   setActiveRoleTab('whatsapp_manager');
-                  if (role !== 'admin_riayah') {
-                    setRole('admin_riayah');
-                  }
                   setUnreadWaCount(0);
                   sound.playBeep?.();
+                  if (window.innerWidth < 1024) setIsMobileSidebarOpen(false);
                 }}
-                className={`p-2 rounded-xl transition relative ${
-                  isLight ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700' : 'bg-emerald-950/60 hover:bg-emerald-900/70 text-emerald-400'
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition group ${
+                  isLight
+                    ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-sm'
+                    : 'bg-emerald-950/60 hover:bg-emerald-900/70 text-emerald-300 border border-emerald-800/60 shadow-sm'
                 }`}
                 title="Buka Live WhatsApp Gateway"
               >
-                <MessageSquare className="w-4 h-4" />
-                {unreadWaCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
-                    {unreadWaCount}
-                  </span>
-                )}
-              </button>
-            </div>
-          )}
-
-          {/* IoT Status */}
-          {!isCollapsed ? (
-            <div className={`flex items-center justify-between px-3 py-2 rounded-xl text-[10px] font-mono
-              ${isLight ? 'bg-slate-50 text-slate-500 border border-slate-200' : 'bg-slate-900 text-slate-500 border border-slate-800'}
-            `}>
-              <div className="flex items-center gap-1.5">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <MessageSquare className="w-3.5 h-3.5 text-emerald-500 group-hover:scale-110 transition" />
+                    {unreadWaCount > 0 && (
+                      <span className="animate-ping absolute -top-1 -right-1.5 bg-rose-500 text-white text-[8px] w-3.5 h-3.5 rounded-full flex items-center justify-center font-bold">
+                        {unreadWaCount}
+                      </span>
+                    )}
+                  </div>
+                  <span>WhatsApp Gateway</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                </div>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold ${
+                  isLight ? 'bg-emerald-200/70 text-emerald-800' : 'bg-emerald-500/20 text-emerald-300'
+                }`}>
+                  {isFonnteEnabled ? 'Live' : 'Simulasi'}
                 </span>
-                <Wifi className="w-3 h-3" />
-                <span className="font-semibold">IoT Online</span>
+              </button>
+            ) : (
+              <div className="flex justify-center">
+                <button
+                  onClick={() => {
+                    setActiveRoleTab('whatsapp_manager');
+                    setUnreadWaCount(0);
+                    sound.playBeep?.();
+                  }}
+                  className={`p-2 rounded-xl transition relative ${
+                    isLight ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700' : 'bg-emerald-950/60 hover:bg-emerald-900/70 text-emerald-400'
+                  }`}
+                  title="Buka Live WhatsApp Gateway"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  {unreadWaCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                      {unreadWaCount}
+                    </span>
+                  )}
+                </button>
               </div>
-              <span className="text-emerald-500 font-bold">ESP32-S3</span>
-            </div>
-          ) : (
-            <div className="flex justify-center">
-              <span className="relative flex h-3 w-3" title="IoT Online">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500" />
-              </span>
-            </div>
+            )
           )}
 
           {/* Dev Role Switcher */}

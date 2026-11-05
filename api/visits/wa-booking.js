@@ -187,3 +187,4 @@ function parseBookingMessage(text, sender, senderName) {
     no_wa_penjenguk: sender
   };
 }
+

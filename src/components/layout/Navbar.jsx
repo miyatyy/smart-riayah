@@ -237,25 +237,26 @@ export default function Navbar({ onOpenFlutterModal }) {
 
           <div className="w-px h-5 bg-slate-200 mx-1 hidden sm:block" />
 
-          {/* AI Inbox (Percakapan Realtime WhatsApp & Telegram) */}
-          <NavBtn
-            icon={MessageSquare}
-            onClick={() => {
-              if (navigateToAiInbox) {
-                navigateToAiInbox();
-              } else {
-                if (role !== 'admin_riayah') setRole('admin_riayah');
-                setActiveRoleTab('whatsapp_manager');
-                if (setEngageActiveTab) setEngageActiveTab('inbox');
-                setIsWaDrawerOpen(false);
-                setUnreadWaCount(0);
-                sound.playBeep?.();
-              }
-            }}
-            tooltip="AI Inbox (Live WhatsApp & Telegram)"
-            badge={unreadWaCount}
-            variant="wa"
-          />
+          {/* AI Inbox (Percakapan Realtime WhatsApp & Telegram) - HANYA UNTUK ADMIN RI'AYAH */}
+          {role === 'admin_riayah' && (
+            <NavBtn
+              icon={MessageSquare}
+              onClick={() => {
+                if (navigateToAiInbox) {
+                  navigateToAiInbox();
+                } else {
+                  setActiveRoleTab('whatsapp_manager');
+                  if (setEngageActiveTab) setEngageActiveTab('inbox');
+                  setIsWaDrawerOpen(false);
+                  setUnreadWaCount(0);
+                  sound.playBeep?.();
+                }
+              }}
+              tooltip="AI Inbox (Live WhatsApp & Telegram)"
+              badge={unreadWaCount}
+              variant="wa"
+            />
+          )}
 
           {/* AI Agent */}
           <NavBtn

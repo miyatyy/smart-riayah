@@ -28,7 +28,6 @@ import { sound } from '../../utils/audio';
 import VirtualOledDisplay from '../common/VirtualOledDisplay';
 import RealtimePermitsTable from '../modules/RealtimePermitsTable';
 import RealtimeGateLogsManager from '../modules/RealtimeGateLogsManager';
-import FonnteSettingsBox from '../common/FonnteSettingsBox';
 import SantriActivityAnalytics from '../modules/SantriActivityAnalytics';
 import SecurityVisitGateModule from '../modules/SecurityVisitGateModule';
 import { Package } from 'lucide-react';
@@ -137,9 +136,6 @@ export default function SecurityCommandCenter() {
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[10px] font-mono uppercase bg-slate-100 text-slate-700 border border-slate-200 px-2 py-0.5 rounded font-bold tracking-wider">
                   SECURITY COMMAND CENTER
-                </span>
-                <span className="text-emerald-700 text-xs font-mono font-medium flex items-center gap-1">
-                  <Wifi className="w-3 h-3" /> IoT Turnstile ONLINE
                 </span>
                 <span className="text-slate-600 text-[10px] font-mono flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-full font-semibold">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -322,9 +318,6 @@ export default function SecurityCommandCenter() {
             </p>
           </div>
         </div>
-
-        {/* Live WhatsApp Gateway Fast Settings Box */}
-        <FonnteSettingsBox defaultExpanded={false} />
 
         {/* Hardware Serial Connection Reminder Banner */}
         {!isSerialConnected && (

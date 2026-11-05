@@ -963,3 +963,4 @@ export default function VisitBookingManager({ isCompact = false }) {
     </div>
   );
 }
+

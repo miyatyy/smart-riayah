@@ -34,7 +34,6 @@ import {
 } from 'lucide-react';
 import RfidCardManager from '../modules/RfidCardManager';
 import ExpressPermitKiosk from '../modules/ExpressPermitKiosk';
-import FonnteSettingsBox from '../common/FonnteSettingsBox';
 import SantriActivityAnalytics from '../modules/SantriActivityAnalytics';
 
 export default function SuperAdminDashboard() {
@@ -247,9 +246,6 @@ void loop() {
           )}
         </div>
       </div>
-
-      {/* Live Fonnte WhatsApp Gateway Quick Configuration Box */}
-      <FonnteSettingsBox defaultExpanded={false} />
 
       {/* 2. Navigation Tabs */}
       <div className="scroll-row border-b border-slate-800 gap-2">
