@@ -2519,6 +2519,7 @@ export const AppProvider = ({ children }) => {
         return {
           ...r,
           nomorKamar: updatedData.nomorKamar !== undefined ? updatedData.nomorKamar : r.nomorKamar,
+          lantai: updatedData.lantai !== undefined ? (parseInt(updatedData.lantai, 10) || 1) : (r.lantai || 1),
           kapasitas: updatedData.kapasitas !== undefined ? Math.max(1, parseInt(updatedData.kapasitas) || 1) : r.kapasitas,
           ketuaKamar: updatedData.ketuaKamar !== undefined ? updatedData.ketuaKamar : r.ketuaKamar,
           catatanInspeksi: updatedData.catatanInspeksi !== undefined ? updatedData.catatanInspeksi : r.catatanInspeksi

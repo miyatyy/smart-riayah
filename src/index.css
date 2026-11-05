@@ -100,46 +100,66 @@
   }
 }
 
-/* Print Optimization for Official PDF Log Book Document */
+/* ─── Universal High-Fidelity Print Engine ─── */
 @media print {
+  @page {
+    size: auto;
+    margin: 8mm 10mm;
+  }
+
+  /* Reset all outer scrolling containers so multi-page documents paginate cleanly */
+  html, body, #root, #root > div, main {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    position: static !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+  }
+
   body {
-    background: white !important;
-    color: black !important;
-    font-size: 11pt;
-  }
-  
-  /* Hide all app chrome, sidebars, buttons, and landing elements during print */
-  body * {
-    visibility: hidden;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    font-size: 10pt;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
-  /* Make only the print container and its descendants visible */
-  #printable-logbook-document,
-  #printable-logbook-document *,
-  #printable-gatelog-document,
-  #printable-gatelog-document * {
-    visibility: visible;
+  /* Force background colors and borders to print properly */
+  *, *::before, *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
   }
 
-  #printable-logbook-document,
-  #printable-gatelog-document {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    margin: 0;
-    padding: 0;
-    background: white !important;
-    color: black !important;
+  /* Hide app chrome: sidebar, navbar, drawer, modals, chat bubbles, buttons */
+  header, aside, nav, [role="navigation"], .no-print, [data-no-print="true"], .pb-fab {
+    display: none !important;
+  }
+
+  /* Universal print helpers */
+  .print-only {
     display: block !important;
   }
 
-  @page {
-    size: A4 landscape;
-    margin: 12mm 15mm 12mm 15mm;
+  .break-inside-avoid {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
   }
 
-  .no-print {
-    display: none !important;
+  .break-after-page {
+    break-after: page !important;
+    page-break-after: always !important;
+  }
+
+  /* Legacy standalone documents visibility */
+  #printable-logbook-document,
+  #printable-gatelog-document {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
   }
 }

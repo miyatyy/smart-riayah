@@ -388,7 +388,7 @@ function EngageAiWorkspaceContent() {
       )}
 
       {/* ─── A. TOP BANNER CARD & PILL TABS ─── */}
-      <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-900 rounded-2xl p-6 text-white shadow-lg border border-emerald-700/50 relative overflow-hidden">
+      <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-900 rounded-2xl p-6 text-white shadow-lg border border-emerald-700/50 relative overflow-hidden no-print">
         {/* Subtle decorative background blur */}
         <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute right-40 -top-10 w-48 h-48 bg-teal-400/10 rounded-full blur-2xl pointer-events-none" />
@@ -4059,23 +4059,29 @@ function TabReports({ showToast, deviceData }) {
         @media print {
           @page {
             size: A4 portrait;
-            margin: 10mm 12mm;
+            margin: 8mm 10mm;
           }
-          body * {
-            visibility: hidden;
+          html, body, #root, #root > div, main {
+            overflow: visible !important;
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+            position: static !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            background: #ffffff !important;
           }
-          #printable-report-area, #printable-report-area * {
-            visibility: visible;
+          header, aside, nav, [role="navigation"], .no-print, [data-no-print="true"], .pb-fab {
+            display: none !important;
           }
           #printable-report-area {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
+            position: static !important;
+            width: 100% !important;
             background: #ffffff !important;
             color: #0f172a !important;
             padding: 0 !important;
             margin: 0 !important;
+            display: block !important;
           }
           .no-print {
             display: none !important;
@@ -4084,8 +4090,33 @@ function TabReports({ showToast, deviceData }) {
             display: block !important;
           }
           .break-inside-avoid {
-            page-break-inside: avoid;
-            break-inside: avoid;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+          .break-before-page {
+            page-break-before: always !important;
+            break-before: page !important;
+          }
+          table {
+            border-collapse: collapse !important;
+            width: 100% !important;
+          }
+          thead {
+            display: table-header-group !important;
+          }
+          tr {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+          th, td {
+            border: 1px solid #cbd5e1 !important;
+          }
+          th {
+            background-color: #f1f5f9 !important;
+          }
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
         }
         .print-only {
@@ -4260,7 +4291,7 @@ function TabReports({ showToast, deviceData }) {
             </div>
           </div>
 
-          <div className="w-full h-[280px] pt-2">
+          <div className="w-full h-[280px] print:h-[220px] pt-2">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={activeChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <defs>
@@ -4313,7 +4344,7 @@ function TabReports({ showToast, deviceData }) {
         </div>
 
         {/* 4. Tiga Diagram Persentase Bulat (Donut Charts) */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 break-inside-avoid">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 break-inside-avoid print:grid-cols-3 print:gap-3">
           {/* Donut 1: Rasio AI vs Manual */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
             <div>
@@ -4545,7 +4576,7 @@ function TabReports({ showToast, deviceData }) {
           </div>
 
           {/* Tabel Tabulasi Rinci */}
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto print:overflow-visible">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-100 text-slate-600 uppercase text-[10px] font-extrabold border-b border-slate-200 tracking-wider">
                 <tr>

@@ -355,7 +355,7 @@ export default function AdminRiayahDashboard() {
     <div className="space-y-4 sm:space-y-6 pb-24">
       
       {/* 1. Header Admin Ri'ayah */}
-      <div className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4 no-print">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shadow-xs">
             <Wrench className="w-6 h-6" />
@@ -413,7 +413,7 @@ export default function AdminRiayahDashboard() {
       </div>
 
       {/* 2. Navigation Tabs (Clean Responsive Horizontal Bar) */}
-      <div className="scroll-row border-b border-slate-200 gap-1 pb-1 text-xs">
+      <div className="scroll-row border-b border-slate-200 gap-1 pb-1 text-xs no-print">
         <button
           onClick={() => { setActiveTab('rooms'); setActiveScanMode(null); }}
           className={`flex items-center gap-2 py-2.5 px-3.5 font-bold transition rounded-t-xl shrink-0 ${
@@ -1442,8 +1442,8 @@ export default function AdminRiayahDashboard() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
                   <label className="block text-slate-700 mb-1 font-semibold">Nomor Kamar</label>
                   <input
                     type="text"
@@ -1455,14 +1455,29 @@ export default function AdminRiayahDashboard() {
                 </div>
 
                 <div>
-                  <label className="block text-slate-700 mb-1 font-semibold">Kapasitas (Kasur)</label>
+                  <label className="block text-slate-700 mb-1 font-semibold">Lantai (LT)</label>
                   <input
                     type="number"
-                    value={newRoomForm.kapasitas}
-                    onChange={(e) => setNewRoomForm({ ...newRoomForm, kapasitas: e.target.value })}
-                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600"
+                    min="1"
+                    max="20"
+                    value={newRoomForm.lantai || 1}
+                    onChange={(e) => setNewRoomForm({ ...newRoomForm, lantai: parseInt(e.target.value) || 1 })}
+                    placeholder="1"
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-mono font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 mb-1 font-semibold">Kapasitas (Kasur)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={newRoomForm.kapasitas}
+                  onChange={(e) => setNewRoomForm({ ...newRoomForm, kapasitas: e.target.value })}
+                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600"
+                />
               </div>
 
               <div>

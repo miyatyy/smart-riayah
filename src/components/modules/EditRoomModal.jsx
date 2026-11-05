@@ -7,7 +7,8 @@ import {
   UserCheck, 
   ClipboardList, 
   Check, 
-  AlertCircle 
+  AlertCircle,
+  Layers
 } from 'lucide-react';
 
 /**
@@ -21,6 +22,7 @@ import {
 export default function EditRoomModal({ isOpen, room, onClose, onSave }) {
   const [formData, setFormData] = useState({
     nomorKamar: '',
+    lantai: 1,
     kapasitas: 8,
     ketuaKamar: '',
     catatanInspeksi: ''
@@ -34,6 +36,7 @@ export default function EditRoomModal({ isOpen, room, onClose, onSave }) {
     if (room) {
       setFormData({
         nomorKamar: room.nomorKamar || '',
+        lantai: room.lantai || 1,
         kapasitas: room.kapasitas || 8,
         ketuaKamar: room.ketuaKamar || '',
         catatanInspeksi: room.catatanInspeksi || ''
@@ -71,6 +74,12 @@ export default function EditRoomModal({ isOpen, room, onClose, onSave }) {
     if (!formData.nomorKamar.trim()) {
       newErrors.nomorKamar = 'Nama / nomor kamar wajib diisi';
     }
+    const lt = parseInt(formData.lantai);
+    if (isNaN(lt) || lt < 1) {
+      newErrors.lantai = 'Lantai minimal 1';
+    } else if (lt > 20) {
+      newErrors.lantai = 'Lantai maksimal 20';
+    }
     const cap = parseInt(formData.kapasitas);
     if (isNaN(cap) || cap < 1) {
       newErrors.kapasitas = 'Kapasitas minimal 1 orang / ranjang';
@@ -95,6 +104,7 @@ export default function EditRoomModal({ isOpen, room, onClose, onSave }) {
     try {
       onSave(room.id, {
         nomorKamar: formData.nomorKamar.trim(),
+        lantai: parseInt(formData.lantai) || 1,
         kapasitas: parseInt(formData.kapasitas),
         ketuaKamar: formData.ketuaKamar.trim(),
         catatanInspeksi: formData.catatanInspeksi.trim()
@@ -168,41 +178,73 @@ export default function EditRoomModal({ isOpen, room, onClose, onSave }) {
             )}
           </div>
 
-          {/* Input 2: Kapasitas */}
-          <div>
-            <label className="block font-bold text-slate-800 mb-1.5 flex items-center gap-1.5">
-              <Users className="w-3.5 h-3.5 text-emerald-600" />
-              Kapasitas Maksimal (Kasur / Santri)
-              <span className="text-rose-500">*</span>
-            </label>
-            <div className="relative">
-              <input
-                type="number"
-                min="1"
-                max="50"
-                value={formData.kapasitas}
-                onChange={(e) => handleChange('kapasitas', e.target.value)}
-                placeholder="8"
-                className={`w-full bg-slate-50/70 border rounded-xl px-3.5 py-2.5 text-slate-900 font-mono font-bold text-sm focus:bg-white focus:outline-none focus:ring-2 transition-all ${
-                  errors.kapasitas 
-                    ? 'border-rose-300 focus:border-rose-500 focus:ring-rose-500/20' 
-                    : 'border-slate-200 focus:border-emerald-600 focus:ring-emerald-500/20'
-                }`}
-              />
-              <span className="absolute right-3.5 top-2.5 text-slate-400 font-medium text-xs pointer-events-none">
-                Kasur
-              </span>
+          {/* Grid: Lantai & Kapasitas */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Input Lantai */}
+            <div>
+              <label className="block font-bold text-slate-800 mb-1.5 flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-emerald-600" />
+                Lantai Asrama (LT)
+                <span className="text-rose-500">*</span>
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={formData.lantai}
+                  onChange={(e) => handleChange('lantai', e.target.value)}
+                  placeholder="1"
+                  className={`w-full bg-slate-50/70 border rounded-xl px-3.5 py-2.5 text-slate-900 font-mono font-bold text-sm focus:bg-white focus:outline-none focus:ring-2 transition-all ${
+                    errors.lantai 
+                      ? 'border-rose-300 focus:border-rose-500 focus:ring-rose-500/20' 
+                      : 'border-slate-200 focus:border-emerald-600 focus:ring-emerald-500/20'
+                  }`}
+                />
+                <span className="absolute right-3.5 top-2.5 text-slate-400 font-medium text-xs pointer-events-none">
+                  Lt. {formData.lantai || 1}
+                </span>
+              </div>
+              {errors.lantai && (
+                <p className="text-[11px] text-rose-500 mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  {errors.lantai}
+                </p>
+              )}
             </div>
-            {errors.kapasitas ? (
-              <p className="text-[11px] text-rose-500 mt-1 flex items-center gap-1">
-                <AlertCircle className="w-3 h-3" />
-                {errors.kapasitas}
-              </p>
-            ) : (
-              <span className="text-[10px] text-slate-400 mt-1 block">
-                *Saat ini dihuni oleh {room.terisi || 0} santri aktif.
-              </span>
-            )}
+
+            {/* Input Kapasitas */}
+            <div>
+              <label className="block font-bold text-slate-800 mb-1.5 flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-emerald-600" />
+                Kapasitas (Kasur)
+                <span className="text-rose-500">*</span>
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={formData.kapasitas}
+                  onChange={(e) => handleChange('kapasitas', e.target.value)}
+                  placeholder="8"
+                  className={`w-full bg-slate-50/70 border rounded-xl px-3.5 py-2.5 text-slate-900 font-mono font-bold text-sm focus:bg-white focus:outline-none focus:ring-2 transition-all ${
+                    errors.kapasitas 
+                      ? 'border-rose-300 focus:border-rose-500 focus:ring-rose-500/20' 
+                      : 'border-slate-200 focus:border-emerald-600 focus:ring-emerald-500/20'
+                  }`}
+                />
+                <span className="absolute right-3.5 top-2.5 text-slate-400 font-medium text-xs pointer-events-none">
+                  Kasur
+                </span>
+              </div>
+              {errors.kapasitas && (
+                <p className="text-[11px] text-rose-500 mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  {errors.kapasitas}
+                </p>
+              )}
+            </div>
           </div>
 
           {/* Input 3: Ketua Kamar */}
