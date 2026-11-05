@@ -3823,11 +3823,34 @@ function TabReports({ showToast, deviceData }) {
     { name: 'Telegram Bot', value: 35, count: 500, color: '#0284c7' },
   ];
 
+  // Helper untuk Mendapatkan Nama Hari (Senin - Minggu)
+  const getHariName = (dateStr) => {
+    try {
+      if (!dateStr) return 'Rabu';
+      const months = { jan: 0, feb: 1, mar: 2, apr: 3, mei: 4, jun: 5, jul: 6, agu: 7, sep: 8, okt: 9, nov: 10, des: 11 };
+      const parts = dateStr.trim().split(/\s+/);
+      if (parts.length >= 3) {
+        const day = parseInt(parts[0], 10);
+        const mKey = parts[1].toLowerCase().slice(0, 3);
+        const year = parseInt(parts[2], 10);
+        if (!isNaN(day) && months[mKey] !== undefined && !isNaN(year)) {
+          return new Date(year, months[mKey], day).toLocaleDateString('id-ID', { weekday: 'long' });
+        }
+      }
+      const d = new Date(dateStr);
+      if (!isNaN(d.getTime())) return d.toLocaleDateString('id-ID', { weekday: 'long' });
+      return 'Rabu';
+    } catch {
+      return 'Rabu';
+    }
+  };
+
   // 3. Tabulasi Log Rinci Pesan Real-Time
   const rawLogRows = [
     {
       id: 'LOG-001',
       time: '16:15 WIB',
+      hari: 'Rabu',
       date: '04 Nov 2026',
       wali: 'Ibu Fatimah Az-Zahra',
       santri: 'Ahmed Fauzi (Kamar Umar 204)',
@@ -3844,6 +3867,7 @@ function TabReports({ showToast, deviceData }) {
     {
       id: 'LOG-002',
       time: '16:08 WIB',
+      hari: 'Rabu',
       date: '04 Nov 2026',
       wali: 'Miya Nurmiyaty',
       santri: 'Ananda Santri (Asrama Darul Ulum)',
@@ -3860,6 +3884,7 @@ function TabReports({ showToast, deviceData }) {
     {
       id: 'LOG-003',
       time: '15:45 WIB',
+      hari: 'Rabu',
       date: '04 Nov 2026',
       wali: 'Bpk. Hendra Gunawan',
       santri: 'Muhammad Rayhan (Kamar Abu Bakar 102)',
@@ -3876,6 +3901,7 @@ function TabReports({ showToast, deviceData }) {
     {
       id: 'LOG-004',
       time: '15:20 WIB',
+      hari: 'Rabu',
       date: '04 Nov 2026',
       wali: 'Ibu Siti Khadijah',
       santri: 'Aisyah Putri (Kamar Khadijah 105)',
@@ -3892,6 +3918,7 @@ function TabReports({ showToast, deviceData }) {
     {
       id: 'LOG-005',
       time: '14:50 WIB',
+      hari: 'Rabu',
       date: '04 Nov 2026',
       wali: 'Bpk. Bambang Sudarsono',
       santri: 'Muhammad Fatih Robbani (Kamar Umar 204)',
@@ -3908,6 +3935,7 @@ function TabReports({ showToast, deviceData }) {
     {
       id: 'LOG-006',
       time: '14:10 WIB',
+      hari: 'Rabu',
       date: '04 Nov 2026',
       wali: 'Hj. Nuraini',
       santri: 'Aisyah Putri Azzahra (Kamar Khadijah 102)',
@@ -3924,6 +3952,7 @@ function TabReports({ showToast, deviceData }) {
     {
       id: 'LOG-007',
       time: '13:30 WIB',
+      hari: 'Rabu',
       date: '04 Nov 2026',
       wali: 'Drs. Subroto',
       santri: 'Rayhan Dwi Prasetyo (Kamar Ali 105)',
@@ -3940,6 +3969,7 @@ function TabReports({ showToast, deviceData }) {
     {
       id: 'LOG-008',
       time: '12:45 WIB',
+      hari: 'Rabu',
       date: '04 Nov 2026',
       wali: 'Ir. H. Thohir',
       santri: 'Fatima Zahra El-Farabi (Kamar Aisyah 201)',
@@ -3956,6 +3986,7 @@ function TabReports({ showToast, deviceData }) {
     {
       id: 'LOG-009',
       time: '11:15 WIB',
+      hari: 'Rabu',
       date: '04 Nov 2026',
       wali: 'Ibu Maryam',
       santri: 'Umar Faruq (Kamar Utsman 101)',
@@ -3972,6 +4003,7 @@ function TabReports({ showToast, deviceData }) {
     {
       id: 'LOG-010',
       time: '10:05 WIB',
+      hari: 'Rabu',
       date: '04 Nov 2026',
       wali: 'Bpk. Agus Waluyo',
       santri: 'Zaidan Ali (Kamar Abu Bakar 104)',
@@ -4016,9 +4048,10 @@ function TabReports({ showToast, deviceData }) {
     setIsExporting(true);
     sound.playBeep?.();
     try {
-      const headers = ['ID Log', 'Tanggal', 'Waktu (WIB)', 'Wali Santri', 'Santri & Asrama', 'Nomor / ID', 'Channel', 'Kategori', 'Pesan Inbound', 'Balasan Outbound', 'Status', 'Handling', 'Latensi', 'Safety Score'];
+      const headers = ['ID Log', 'Hari', 'Tanggal', 'Waktu (WIB)', 'Wali Santri', 'Santri & Asrama', 'Nomor / ID', 'Channel', 'Kategori', 'Pesan Inbound', 'Balasan Outbound', 'Status', 'Handling', 'Latensi', 'Safety Score'];
       const rows = filteredLogs.map(r => [
         `"${r.id}"`,
+        `"${r.hari || getHariName(r.date)}"`,
         `"${r.date}"`,
         `"${r.time}"`,
         `"${r.wali}"`,
@@ -4580,7 +4613,7 @@ function TabReports({ showToast, deviceData }) {
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-100 text-slate-600 uppercase text-[10px] font-extrabold border-b border-slate-200 tracking-wider">
                 <tr>
-                  <th className="py-2.5 px-3">Waktu</th>
+                  <th className="py-2.5 px-3">Hari, Tanggal &amp; Waktu</th>
                   <th className="py-2.5 px-3">Wali &amp; Santri</th>
                   <th className="py-2.5 px-3">Channel</th>
                   <th className="py-2.5 px-3">Kategori</th>
@@ -4603,7 +4636,12 @@ function TabReports({ showToast, deviceData }) {
                     <tr key={log.id} className="hover:bg-slate-50/70 transition">
                       <td className="py-3 px-3 whitespace-nowrap">
                         <strong className="block text-slate-900 font-mono text-[11px]">{log.time}</strong>
-                        <span className="text-[10px] text-slate-400">{log.date}</span>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <span className="px-1.5 py-0.5 rounded text-[9.5px] font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-200 uppercase tracking-wide">
+                            {log.hari || getHariName(log.date)}
+                          </span>
+                          <span className="text-[10.5px] text-slate-600 font-medium">{log.date}</span>
+                        </div>
                       </td>
 
                       <td className="py-3 px-3">
