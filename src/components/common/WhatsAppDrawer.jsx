@@ -153,7 +153,7 @@ export default function WhatsAppDrawer() {
               </button>
               <button
                 onClick={() => setShowSettings(!showSettings)}
-                title="Buka / Tutup Pengaturan Fonnte Gateway"
+                title="Buka / Tutup Pengaturan WhatsApp Gateway"
                 className={`p-1.5 rounded-full transition ${
                   showSettings ? 'bg-emerald-800 text-gold-300' : 'hover:bg-emerald-800 text-emerald-200'
                 }`}
@@ -196,7 +196,7 @@ export default function WhatsAppDrawer() {
                 onClick={() => setShowSettings(!showSettings)}
                 className="text-[10px] bg-emerald-950/60 hover:bg-emerald-950 text-emerald-200 px-2 py-0.5 rounded transition flex items-center gap-1 font-mono font-bold"
               >
-                <span>{showSettings ? 'Tutup' : '⚙️ Fonnte'}</span>
+                <span>{showSettings ? 'Tutup' : '⚙️ Gateway'}</span>
               </button>
             </div>
           </div>
@@ -226,7 +226,7 @@ export default function WhatsAppDrawer() {
             {/* Encryption notice */}
             <div className="text-center my-1">
               <span className="bg-[#ffeecd] text-slate-700 text-[10px] px-3 py-1 rounded-md shadow-sm border border-amber-200 inline-block font-sans">
-                🔒 Terhubung otomatis ke API Fonnte & Sensor RFID ESP32-S3 Smart Turnstile.
+                🔒 Terhubung otomatis ke API WhatsApp &amp; Sensor RFID ESP32-S3 Smart Turnstile.
               </span>
             </div>
 

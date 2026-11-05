@@ -1070,10 +1070,10 @@ export const AppProvider = ({ children }) => {
 
   const testFonnteWhatsApp = async () => {
     const target = fonnteTargetNumber || '08813576012';
-    const testMsg = `📲 *[TES KONEKSI LIVE WHATSAPP GATEWAY - FONNTE]*\nAssalamu'alaikum Warahmatullahi Wabarakatuh.\n\nSistem Real-Time IoT Smart Gate & Smart Ri'ayah Pesantren Modern Darul Ulum berhasil terhubung ke Fonnte API Gateway!\n\n• Waktu Pengujian: *${getNowWIB()}*\n• Target Uji: *${target}*\n• Endpoint: *https://api.fonnte.com/send*\n• Status Gateway: *ONLINE & TERVERIFIKASI*\n\n_Pesan ini dikirim otomatis untuk validasi latensi & konektivitas data jurnal ilmiah._`;
+    const testMsg = `📲 *[TES KONEKSI LIVE WHATSAPP GATEWAY]*\nAssalamu'alaikum Warahmatullahi Wabarakatuh.\n\nSistem Real-Time IoT Smart Gate & Smart Ri'ayah Pesantren Modern Darul Ulum berhasil terhubung ke WhatsApp Gateway Pesantren!\n\n• Waktu Pengujian: *${getNowWIB()}*\n• Target Uji: *${target}*\n• Status Gateway: *ONLINE & TERVERIFIKASI*\n\n_Pesan ini dikirim otomatis untuk validasi latensi & konektivitas data jurnal ilmiah._`;
     
     await sendWhatsAppNotification(
-      `Pengujian Fonnte API (${target})`,
+      `Pengujian WhatsApp Gateway (${target})`,
       target,
       'GATEWAY_TEST',
       testMsg

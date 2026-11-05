@@ -182,7 +182,7 @@ export default function VisitBookingManager({ isCompact = false }) {
               <span>Manajemen Kunjungan, Titipan Barang &amp; Booking WA</span>
             </h2>
             <p className="text-xs sm:text-sm text-emerald-100/80 mt-1 max-w-2xl leading-relaxed">
-              Pusat kendali operasional sambangan santri terintegrasi WhatsApp Gateway Fonnte, sistem verifikasi barcode digital satpam, dan audit titipan barang harian.
+              Pusat kendali operasional sambangan santri terintegrasi WhatsApp Gateway, sistem verifikasi barcode digital satpam, dan audit titipan barang harian.
             </p>
           </div>
 
@@ -768,7 +768,7 @@ export default function VisitBookingManager({ isCompact = false }) {
             </div>
 
             <p className="text-xs text-slate-600 leading-relaxed">
-              Pilih skenario simulasi pesan yang dikirimkan oleh Wali Santri ke nomor WhatsApp Gateway Fonnte pesantren:
+              Pilih skenario simulasi pesan yang dikirimkan oleh Wali Santri ke nomor WhatsApp Gateway pesantren:
             </p>
 
             <div className="space-y-3">

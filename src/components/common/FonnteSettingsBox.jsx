@@ -55,7 +55,7 @@ export default function FonnteSettingsBox({ variant = 'compact', defaultExpanded
           </div>
           <div>
             <h4 className="text-xs font-black text-white tracking-wide flex items-center gap-1.5">
-              <span>LIVE FONNTE WHATSAPP GATEWAY</span>
+              <span>LIVE WHATSAPP GATEWAY</span>
               <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold ${
                 isFonnteEnabled 
                   ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' 
@@ -72,7 +72,7 @@ export default function FonnteSettingsBox({ variant = 'compact', defaultExpanded
 
         <div className="flex items-center gap-2">
           {/* Toggle Switch */}
-          <label className="flex items-center cursor-pointer select-none" title="Aktifkan / Nonaktifkan Pengiriman WhatsApp Asli via Fonnte">
+          <label className="flex items-center cursor-pointer select-none" title="Aktifkan / Nonaktifkan Pengiriman WhatsApp Asli via Gateway">
             <div className="relative">
               <input
                 type="checkbox"
@@ -106,12 +106,12 @@ export default function FonnteSettingsBox({ variant = 'compact', defaultExpanded
         <div className="pt-3 space-y-3">
           {/* Grid Input: Token & Target Number */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {/* Input Fonnte API Token */}
+            {/* Input WhatsApp API Token */}
             <div>
               <label className="text-[10px] font-bold text-slate-300 flex items-center justify-between mb-1">
                 <span className="flex items-center gap-1">
                   <Key className="w-3 h-3 text-emerald-400" />
-                  Fonnte API Token:
+                  WhatsApp API Token:
                 </span>
                 <button
                   type="button"
@@ -189,7 +189,7 @@ export default function FonnteSettingsBox({ variant = 'compact', defaultExpanded
               {isSendingFonnte ? (
                 <>
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Mengirim via Fonnte...</span>
+                  <span>Mengirim via WhatsApp...</span>
                 </>
               ) : (
                 <>
@@ -203,7 +203,7 @@ export default function FonnteSettingsBox({ variant = 'compact', defaultExpanded
           <div className="text-[10px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-800/80">
             <span className="flex items-center gap-1">
               <Sparkles className="w-3 h-3 text-amber-400" />
-              Endpoint: <code className="text-cyan-300 font-mono">POST https://api.fonnte.com/send</code>
+              Endpoint: <code className="text-cyan-300 font-mono">POST /api/whatsapp/send</code>
             </span>
             <span className="text-emerald-400/80 font-mono">
               Country Code: 62 (Indonesia)

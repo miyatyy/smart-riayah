@@ -914,7 +914,7 @@ export default function RfidCardManager({ isModal = false, onClose = () => {}, d
                       1. Kontak Wali Santri (Terkoneksi WA Gateway)
                     </span>
                     <span className="text-[10px] text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full font-bold">
-                      Fonnte API Ready
+                      WhatsApp API Ready
                     </span>
                   </div>
 
@@ -940,7 +940,7 @@ export default function RfidCardManager({ isModal = false, onClose = () => {}, d
                             ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                             : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
                         }`}
-                        title="Kirim pesan uji coba ke nomor baru ini via Fonnte"
+                        title="Kirim pesan uji coba ke nomor baru ini via WhatsApp"
                       >
                         {isTestingWa ? (
                           <>

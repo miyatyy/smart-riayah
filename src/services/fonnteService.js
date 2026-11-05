@@ -90,7 +90,7 @@ export async function fetchDeviceStatus(customToken = null) {
         event: 'device disconnected',
         severity: 'warning',
         timestamp: new Date().toISOString(),
-        details: 'Perangkat WhatsApp terdeteksi terputus dari server Fonnte'
+        details: 'Perangkat WhatsApp terdeteksi terputus dari server WhatsApp'
       } : null
     };
   } catch (directErr) {
@@ -110,7 +110,7 @@ export async function fetchDeviceStatus(customToken = null) {
         event: 'device disconnected',
         severity: 'warning',
         timestamp: new Date().toISOString(),
-        details: `Koneksi ke server Fonnte gagal: ${directErr.message}`
+        details: `Koneksi ke server WhatsApp gagal: ${directErr.message}`
       }
     };
   }
@@ -163,7 +163,7 @@ export async function fetchQrCode(whatsappNumber = '', customToken = null) {
         status: 'qr',
         qrImage: directData.url.startsWith('data:image') ? directData.url : `data:image/png;base64,${directData.url}`,
         code: directData.code || null,
-        message: 'QR Code resmi Fonnte berhasil dimuat',
+        message: 'QR Code resmi WhatsApp berhasil dimuat',
         raw: directData
       };
     }
@@ -182,7 +182,7 @@ export async function fetchQrCode(whatsappNumber = '', customToken = null) {
     return {
       success: false,
       status: 'error',
-      message: directData.reason || directData.message || 'Gagal memuat QR Code dari Fonnte',
+      message: directData.reason || directData.message || 'Gagal memuat QR Code WhatsApp',
       raw: directData
     };
   } catch (directErr) {
@@ -246,7 +246,7 @@ export async function validateWhatsappNumber(phoneNumber, customToken = null) {
         success: false,
         isDeviceConnected: false,
         phone: normalized,
-        message: data.reason || 'Perangkat Fonnte sedang terputus. Scan QR terlebih dahulu untuk validasi.',
+        message: data.reason || 'Perangkat WhatsApp sedang terputus. Scan QR terlebih dahulu untuk validasi.',
         raw: data
       };
     }
@@ -317,7 +317,7 @@ export async function disconnectFonnteDevice(customToken = null) {
         event: 'device disconnected (manual)',
         severity: 'warning',
         timestamp: new Date().toISOString(),
-        details: 'Admin melakukan pemutusan manual tautan Fonnte dari dashboard'
+        details: 'Admin melakukan pemutusan manual tautan WhatsApp dari dashboard'
       },
       raw: directData
     };

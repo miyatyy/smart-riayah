@@ -138,7 +138,7 @@ function getMenuItems(role, { permits, rooms, santriList, blacklistedUids, gateL
         { id: 'express_kiosk', label: 'Kiosk Izin', icon: Zap, badge: 'Cepat' },
         { id: 'visit_bookings', label: 'Kunjungan Tamu', icon: Calendar, badge: 'QR Pass' },
         { id: 'gate_logs', label: 'Log Gerbang', icon: ClipboardList, badge: `${gateLogs.length}` },
-        { id: 'whatsapp_manager', label: 'WhatsApp', icon: Smartphone, badge: 'Fonnte' },
+        { id: 'whatsapp_manager', label: 'WhatsApp', icon: Smartphone, badge: 'Live' },
         { id: 'ai_analytics', label: 'AI Evaluasi', icon: Sparkles, badge: 'AI', highlight: true },
       ];
     case 'parent':

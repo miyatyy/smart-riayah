@@ -379,7 +379,7 @@ export default function FonnteDeviceManager() {
             <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
               <span>Devices</span>
               <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
-                Real-Time Fonnte Gateway
+                Real-Time WhatsApp Gateway
               </span>
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -392,7 +392,7 @@ export default function FonnteDeviceManager() {
               onClick={syncWithFonnteApi}
               disabled={isSyncing}
               className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition border border-slate-200"
-              title="Sinkronisasi Status dengan Fonnte API"
+              title="Sinkronisasi Status WhatsApp Gateway"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-teal-600' : ''}`} />
               <span>{isSyncing ? 'Sinkron...' : 'Sync Status'}</span>
@@ -492,7 +492,7 @@ export default function FonnteDeviceManager() {
                       <button
                         onClick={() => handleDisconnect(item)}
                         className="p-2 rounded-lg bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-200 hover:border-rose-300 transition shadow-xs"
-                        title="Disconnect: Putus koneksi perangkat dari Fonnte"
+                        title="Disconnect: Putus koneksi perangkat"
                       >
                         <Power className="w-3.5 h-3.5" />
                       </button>
@@ -501,7 +501,7 @@ export default function FonnteDeviceManager() {
                       <button
                         onClick={() => handleOpenToken(item)}
                         className="p-2 rounded-lg bg-white hover:bg-amber-50 text-slate-600 hover:text-amber-700 border border-slate-200 hover:border-amber-300 transition shadow-xs"
-                        title="Lihat & Salin Token API Fonnte"
+                        title="Lihat & Salin Token API WhatsApp"
                       >
                         <Key className="w-3.5 h-3.5 text-amber-600" />
                       </button>
@@ -541,7 +541,7 @@ export default function FonnteDeviceManager() {
             </div>
             <div>
               <span className="font-bold text-slate-900 block">
-                Fonnte API Token (Global System):
+                WhatsApp Gateway Token (Global System):
               </span>
               <span className="font-mono text-emerald-700 font-bold text-[11px]">
                 {fonnteToken || 'XvFjdLyyvBgNUbXBZYzZ'}
@@ -868,7 +868,7 @@ export default function FonnteDeviceManager() {
                         </button>
                       </div>
                     ) : qrCodeUrl ? (
-                      <img src={qrCodeUrl} alt="Fonnte QR" className="w-48 h-48 object-contain" />
+                      <img src={qrCodeUrl} alt="WhatsApp QR" className="w-48 h-48 object-contain" />
                     ) : (
                       <div className="w-48 h-48 bg-slate-50 border border-slate-200 rounded-xl flex flex-col items-center justify-center p-3 relative">
                         <div className="grid grid-cols-6 gap-1 w-full h-full p-2">

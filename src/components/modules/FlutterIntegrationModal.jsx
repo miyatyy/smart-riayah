@@ -437,7 +437,7 @@ class SmartRiayahApi {
                   </div>
                   <h4 className="font-bold text-slate-900">Node.js Express + Postgres</h4>
                   <p className="text-[11px] text-slate-600 mt-1">
-                    Backend pusat yang memproses otorisasi izin, audit log anti-bypass, scoring AI, dan kirim notifikasi WhatsApp Fonnte.
+                    Backend pusat yang memproses otorisasi izin, audit log anti-bypass, scoring AI, dan kirim notifikasi WhatsApp.
                   </p>
                 </div>
 

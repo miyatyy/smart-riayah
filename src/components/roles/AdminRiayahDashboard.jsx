@@ -403,12 +403,12 @@ export default function AdminRiayahDashboard() {
                 ? 'bg-emerald-600 border-emerald-700 text-white'
                 : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-800'
             }`}
-            title="Buka Embedded Fonnte WhatsApp Device & QR Manager"
+            title="Buka WhatsApp Gateway & QR Manager"
           >
             <Smartphone className="w-4 h-4 text-emerald-600" />
             <div className="text-left">
               <span className="text-[10px] block leading-tight font-bold">WA GATEWAY</span>
-              <span className="font-bold text-[11px]">{isFonnteEnabled ? 'FONNTE LIVE' : 'SIMULASI'}</span>
+              <span className="font-bold text-[11px]">{isFonnteEnabled ? 'GATEWAY LIVE' : 'SIMULASI'}</span>
             </div>
           </button>
         </div>
@@ -1409,7 +1409,7 @@ export default function AdminRiayahDashboard() {
         </div>
       )}
 
-      {/* BUILDER 9: 📱 EMBEDDED FONNTE WHATSAPP DEVICE & QR MANAGER */}
+      {/* BUILDER 9: 📱 EMBEDDED WHATSAPP GATEWAY DEVICE & QR MANAGER */}
       {activeTab === 'whatsapp_manager' && (
         <div className="space-y-6 animate-fade-in">
           <EngageAiWorkspace />
