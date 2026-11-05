@@ -419,7 +419,16 @@ export async function syncRoomToSupabase(room) {
     const payload = roomToDb(room);
     if (!payload) return;
     const { error } = await supabase.from('rooms').upsert([payload], { onConflict: 'id' });
-    if (error) console.warn('⚠️ [Supabase Sync Room]:', error.message);
+    if (error) console.warn('⚠️ [Supabase Sync Room (rooms)]:', error.message);
+
+    // Sync juga ke tabel 'kamar' di Supabase (kompatibilitas dual-table)
+    await supabase.from('kamar').upsert([{
+      nama_kamar: `${payload.nomor_kamar} - Lt. ${payload.lantai}`,
+      asrama: payload.nama_gedung,
+      kapasitas: payload.kapasitas,
+      ketua: payload.ketua_kamar,
+      catatan: `Keterisian: ${payload.terisi} / ${payload.kapasitas} Kasur. ${payload.catatan_inspeksi}`
+    }]).catch(() => {});
   } catch (err) {
     console.warn('⚠️ [Supabase Sync Room Error]:', err);
   }

@@ -10,13 +10,13 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Konfigurasi Koneksi PostgreSQL
+// Konfigurasi Koneksi PostgreSQL (smart_riayah_db / pgAdmin)
 const pool = new Pool({
-    host: process.env.DB_HOST,
-    port: process.env.DB_PORT,
-    database: process.env.DB_NAME,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
+    host: process.env.DB_HOST || '127.0.0.1',
+    port: parseInt(process.env.DB_PORT || '5432', 10),
+    database: process.env.DB_DATABASE || process.env.DB_NAME || 'smart_riayah_db',
+    user: process.env.DB_USERNAME || process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASSWORD || '140203',
 });
 
 // Tes Koneksi Database
@@ -31,8 +31,78 @@ pool.connect((err, client, release) => {
 // Endpoint untuk mengambil data santri
 app.get('/api/santri', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM santri');
+        const result = await pool.query('SELECT * FROM santri ORDER BY id');
         res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Endpoint untuk mengambil data kamar & keterisian kasur (rooms)
+app.get('/api/rooms', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM rooms ORDER BY id');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Endpoint untuk sync/update kamar (kapasitas & keterisian kasur)
+app.post('/api/rooms', async (req, res) => {
+    try {
+        const r = req.body;
+        const result = await pool.query(`
+          INSERT INTO rooms (id, nama_gedung, kategori_gedung, nomor_kamar, lantai, kapasitas, terisi, ketua_kamar, catatan_inspeksi)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          ON CONFLICT (id) DO UPDATE SET
+            nama_gedung = EXCLUDED.nama_gedung,
+            kategori_gedung = EXCLUDED.kategori_gedung,
+            nomor_kamar = EXCLUDED.nomor_kamar,
+            lantai = EXCLUDED.lantai,
+            kapasitas = EXCLUDED.kapasitas,
+            terisi = EXCLUDED.terisi,
+            ketua_kamar = EXCLUDED.ketua_kamar,
+            catatan_inspeksi = EXCLUDED.catatan_inspeksi,
+            updated_at = NOW()
+          RETURNING *;
+        `, [
+          r.id,
+          r.nama_gedung || r.namaGedung || 'Asrama Santri',
+          r.kategori_gedung || r.kategoriGedung || 'PUTRA',
+          r.nomor_kamar || r.nomorKamar || '',
+          parseInt(r.lantai || 1, 10),
+          parseInt(r.kapasitas || 8, 10),
+          parseInt(r.terisi || 0, 10),
+          r.ketua_kamar || r.ketuaKamar || 'Belum Ditentukan',
+          r.catatan_inspeksi || r.catatanInspeksi || 'Kamar siap huni.'
+        ]);
+
+        // Juga perbarui tabel alias 'kamar' untuk kompatibilitas pgAdmin
+        await pool.query(`
+          INSERT INTO kamar (kamar_id, nama_kamar, asrama, lantai, kapasitas, terisi, ketua, catatan)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          ON CONFLICT (id) DO UPDATE SET
+            nama_kamar = EXCLUDED.nama_kamar,
+            asrama = EXCLUDED.asrama,
+            lantai = EXCLUDED.lantai,
+            kapasitas = EXCLUDED.kapasitas,
+            terisi = EXCLUDED.terisi,
+            ketua = EXCLUDED.ketua,
+            catatan = EXCLUDED.catatan,
+            updated_at = NOW();
+        `, [
+          r.id,
+          r.nomor_kamar || r.nomorKamar,
+          r.nama_gedung || r.namaGedung,
+          parseInt(r.lantai || 1, 10),
+          parseInt(r.kapasitas || 8, 10),
+          parseInt(r.terisi || 0, 10),
+          r.ketua_kamar || r.ketuaKamar,
+          r.catatan_inspeksi || r.catatanInspeksi
+        ]).catch(() => {});
+
+        res.json({ success: true, data: result.rows[0] });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

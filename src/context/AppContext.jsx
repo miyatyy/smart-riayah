@@ -2471,6 +2471,13 @@ export const AppProvider = ({ children }) => {
     // Simpan kamar baru ke Google Firebase Firestore
     syncRoomToFirebase(newRoom);
 
+    // Simpan kamar baru ke backend lokal (PostgreSQL / pgAdmin) jika backend aktif
+    fetch('/api/rooms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newRoom)
+    }).catch(() => {});
+
     // Simpan kamar baru ke database Supabase
     try {
       const { data, error } = await supabase
@@ -2495,6 +2502,15 @@ export const AppProvider = ({ children }) => {
       } else {
         console.log('✅ [Supabase addRoom] Kamar baru berhasil disimpan ke Supabase:', data);
       }
+
+      // Sync juga ke tabel 'kamar' Supabase (kompatibilitas dual-table)
+      await supabase.from('kamar').insert([{
+        nama_kamar: `${newRoom.nomorKamar} - Lt. ${newRoom.lantai}`,
+        asrama: newRoom.namaGedung,
+        kapasitas: newRoom.kapasitas,
+        ketua: newRoom.ketuaKamar,
+        catatan: `Keterisian: ${newRoom.terisi} / ${newRoom.kapasitas} Kasur. ${newRoom.catatanInspeksi}`
+      }]).catch(() => {});
     } catch (err) {
       console.warn('⚠️ [Supabase addRoom] Exception saat menyimpan ke Supabase:', err);
     }
@@ -2503,30 +2519,38 @@ export const AppProvider = ({ children }) => {
   const updateRoomCapacity = (roomId, newCapacity) => {
     const cap = parseInt(newCapacity);
     if (isNaN(cap) || cap < 1) return;
-    setRooms(prev => prev.map(r => {
-      if (r.id === roomId) {
-        return { ...r, kapasitas: cap };
-      }
-      return r;
-    }));
+    const existing = rooms.find(r => r.id === roomId) || {};
+    const fullRoom = { ...existing, id: roomId, kapasitas: cap };
+    syncRoomToSupabase(fullRoom);
+    fetch('/api/rooms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fullRoom)
+    }).catch(() => {});
+    setRooms(prev => prev.map(r => (r.id === roomId ? fullRoom : r)));
     sound.playSuccess();
   };
 
   const updateRoom = (roomId, updatedData) => {
-    syncRoomToSupabase({ id: roomId, ...updatedData });
-    setRooms(prev => prev.map(r => {
-      if (r.id === roomId) {
-        return {
-          ...r,
-          nomorKamar: updatedData.nomorKamar !== undefined ? updatedData.nomorKamar : r.nomorKamar,
-          lantai: updatedData.lantai !== undefined ? (parseInt(updatedData.lantai, 10) || 1) : (r.lantai || 1),
-          kapasitas: updatedData.kapasitas !== undefined ? Math.max(1, parseInt(updatedData.kapasitas) || 1) : r.kapasitas,
-          ketuaKamar: updatedData.ketuaKamar !== undefined ? updatedData.ketuaKamar : r.ketuaKamar,
-          catatanInspeksi: updatedData.catatanInspeksi !== undefined ? updatedData.catatanInspeksi : r.catatanInspeksi
-        };
-      }
-      return r;
-    }));
+    const existing = rooms.find(r => r.id === roomId) || {};
+    const fullRoom = {
+      ...existing,
+      ...updatedData,
+      id: roomId,
+      nomorKamar: updatedData.nomorKamar !== undefined ? updatedData.nomorKamar : existing.nomorKamar,
+      lantai: updatedData.lantai !== undefined ? (parseInt(updatedData.lantai, 10) || 1) : (existing.lantai || 1),
+      kapasitas: updatedData.kapasitas !== undefined ? Math.max(1, parseInt(updatedData.kapasitas) || 1) : existing.kapasitas,
+      ketuaKamar: updatedData.ketuaKamar !== undefined ? updatedData.ketuaKamar : existing.ketuaKamar,
+      catatanInspeksi: updatedData.catatanInspeksi !== undefined ? updatedData.catatanInspeksi : existing.catatanInspeksi,
+      terisi: updatedData.terisi !== undefined ? parseInt(updatedData.terisi, 10) : (existing.terisi || 0)
+    };
+    syncRoomToSupabase(fullRoom);
+    fetch('/api/rooms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fullRoom)
+    }).catch(() => {});
+    setRooms(prev => prev.map(r => r.id === roomId ? fullRoom : r));
     sound.playSuccess();
   };
 
@@ -2555,7 +2579,14 @@ export const AppProvider = ({ children }) => {
                 r.nomorKamar.toLowerCase().includes(targetSantri.kamar.toLowerCase()) || 
                 targetSantri.kamar.toLowerCase().includes(r.nomorKamar.toLowerCase())
               ))) {
-            return { ...r, terisi: Math.max(0, r.terisi - 1) };
+            const updated = { ...r, terisi: Math.max(0, r.terisi - 1) };
+            syncRoomToSupabase(updated);
+            fetch('/api/rooms', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(updated)
+            }).catch(() => {});
+            return updated;
           }
           return r;
         }));
@@ -2626,7 +2657,14 @@ export const AppProvider = ({ children }) => {
               r.nomorKamar.toLowerCase().includes(santriData.kamar.toLowerCase()) || 
               santriData.kamar.toLowerCase().includes(r.nomorKamar.toLowerCase())
             ))) {
-          return { ...r, terisi: Math.min(r.kapasitas, r.terisi + 1) };
+          const updated = { ...r, terisi: Math.min(r.kapasitas, r.terisi + 1) };
+          syncRoomToSupabase(updated);
+          fetch('/api/rooms', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updated)
+          }).catch(() => {});
+          return updated;
         }
         return r;
       }));
