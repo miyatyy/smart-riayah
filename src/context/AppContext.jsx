@@ -43,7 +43,9 @@ import {
   INITIAL_RFID_TRANSACTIONS,
   INITIAL_WHATSAPP_LOGS,
   INITIAL_ACCOUNTS,
-  INITIAL_BLACKLIST
+  INITIAL_BLACKLIST,
+  INITIAL_VISIT_BOOKINGS,
+  INITIAL_VISIT_SETTINGS
 } from '../data/seedData';
 
 const STANDBY_OLED = {
@@ -2768,6 +2770,336 @@ export const AppProvider = ({ children }) => {
     }
   };
 
+  // ─── 14. MANAJEMEN KUNJUNGAN, TITIPAN BARANG & BOOKING WHATSAPP (QR GATE PASS) ───
+  const [visitBookings, setVisitBookings] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sr_visit_bookings');
+      if (saved) return JSON.parse(saved);
+      return INITIAL_VISIT_BOOKINGS;
+    } catch {
+      return INITIAL_VISIT_BOOKINGS;
+    }
+  });
+
+  const [visitSettings, setVisitSettings] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sr_visit_settings');
+      if (saved) return JSON.parse(saved);
+      return INITIAL_VISIT_SETTINGS;
+    } catch {
+      return INITIAL_VISIT_SETTINGS;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sr_visit_bookings', JSON.stringify(visitBookings));
+    } catch (e) {
+      console.warn('Failed to save visit bookings:', e);
+    }
+  }, [visitBookings]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sr_visit_settings', JSON.stringify(visitSettings));
+    } catch (e) {
+      console.warn('Failed to save visit settings:', e);
+    }
+  }, [visitSettings]);
+
+  const updateVisitSettings = (newSettings) => {
+    setVisitSettings(prev => ({ ...prev, ...newSettings }));
+    sound.playSuccess?.();
+  };
+
+  const getDayName = (dateStr) => {
+    if (!dateStr) return 'Jumat';
+    const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return 'Jumat';
+    return dayNames[d.getDay()];
+  };
+
+  const addVisitBooking = (bookingData) => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const tgl = bookingData.tanggal_kunjungan || todayStr;
+    const hari = bookingData.hari_kunjungan || getDayName(tgl);
+    const isWeekend = ['Jumat', 'Sabtu', 'Minggu'].includes(hari);
+
+    const bookingId = bookingData.id || `VST-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
+    const cleanSantriName = (bookingData.nama_santri || 'Santri').replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase();
+
+    let approvalType = 'MANUAL_WEEKDAY';
+    let statusKunjungan = 'Menunggu Approval';
+    let barcodeToken = null;
+
+    if (bookingData.booking_source === 'MANUAL_SATPAM') {
+      approvalType = isWeekend ? 'AUTO_WEEKEND' : 'MANUAL_WEEKDAY';
+      statusKunjungan = bookingData.status_kunjungan || (isWeekend ? 'Disetujui (Siap Datang)' : 'Sedang Berkunjung');
+      barcodeToken = `GP-DU-${cleanSantriName}-${Math.floor(1000 + Math.random() * 9000)}`;
+    } else if (isWeekend && visitSettings.auto_approve_weekend) {
+      approvalType = 'AUTO_WEEKEND';
+      statusKunjungan = 'Disetujui (Siap Datang)';
+      barcodeToken = `GP-DU-${cleanSantriName}-${Math.floor(1000 + Math.random() * 9000)}`;
+    } else {
+      approvalType = 'MANUAL_WEEKDAY';
+      statusKunjungan = 'Menunggu Approval';
+      barcodeToken = null;
+    }
+
+    const newBooking = {
+      id: bookingId,
+      booking_source: bookingData.booking_source || 'WHATSAPP',
+      nama_santri: bookingData.nama_santri || 'Ahmad Fauzi',
+      kelas: bookingData.kelas || '10-A',
+      asal: bookingData.asal || 'Surabaya',
+      tanggal_kunjungan: tgl,
+      hari_kunjungan: hari,
+      jam_kunjungan: bookingData.jam_kunjungan || '14:00',
+      jam_selesai: bookingData.jam_selesai || '15:30',
+      titipan_barang: bookingData.titipan_barang || '-',
+      berat_barang_kg: parseFloat(bookingData.berat_barang_kg) || 0,
+      nama_penjenguk: bookingData.nama_penjenguk || 'Wali Santri',
+      status_penjenguk: bookingData.status_penjenguk || 'Wali Santri',
+      no_wa_penjenguk: bookingData.no_wa_penjenguk || fonnteTargetNumber || '081234567890',
+      rfid_uid: bookingData.rfid_uid || null,
+      barcode_token: barcodeToken,
+      approval_type: approvalType,
+      status_kunjungan: statusKunjungan,
+      created_at: new Date().toISOString()
+    };
+
+    setVisitBookings(prev => [newBooking, ...prev]);
+
+    // Kirim notifikasi WhatsApp via Fonnte Gateway
+    const targetPhone = newBooking.no_wa_penjenguk;
+    if (newBooking.booking_source === 'WHATSAPP') {
+      if (statusKunjungan === 'Disetujui (Siap Datang)') {
+        sendWhatsAppNotification(
+          `${newBooking.nama_penjenguk} (Wali ${newBooking.nama_santri})`,
+          targetPhone,
+          'VISIT_AUTO_APPROVED',
+          `✅ *[BOOKING KUNJUNGAN DISETUJUI OTOMATIS - WEEKEND]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${newBooking.nama_penjenguk}*.\n\nPermohonan sambangan ananda *${newBooking.nama_santri}* (${newBooking.kelas}) pada hari *${hari}, ${tgl}* pukul *${newBooking.jam_kunjungan} - ${newBooking.jam_selesai} WIB* telah *DISETUJUI OTOMATIS*.\n\n📦 *Titipan Barang:* ${newBooking.titipan_barang} (${newBooking.berat_barang_kg} Kg)\n🎫 *Barcode Gate Pass:* *${barcodeToken}*\n\nSilakan tunjukkan barcode ini ke Satpam saat tiba di Gerbang Utama Pesantren Modern Darul Ulum.`
+        );
+      } else {
+        sendWhatsAppNotification(
+          `${newBooking.nama_penjenguk} (Wali ${newBooking.nama_santri})`,
+          targetPhone,
+          'VISIT_WAITING_APPROVAL',
+          `⏳ *[PERMOHONAN KUNJUNGAN TERCATAT - HARI KERJA]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${newBooking.nama_penjenguk}*.\n\nPermohonan kunjungan ananda *${newBooking.nama_santri}* untuk hari kerja (*${hari}, ${tgl}*) telah tercatat dan sedang *MENUNGGU PERSETUJUAN* Admin Ri'ayah.\n\nBarcode kunjungan resmi akan dikirimkan ke nomor WhatsApp ini setelah disetujui.`
+        );
+      }
+    }
+
+    sound.playSuccess?.();
+    return newBooking;
+  };
+
+  const approveVisitBooking = (bookingId) => {
+    const booking = visitBookings.find(b => b.id === bookingId);
+    if (!booking) return;
+
+    const cleanSantriName = (booking.nama_santri || 'Santri').replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase();
+    const barcodeToken = booking.barcode_token || `GP-DU-${cleanSantriName}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    setVisitBookings(prev => prev.map(b => {
+      if (b.id === bookingId) {
+        return {
+          ...b,
+          status_kunjungan: 'Disetujui (Siap Datang)',
+          barcode_token: barcodeToken
+        };
+      }
+      return b;
+    }));
+
+    sendWhatsAppNotification(
+      `${booking.nama_penjenguk} (Wali ${booking.nama_santri})`,
+      booking.no_wa_penjenguk,
+      'VISIT_APPROVED_ADMIN',
+      `🎉 *[PERMOHONAN KUNJUNGAN DISETUJUI ADMIN RI'AYAH]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${booking.nama_penjenguk}*.\n\nPermohonan kunjungan ananda *${booking.nama_santri}* (${booking.kelas}) untuk hari *${booking.hari_kunjungan}, ${booking.tanggal_kunjungan}* pukul *${booking.jam_kunjungan} - ${booking.jam_selesai} WIB* telah *DISETUJUI* oleh Admin Ri'ayah Pondok.\n\n📦 *Titipan Barang:* ${booking.titipan_barang} (${booking.berat_barang_kg} Kg)\n🎫 *Barcode Gate Pass Resmi:* *${barcodeToken}*\n\nSilakan tunjukkan Barcode ini kepada Satpam di Pos Gerbang untuk verifikasi check-in masuk pondok.`
+    );
+
+    sound.playSuccess?.();
+  };
+
+  const rejectVisitBooking = (bookingId, reason = 'Kunjungan di luar kuota / agenda pondok padat') => {
+    const booking = visitBookings.find(b => b.id === bookingId);
+    if (!booking) return;
+
+    setVisitBookings(prev => prev.map(b => {
+      if (b.id === bookingId) {
+        return {
+          ...b,
+          status_kunjungan: 'Ditolak',
+          catatan_penolakan: reason
+        };
+      }
+      return b;
+    }));
+
+    sendWhatsAppNotification(
+      `${booking.nama_penjenguk} (Wali ${booking.nama_santri})`,
+      booking.no_wa_penjenguk,
+      'VISIT_REJECTED',
+      `❌ *[PERMOHONAN KUNJUNGAN BELUM DAPAT DISETUJUI]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${booking.nama_penjenguk}*.\n\nMohon maaf, permohonan kunjungan ananda *${booking.nama_santri}* untuk tanggal *${booking.tanggal_kunjungan}* belum dapat disetujui oleh Pengasuhan Pondok.\nAlasan: "${reason}".\nSilakan ajukan kembali pada hari berkunjung resmi (Jumat, Sabtu, atau Minggu).`
+    );
+
+    sound.playBeep?.();
+  };
+
+  const checkInVisitBooking = (bookingId, method = 'BARCODE') => {
+    const nowHHMM = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':');
+    setVisitBookings(prev => prev.map(b => {
+      if (b.id === bookingId) {
+        return {
+          ...b,
+          status_kunjungan: 'Sedang Berkunjung',
+          jam_checkin_aktual: nowHHMM,
+          metode_verifikasi: method
+        };
+      }
+      return b;
+    }));
+    sound.playSuccess?.();
+  };
+
+  const checkOutVisitBooking = (bookingId) => {
+    const nowHHMM = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':');
+    setVisitBookings(prev => prev.map(b => {
+      if (b.id === bookingId) {
+        return {
+          ...b,
+          status_kunjungan: 'Selesai',
+          jam_checkout_aktual: nowHHMM
+        };
+      }
+      return b;
+    }));
+    sound.playBeep?.();
+  };
+
+  const verifyVisitBarcode = (tokenOrInput) => {
+    if (!tokenOrInput || !tokenOrInput.trim()) {
+      return { success: false, message: 'Masukkan kode barcode kunjungan' };
+    }
+    const clean = tokenOrInput.trim().toUpperCase();
+    const booking = visitBookings.find(b => 
+      (b.barcode_token && b.barcode_token.toUpperCase() === clean) ||
+      (b.id && b.id.toUpperCase() === clean) ||
+      (b.no_wa_penjenguk && b.no_wa_penjenguk.includes(clean))
+    );
+
+    if (!booking) {
+      return { 
+        success: false, 
+        message: '⛔ TIDAK TERDAFTAR / KODE BARCODE TIDAK VALID',
+        isApproved: false
+      };
+    }
+
+    if (booking.status_kunjungan === 'Menunggu Approval') {
+      return {
+        success: false,
+        booking,
+        message: '⛔ BELUM DISETUJUI ADMIN RI\'AYAH: Tamu hari kerja (Senin-Kamis) harus disetujui terlebih dahulu!',
+        isApproved: false
+      };
+    }
+
+    if (booking.status_kunjungan === 'Ditolak') {
+      return {
+        success: false,
+        booking,
+        message: '⛔ PERMOHONAN DITOLAK: Jadwal kunjungan ini telah ditolak oleh Admin Ri\'ayah',
+        isApproved: false
+      };
+    }
+
+    if (booking.status_kunjungan === 'Selesai') {
+      return {
+        success: false,
+        booking,
+        message: '⚠️ KUNJUNGAN TELAH SELESAI: Tamu sudah check-out sebelumnya',
+        isApproved: true,
+        alreadyCompleted: true
+      };
+    }
+
+    return {
+      success: true,
+      booking,
+      message: '✅ VERIFIKASI BERHASIL: Wali Santri Terdaftar & Disetujui',
+      isApproved: true
+    };
+  };
+
+  const verifyVisitRfid = (uid) => {
+    if (!uid) return { success: false, message: 'UID Kartu RFID tidak valid' };
+    const cleanUid = uid.trim().toUpperCase();
+    
+    const booking = visitBookings.find(b => 
+      (b.rfid_uid && b.rfid_uid.toUpperCase() === cleanUid) ||
+      santriList.some(s => s.rfidUid && s.rfidUid.toUpperCase() === cleanUid && s.nama === b.nama_santri)
+    );
+
+    if (booking) {
+      return verifyVisitBarcode(booking.barcode_token || booking.id);
+    }
+
+    const santri = santriList.find(s => s.rfidUid && s.rfidUid.toUpperCase() === cleanUid);
+    if (santri) {
+      return {
+        success: true,
+        santri,
+        isSantriCard: true,
+        message: `✅ Kartu Santri ${santri.nama} (${santri.kelas}) terdeteksi di Pos Satpam.`
+      };
+    }
+
+    return { success: false, message: '⛔ KARTU RFID TIDAK TERDAFTAR DI DATABASE PONDOK' };
+  };
+
+  const simulateWaBooking = (dayType = 'WEEKEND') => {
+    const isWeekend = dayType === 'WEEKEND';
+    const today = new Date();
+    const targetDate = new Date();
+    if (isWeekend) {
+      targetDate.setDate(today.getDate() + ((5 - today.getDay() + 7) % 7 || 7));
+    } else {
+      targetDate.setDate(today.getDate() + ((4 - today.getDay() + 7) % 7 || 7));
+    }
+    const tglStr = targetDate.toISOString().slice(0, 10);
+    const hariStr = getDayName(tglStr);
+
+    const sampleSantri = santriList[Math.floor(Math.random() * Math.min(santriList.length, 5))] || santriList[0];
+
+    const sampleItems = [
+      { titip: 'Kitab Kuning, Pakaian Baru, Madu Herbal & Susu Steril', berat: 3.2 },
+      { titip: 'Kacamata baca santri, Vitamin C, & Uang Saku', berat: 1.5 },
+      { titip: 'Buku Pelajaran Madrasah, Sarung Sutra & Roti Bolu', berat: 2.8 },
+      { titip: 'Sepatu Olahraga, Sabun Mandi & Buah-buahan', berat: 4.5 }
+    ];
+    const picked = sampleItems[Math.floor(Math.random() * sampleItems.length)];
+
+    return addVisitBooking({
+      booking_source: 'WHATSAPP',
+      nama_santri: sampleSantri.nama,
+      kelas: `${sampleSantri.kelas} (${sampleSantri.kamar})`,
+      asal: sampleSantri.wali?.alamat?.split(',')?.pop()?.trim() || 'Surabaya',
+      tanggal_kunjungan: tglStr,
+      hari_kunjungan: hariStr,
+      jam_kunjungan: '14:00',
+      jam_selesai: '15:30',
+      titipan_barang: picked.titip,
+      berat_barang_kg: picked.berat,
+      nama_penjenguk: sampleSantri.wali?.nama || 'Ibu Fatimah Az-Zahra',
+      status_penjenguk: 'Wali Santri',
+      no_wa_penjenguk: sampleSantri.wali?.telepon || fonnteTargetNumber || '081234567890',
+      rfid_uid: sampleSantri.rfidUid
+    });
+  };
+
   // Reset to seed data
   const resetAllDataToDefault = () => {
     localStorage.clear();
@@ -2782,6 +3114,8 @@ export const AppProvider = ({ children }) => {
     setRfidTransactions(INITIAL_RFID_TRANSACTIONS);
     setWhatsappLogs(INITIAL_WHATSAPP_LOGS);
     setBlacklistedUids(INITIAL_BLACKLIST);
+    setVisitBookings(INITIAL_VISIT_BOOKINGS);
+    setVisitSettings(INITIAL_VISIT_SETTINGS);
     setActiveSantriId('S-101');
     sound.playSuccess();
   };
@@ -2922,6 +3256,21 @@ export const AppProvider = ({ children }) => {
         fonnteStatus,
         sendFonnteWhatsApp,
         testFonnteWhatsApp,
+
+        // 14. Visit Booking & WhatsApp Gate Pass
+        visitBookings,
+        setVisitBookings,
+        visitSettings,
+        setVisitSettings,
+        updateVisitSettings,
+        addVisitBooking,
+        approveVisitBooking,
+        rejectVisitBooking,
+        checkInVisitBooking,
+        checkOutVisitBooking,
+        verifyVisitBarcode,
+        verifyVisitRfid,
+        simulateWaBooking,
 
         // DeepSeek AI Character & Activity Engine
         deepseekToken,

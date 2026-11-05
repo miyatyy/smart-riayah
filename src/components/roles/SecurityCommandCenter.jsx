@@ -30,6 +30,8 @@ import RealtimePermitsTable from '../modules/RealtimePermitsTable';
 import RealtimeGateLogsManager from '../modules/RealtimeGateLogsManager';
 import FonnteSettingsBox from '../common/FonnteSettingsBox';
 import SantriActivityAnalytics from '../modules/SantriActivityAnalytics';
+import SecurityVisitGateModule from '../modules/SecurityVisitGateModule';
+import { Package } from 'lucide-react';
 
 export default function SecurityCommandCenter() {
   const { 
@@ -50,7 +52,7 @@ export default function SecurityCommandCenter() {
     setActiveRoleTab
   } = useApp();
 
-  const activeTab = activeRoleTab === 'ai_security' ? 'ai_security' : 'gate';
+  const activeTab = (activeRoleTab === 'ai_security' || activeRoleTab === 'pos_kunjungan') ? activeRoleTab : 'gate';
   const setActiveTab = setActiveRoleTab;
 
   const [selectedSantriId, setSelectedSantriId] = useState('S-101'); // Default Ahmad Fauzi
@@ -218,7 +220,19 @@ export default function SecurityCommandCenter() {
             }`}
           >
             <Radio className="w-4 h-4 text-cyan-400" />
-            <span>Simulator Smart Gate & Headcount</span>
+            <span>Simulator Smart Gate &amp; Headcount</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('pos_kunjungan')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition shadow-xs ${
+              activeTab === 'pos_kunjungan'
+                ? 'bg-emerald-800 text-white shadow-emerald-200'
+                : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <Package className="w-4 h-4 text-emerald-400" />
+            <span>📦 Pos Jaga Kunjungan &amp; Titipan Barang (QR Pass &amp; RFID)</span>
           </button>
 
           <button
@@ -230,9 +244,16 @@ export default function SecurityCommandCenter() {
             }`}
           >
             <Sparkles className="w-4 h-4 text-indigo-400" />
-            <span>🤖 AI Pola Gerbang & Kedisiplinan Santri (DeepSeek)</span>
+            <span>🤖 AI Pola Gerbang &amp; Kedisiplinan Santri (DeepSeek)</span>
           </button>
         </div>
+
+        {/* TAB 3: POS JAGA KUNJUNGAN & TITIPAN BARANG */}
+        {activeTab === 'pos_kunjungan' && (
+          <div className="space-y-6 animate-fade-in">
+            <SecurityVisitGateModule />
+          </div>
+        )}
 
         {/* TAB 2: AI POLA GERBANG & KEDISIPLINAN */}
         {activeTab === 'ai_security' && (

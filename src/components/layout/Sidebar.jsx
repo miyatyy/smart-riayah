@@ -30,7 +30,9 @@ import {
   ClipboardList,
   Smartphone,
   ChevronDown,
-  MessageSquare
+  MessageSquare,
+  Calendar,
+  Package
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
 
@@ -134,6 +136,7 @@ function getMenuItems(role, { permits, rooms, santriList, blacklistedUids, gateL
         { id: 'rfid_cards', label: 'Tabel RFID', icon: CreditCard, badge: `${santriList.length}` },
         { id: 'rfid_pairing', label: 'Scanner RFID', icon: Radio, badge: 'Scan' },
         { id: 'express_kiosk', label: 'Kiosk Izin', icon: Zap, badge: 'Cepat' },
+        { id: 'visit_bookings', label: 'Kunjungan Tamu', icon: Calendar, badge: 'QR Pass' },
         { id: 'gate_logs', label: 'Log Gerbang', icon: ClipboardList, badge: `${gateLogs.length}` },
         { id: 'whatsapp_manager', label: 'WhatsApp', icon: Smartphone, badge: 'Fonnte' },
         { id: 'ai_analytics', label: 'AI Evaluasi', icon: Sparkles, badge: 'AI', highlight: true },
@@ -159,6 +162,7 @@ function getMenuItems(role, { permits, rooms, santriList, blacklistedUids, gateL
     case 'security':
       return [
         { id: 'gate', label: 'Gate Gerbang', icon: Radio, badge: 'Gate 01' },
+        { id: 'pos_kunjungan', label: 'Pos Kunjungan', icon: Package, badge: 'QR Pass' },
         { id: 'headcount', label: 'Live Headcount', icon: Users, badge: `${santriDiLuar} Luar`, urgent: santriDiLuar > 0 },
         { id: 'logs', label: 'Log Audit', icon: Activity, badge: `${gateLogs.length}` },
         { id: 'ai_security', label: 'AI Pola', icon: Sparkles, badge: 'AI', highlight: true },

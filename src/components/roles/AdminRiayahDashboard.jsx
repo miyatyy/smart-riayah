@@ -33,7 +33,8 @@ import {
   FileText,
   Printer,
   Smartphone,
-  Pencil
+  Pencil,
+  Calendar
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
 import RfidCardManager from '../modules/RfidCardManager';
@@ -41,6 +42,7 @@ import ExpressPermitKiosk from '../modules/ExpressPermitKiosk';
 import RealtimeGateLogsManager from '../modules/RealtimeGateLogsManager';
 import EngageAiWorkspace from '../modules/EngageAiWorkspace';
 import SantriActivityAnalytics from '../modules/SantriActivityAnalytics';
+import VisitBookingManager from '../modules/VisitBookingManager';
 import EditRoomModal from '../modules/EditRoomModal';
 import DeleteConfirmModal from '../common/DeleteConfirmModal';
 import { supabase } from '../../utils/supabaseClient';
@@ -71,10 +73,11 @@ export default function AdminRiayahDashboard() {
     setLastScannedUid,
     lastScannedTime,
     gateLogs,
-    isFonnteEnabled
+    isFonnteEnabled,
+    visitBookings
   } = useApp();
 
-  const activeTab = (activeRoleTab === 'rooms' || activeRoleTab === 'onboarding' || activeRoleTab === 'lost_card' || activeRoleTab === 'blacklist' || activeRoleTab === 'rfid_cards' || activeRoleTab === 'rfid_pairing' || activeRoleTab === 'express_kiosk' || activeRoleTab === 'gate_logs' || activeRoleTab === 'whatsapp_manager' || activeRoleTab === 'ai_analytics') ? activeRoleTab : 'rooms';
+  const activeTab = (activeRoleTab === 'rooms' || activeRoleTab === 'onboarding' || activeRoleTab === 'lost_card' || activeRoleTab === 'blacklist' || activeRoleTab === 'rfid_cards' || activeRoleTab === 'rfid_pairing' || activeRoleTab === 'express_kiosk' || activeRoleTab === 'visit_bookings' || activeRoleTab === 'gate_logs' || activeRoleTab === 'whatsapp_manager' || activeRoleTab === 'ai_analytics') ? activeRoleTab : 'rooms';
   const setActiveTab = setActiveRoleTab;
   const [selectedGenderFilter, setSelectedGenderFilter] = useState('ALL'); // 'ALL' | 'PUTRA' | 'PUTRI'
   
@@ -496,6 +499,23 @@ export default function AdminRiayahDashboard() {
         </button>
 
         <button
+          onClick={() => { setActiveTab('visit_bookings'); setActiveScanMode && setActiveScanMode(null); }}
+          className={`flex items-center gap-2 py-2.5 px-3.5 font-bold transition rounded-t-xl shrink-0 ${
+            activeTab === 'visit_bookings'
+              ? 'border-b-2 border-emerald-600 text-emerald-800 bg-emerald-50/70 font-black'
+              : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+          }`}
+        >
+          <Calendar className="w-4 h-4 text-emerald-600" />
+          <span>8. Booking &amp; Kunjungan Tamu</span>
+          {Array.isArray(visitBookings) && visitBookings.filter(b => b.status_kunjungan === 'Menunggu Approval').length > 0 && (
+            <span className="px-1.5 py-0.2 bg-amber-500 text-white rounded-full text-[9px] font-mono animate-pulse">
+              {visitBookings.filter(b => b.status_kunjungan === 'Menunggu Approval').length}
+            </span>
+          )}
+        </button>
+
+        <button
           onClick={() => { setActiveTab('gate_logs'); setActiveScanMode(null); }}
           className={`flex items-center gap-2 py-2.5 px-3.5 font-bold transition rounded-t-xl shrink-0 ${
             activeTab === 'gate_logs'
@@ -504,7 +524,7 @@ export default function AdminRiayahDashboard() {
           }`}
         >
           <ClipboardList className="w-4 h-4 text-emerald-600" />
-          <span>8. Log & Cetak ({gateLogs.length})</span>
+          <span>9. Log &amp; Cetak ({gateLogs.length})</span>
         </button>
 
         <button
@@ -516,7 +536,7 @@ export default function AdminRiayahDashboard() {
           }`}
         >
           <Smartphone className="w-4 h-4 text-emerald-600" />
-          <span>9. WhatsApp Gateway</span>
+          <span>10. WhatsApp Gateway</span>
         </button>
 
         <button
@@ -528,7 +548,7 @@ export default function AdminRiayahDashboard() {
           }`}
         >
           <Sparkles className="w-4 h-4 text-indigo-600" />
-          <span>10. AI Evaluasi Santri</span>
+          <span>11. AI Evaluasi Santri</span>
         </button>
       </div>
 
@@ -1353,7 +1373,14 @@ export default function AdminRiayahDashboard() {
         </div>
       )}
 
-      {/* BUILDER 8: LOG AKTIVITAS KELUAR MASUK SANTRI REAL-TIME & CETAK PDF */}
+      {/* BUILDER 8: MANAJEMEN KUNJUNGAN, TITIPAN BARANG & BOOKING WHATSAPP (QR GATE PASS) */}
+      {activeTab === 'visit_bookings' && (
+        <div className="space-y-6 animate-fade-in">
+          <VisitBookingManager />
+        </div>
+      )}
+
+      {/* BUILDER 9: LOG AKTIVITAS KELUAR MASUK SANTRI REAL-TIME & CETAK PDF */}
       {activeTab === 'gate_logs' && (
         <div className="space-y-6 animate-fade-in">
           <RealtimeGateLogsManager />

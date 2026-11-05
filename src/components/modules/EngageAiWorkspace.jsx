@@ -82,6 +82,7 @@ import {
   disconnectFonnteDevice,
   sendManualOverrideMessage
 } from '../../services/fonnteService';
+import VisitBookingManager from './VisitBookingManager';
 
 class WorkspaceErrorBoundary extends React.Component {
   constructor(props) {
@@ -3598,29 +3599,70 @@ function TabCustomers() {
 }
 
 function TabPermits() {
-  const { permits } = useApp();
+  const { permits, visitBookings } = useApp();
+  const [subView, setSubView] = useState('bookings'); // 'bookings' | 'permits'
+  const pendingVisits = Array.isArray(visitBookings) ? visitBookings.filter(b => b.status_kunjungan === 'Menunggu Approval').length : 0;
+
   return (
-    <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
-      <h3 className="font-extrabold text-sm text-slate-900">Sinkronisasi Notifikasi Izin &amp; Pesiar (DU-PERMIT)</h3>
-      <p className="text-xs text-slate-500">Setiap persetujuan izin akan memicu pesan WhatsApp otomatis ke nomor wali santri.</p>
-      <div className="space-y-2">
-        {permits.slice(0, 5).map((p, idx) => (
-          <div key={idx} className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
-            <div>
-              <strong className="text-slate-800 block text-xs">[{p.tokenIzin}] {p.santriNama}</strong>
-              <span className="text-[11px] text-slate-500">Keperluan: {p.keperluan} • Penjemput: {p.penjemput}</span>
-            </div>
-            <div className="text-right">
-              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                p.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-              }`}>
-                {p.status}
-              </span>
-              <span className="text-[10px] text-slate-400 block font-mono mt-0.5">WA Gateway: Sent</span>
-            </div>
-          </div>
-        ))}
+    <div className="space-y-4">
+      {/* Sub Navigation */}
+      <div className="flex items-center gap-2 bg-white p-2 rounded-2xl border border-slate-200 shadow-xs">
+        <button
+          onClick={() => setSubView('bookings')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+            subView === 'bookings'
+              ? 'bg-emerald-600 text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <Calendar className="w-4 h-4" />
+          <span>Booking Kunjungan &amp; Titipan Barang (QR Gate Pass)</span>
+          {pendingVisits > 0 && (
+            <span className="px-1.5 py-0.2 bg-amber-500 text-white rounded-full text-[9px] font-mono animate-pulse">
+              {pendingVisits}
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setSubView('permits')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+            subView === 'permits'
+              ? 'bg-emerald-600 text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <FileText className="w-4 h-4" />
+          <span>Sinkronisasi Notifikasi Izin &amp; Pesiar ({permits?.length || 0})</span>
+        </button>
       </div>
+
+      {subView === 'bookings' ? (
+        <VisitBookingManager />
+      ) : (
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
+          <h3 className="font-extrabold text-sm text-slate-900">Sinkronisasi Notifikasi Izin &amp; Pesiar (DU-PERMIT)</h3>
+          <p className="text-xs text-slate-500">Setiap persetujuan izin akan memicu pesan WhatsApp otomatis ke nomor wali santri.</p>
+          <div className="space-y-2">
+            {permits.slice(0, 8).map((p, idx) => (
+              <div key={idx} className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+                <div>
+                  <strong className="text-slate-800 block text-xs">[{p.tokenIzin}] {p.santriNama}</strong>
+                  <span className="text-[11px] text-slate-500">Keperluan: {p.keperluan} • Penjemput: {p.penjemput}</span>
+                </div>
+                <div className="text-right">
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                    p.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                  }`}>
+                    {p.status}
+                  </span>
+                  <span className="text-[10px] text-slate-400 block font-mono mt-0.5">WA Gateway: Sent</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
