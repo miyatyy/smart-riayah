@@ -28,6 +28,7 @@ import {
   Lock,
   ChevronRight,
   ArrowRight,
+  ArrowLeft,
   Zap,
   ClipboardList,
   FileText,
@@ -354,8 +355,9 @@ export default function AdminRiayahDashboard() {
   return (
     <div className="space-y-4 sm:space-y-6 pb-24">
       
-      {/* 1. Header Admin Ri'ayah */}
-      <div className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4 no-print">
+      {/* 1. Header Admin Ri'ayah (Disembunyikan saat membuka WhatsApp Gateway agar tampilan luas & tidak bertumpuk) */}
+      {activeTab !== 'whatsapp_manager' && (
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4 no-print">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shadow-xs">
             <Wrench className="w-6 h-6" />
@@ -411,9 +413,11 @@ export default function AdminRiayahDashboard() {
           </button>
         </div>
       </div>
+      )}
 
-      {/* 2. Navigation Tabs (Clean Responsive Horizontal Bar) */}
-      <div className="scroll-row border-b border-slate-200 gap-1 pb-1 text-xs no-print">
+      {/* 2. Navigation Tabs (Disembunyikan saat membuka WhatsApp Gateway) */}
+      {activeTab !== 'whatsapp_manager' && (
+        <div className="scroll-row border-b border-slate-200 gap-1 pb-1 text-xs no-print">
         <button
           onClick={() => { setActiveTab('rooms'); setActiveScanMode(null); }}
           className={`flex items-center gap-2 py-2.5 px-3.5 font-bold transition rounded-t-xl shrink-0 ${
@@ -551,6 +555,24 @@ export default function AdminRiayahDashboard() {
           <span>11. AI Evaluasi Santri</span>
         </button>
       </div>
+      )}
+
+      {/* Tombol Navigasi Cepat Saat Membuka WhatsApp Gateway (Mencegah Tampilan Bertumpuk) */}
+      {activeTab === 'whatsapp_manager' && (
+        <div className="flex items-center justify-between pb-1 no-print animate-fade-in">
+          <button
+            onClick={() => { setActiveTab('rooms'); sound.playBeep?.(); }}
+            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 hover:text-emerald-700 border border-slate-200 text-xs font-bold transition shadow-2xs group cursor-pointer"
+            title="Kembali ke Manajemen Asrama & Kamar"
+          >
+            <ArrowLeft className="w-3.5 h-3.5 text-slate-400 group-hover:-translate-x-0.5 group-hover:text-emerald-600 transition-transform" />
+            <span>Kembali ke Master Asrama &amp; Kamar</span>
+          </button>
+          <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">
+            Admin Ri'ayah Workspace • Dedicated WhatsApp Gateway Mode
+          </span>
+        </div>
+      )}
 
       {/* BUILDER 1: PENGATURAN KAPASITAS GEDUNG & KAMAR */}
       {activeTab === 'rooms' && (
