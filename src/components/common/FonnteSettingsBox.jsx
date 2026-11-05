@@ -124,10 +124,10 @@ export default function FonnteSettingsBox({ variant = 'compact', defaultExpanded
                 </button>
               </label>
               <input
-                type="text"
+                type="password"
                 value={fonnteToken}
                 onChange={(e) => setFonnteToken(e.target.value)}
-                placeholder="Contoh: XvFjdLyyvBgNUbXBZYzZ"
+                placeholder="••••••••••••••••••••"
                 className="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-1.5 text-xs font-mono text-emerald-300 focus:outline-none transition shadow-inner"
               />
             </div>

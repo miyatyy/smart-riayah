@@ -725,18 +725,8 @@ export default function SantriActivityAnalytics({ activeSantri: propActiveSantri
               </div>
             </div>
 
-            {/* AI Control Buttons: Token Settings & Live Regeneration */}
+            {/* AI Control Buttons: Live Regeneration */}
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowTokenSettings(true)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-mono font-bold transition bg-emerald-950/60 border border-emerald-700/60 hover:border-emerald-500 text-emerald-300 hover:text-white"
-                title="Konfigurasi API Token DeepSeek"
-              >
-                <Key className="w-3.5 h-3.5 text-gold-300" />
-                <span className="hidden sm:inline">Token:</span>
-                <span>{deepseekToken ? `${deepseekToken.slice(0, 7)}...` : 'sk-...'}</span>
-              </button>
-
               <button
                 onClick={handleRegenerateAi}
                 disabled={isCallingDeepSeek}
@@ -765,7 +755,6 @@ export default function SantriActivityAnalytics({ activeSantri: propActiveSantri
               {deepSeekLatency && (
                 <span>⚡ Latensi: <b>{deepSeekLatency}ms</b></span>
               )}
-              <span>Token: <b>{deepseekToken ? 'Aktif (sk-7fc5...)' : 'Default'}</b></span>
             </div>
           </div>
 
@@ -1021,153 +1010,6 @@ export default function SantriActivityAnalytics({ activeSantri: propActiveSantri
           </div>
         )}
       </div>
-
-      {/* 6. MODAL PENGATURAN TOKEN DEEPSEEK AI */}
-      {showTokenSettings && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            {/* Modal Header */}
-            <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-5 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/40 flex items-center justify-center text-indigo-300">
-                  <Key className="w-5 h-5 text-gold-300" />
-                </div>
-                <div>
-                  <h3 className="font-black text-base text-white">
-                    Konfigurasi Token DeepSeek AI
-                  </h3>
-                  <p className="text-xs text-indigo-200">
-                    Smart Riayah Generative Character Intelligence Engine
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowTokenSettings(false)}
-                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <form onSubmit={handleSaveToken} className="p-6 space-y-4">
-              {saveTokenNotice && (
-                <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-xl text-xs flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span><b>Alhamdulillah!</b> Token DeepSeek AI berhasil disimpan dan aktif digunakan.</span>
-                </div>
-              )}
-
-              {/* Input Token */}
-              <div>
-                <label className="text-xs font-bold text-slate-800 block mb-1">
-                  API Key / Token DeepSeek:
-                </label>
-                <input
-                  type="text"
-                  value={inputToken}
-                  onChange={(e) => setInputToken(e.target.value)}
-                  placeholder="sk-..."
-                  required
-                  className="w-full text-xs font-mono bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-900 focus:ring-2 focus:ring-indigo-500 font-bold"
-                />
-                <p className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
-                  <span>Token aktif saat ini: <b>{inputToken ? `${inputToken.slice(0, 10)}...${inputToken.slice(-6)}` : 'Kosong'}</b></span>
-                  <button
-                    type="button"
-                    onClick={() => setInputToken(DEFAULT_DEEPSEEK_TOKEN)}
-                    className="text-indigo-600 hover:underline font-semibold"
-                  >
-                    Reset Default Token
-                  </button>
-                </p>
-              </div>
-
-              {/* Model Selection */}
-              <div>
-                <label className="text-xs font-bold text-slate-800 block mb-1">
-                  Pilihan Model DeepSeek:
-                </label>
-                <select
-                  value={inputModel}
-                  onChange={(e) => setInputModel(e.target.value)}
-                  className="w-full text-xs font-bold bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-slate-800 focus:ring-1 focus:ring-indigo-500"
-                >
-                  <option value="deepseek-chat">deepseek-chat (Direkomendasikan - Cepat & Cerdas)</option>
-                  <option value="deepseek-reasoner">deepseek-reasoner (Deep Think Mode)</option>
-                </select>
-              </div>
-
-              {/* Test Connection Button */}
-              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-3">
-                <div className="text-xs text-slate-600">
-                  <span className="font-bold text-slate-800 block">Uji Konektivitas Endpoint:</span>
-                  <span className="text-[10px] text-slate-400 font-mono">https://api.deepseek.com/chat/completions</span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleTestToken}
-                  disabled={isTestingToken}
-                  className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-xs shrink-0 disabled:opacity-50"
-                >
-                  {isTestingToken ? (
-                    <>
-                      <RotateCcw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Menguji...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="w-3.5 h-3.5 text-amber-300" />
-                      <span>Tes Koneksi</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-              {/* Test Connection Result Box */}
-              {testResult && (
-                <div className={`p-3 rounded-xl text-xs border ${
-                  testResult.success
-                    ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-                    : 'bg-rose-50 border-rose-300 text-rose-800'
-                }`}>
-                  <div className="flex items-center gap-2 font-bold mb-0.5">
-                    {testResult.success ? <CheckCircle className="w-4 h-4 text-emerald-600" /> : <AlertCircle className="w-4 h-4 text-rose-600" />}
-                    <span>{testResult.success ? 'Koneksi Berhasil!' : 'Koneksi Gagal'}</span>
-                    {testResult.latencyMs && (
-                      <span className="font-mono text-[10px] ml-auto">
-                        Latensi: {testResult.latencyMs}ms
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[11px]">
-                    {testResult.success ? testResult.message : testResult.error}
-                  </p>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setShowTokenSettings(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition"
-                >
-                  Tutup
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xs flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Check className="w-4 h-4" />
-                  <span>Simpan & Terapkan</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
