@@ -49,6 +49,7 @@ import {
   CheckCircle2,
   X,
   Lock,
+  Key,
   Eye,
   EyeOff,
   UserCheck,
