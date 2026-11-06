@@ -412,7 +412,7 @@ function EngageAiWorkspaceContent() {
             </p>
             <div className="flex items-center gap-2 mt-3 text-[11px] text-emerald-200/80 font-mono">
               <Clock className="w-3.5 h-3.5 text-emerald-300" />
-              <span>Paket Aktif: <strong className="text-white">{deviceData.name} ({deviceData.package})</strong> (Masa Aktif: <span className="text-emerald-300 font-bold">{deviceData.expired}</span> • Kuota: <span className="text-amber-300 font-bold">{deviceData.quota}</span>)</span>
+              <span>Paket Aktif: <strong className="text-white">{deviceData.name || 'SmartRIAYAH'}</strong> (Masa Aktif: <span className="text-emerald-300 font-bold">{deviceData.expired}</span> • Kuota: <span className="text-amber-300 font-bold">{deviceData.quota}</span>)</span>
             </div>
           </div>
 
@@ -585,8 +585,8 @@ function TabDashboard({ onSwitchTab, onCopy, copiedText, deviceData, onRefreshSt
         <div className="lg:col-span-3 grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
             <span className="text-[10px] uppercase font-bold text-slate-400 block">Nama Paket</span>
-            <span className="text-sm font-extrabold text-slate-800 mt-1 block">Free (1.000 Kuota)</span>
-            <span className="text-[10px] text-emerald-600 font-semibold">{deviceData?.package || 'Free'} Gateway • AI: 10</span>
+            <span className="text-sm font-extrabold text-slate-800 mt-1 block">SmartRIAYAH (1.000 Kuota)</span>
+            <span className="text-[10px] text-emerald-600 font-semibold">Gateway Aktif • AI: 10</span>
           </div>
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
             <span className="text-[10px] uppercase font-bold text-slate-400 block">Status Subscription</span>
@@ -1195,7 +1195,7 @@ function TabChannels({
           <span className="text-lg font-extrabold text-slate-800 mt-1 block">
             {isConnected ? '1 Official Active' : '0 Connected / 1 Standby'}
           </span>
-          <span className="text-[10px] text-emerald-600 font-bold">{deviceData?.package || 'Free'} Active</span>
+          <span className="text-[10px] text-emerald-600 font-bold">Gateway Standby / Active</span>
         </div>
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm">
           <span className="text-[10px] font-bold text-slate-400 uppercase block">Connected</span>
