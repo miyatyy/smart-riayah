@@ -10,7 +10,7 @@ const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUP
 const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_WQ7Ix8DuKxlVdv_dnwBspw_cXbdkADI';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-const DEFAULT_FONNTE_TOKEN = 'XvFjdLyyvBgNUbXBZYzZ';
+const DEFAULT_FONNTE_TOKEN = '8UN12iqFjKNBYdds8FCG';
 
 // In-memory set penyimpan nomor HP yang sedang diambil alih manual oleh Admin Ri'ayah
 export const manualTakeoverPhones = new Set();
@@ -126,6 +126,30 @@ export async function isPhoneInManualTakeover(phone) {
 
 // Database referensi cepat Wali & Santri Pesantren Darul Ulum
 const KNOWN_WALI_MAP = {
+  '6285960213654': {
+    namaWali: 'Ibu Fatimah Az-Zahra',
+    santriNama: 'Ahmad Fauzi',
+    nis: '2024001',
+    kelas: '10-A (Unggulan Tahfizh)',
+    kamar: 'Kamar Umar bin Khattab 204 Lt. 2',
+    saldoRfid: 'Rp 85.000',
+    limitHarian: 'Rp 25.000',
+    poinDisiplin: '96/100 (Mumtaz)',
+    statusAsrama: 'Di Asrama (Aktif Mengikuti Halaqah & Sholat Berjamaah)',
+    izinTerakhir: 'Tertib / Tidak ada pelanggaran'
+  },
+  '085960213654': {
+    namaWali: 'Ibu Fatimah Az-Zahra',
+    santriNama: 'Ahmad Fauzi',
+    nis: '2024001',
+    kelas: '10-A (Unggulan Tahfizh)',
+    kamar: 'Kamar Umar bin Khattab 204 Lt. 2',
+    saldoRfid: 'Rp 85.000',
+    limitHarian: 'Rp 25.000',
+    poinDisiplin: '96/100 (Mumtaz)',
+    statusAsrama: 'Di Asrama (Aktif Mengikuti Halaqah & Sholat Berjamaah)',
+    izinTerakhir: 'Tertib / Tidak ada pelanggaran'
+  },
   '08813576012': {
     namaWali: 'Ibu Fatimah Az-Zahra',
     santriNama: 'Ahmad Fauzi',

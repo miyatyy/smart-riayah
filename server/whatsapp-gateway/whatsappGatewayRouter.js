@@ -208,7 +208,7 @@ function resolveFonnteToken(req) {
   if (req.body?.token && typeof req.body.token === 'string') {
     return req.body.token.trim();
   }
-  return (process.env.FONNTE_TOKEN || 'XvFjdLyyvBgNUbXBZYzZ').trim();
+  return (process.env.FONNTE_TOKEN || '8UN12iqFjKNBYdds8FCG').trim();
 }
 
 function normalizeIndonesianPhone(phone) {
@@ -242,12 +242,12 @@ router.all('/fonnte/status', async (req, res) => {
       success: response.ok && (data.status === true || data.status === 'true'),
       status: data.device_status || (isConnected ? 'connect' : 'disconnect'),
       isConnected,
-      device: data.device || '08813576012',
-      name: data.name || 'Smart Permit Pesantren',
-      quota: data.quota || (data.messages != null ? String(data.messages) : '931'),
+      device: data.device || '6285960213654',
+      name: data.name || 'SmartRIAYAH',
+      quota: data.quota || (data.messages != null ? String(data.messages) : '1000'),
       messages: data.messages != null ? data.messages : 0,
       package: data.package || 'Free',
-      expired: data.expired || '-',
+      expired: data.expired || '7 Dec 2026',
       raw: data,
       log: !isConnected ? {
         event: 'device disconnected',

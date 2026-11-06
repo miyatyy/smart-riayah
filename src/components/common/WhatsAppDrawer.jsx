@@ -67,7 +67,7 @@ export default function WhatsAppDrawer() {
     if (!testCustomMsg.trim()) return;
     sendWhatsAppNotification(
       'Ibu Fatimah Az-Zahra (Wali Ahmad Fauzi)',
-      fonnteTargetNumber || '08813576012',
+      fonnteTargetNumber || '6285960213654',
       'MANUAL_TEST',
       testCustomMsg
     );

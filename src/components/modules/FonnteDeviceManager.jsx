@@ -52,16 +52,16 @@ export default function FonnteDeviceManager() {
     return [
       {
         id: 'dev-1',
-        name: 'Smart Permit Pesantren',
-        device: fonnteTargetNumber || '08813576012',
-        status: 'connect', // 'connect' | 'disconnect'
+        name: 'SmartRIAYAH',
+        device: fonnteTargetNumber || '6285960213654',
+        status: 'disconnect', // 'connect' | 'disconnect'
         package: 'Free',
-        quota: 985,
-        expired: '16 Nov 2026',
+        quota: 1000,
+        expired: '7 Dec 2026',
         botLimit: 50,
         deviceQuota: '1/1',
         type: 'Personal & Group',
-        token: fonnteToken || 'XvFjdLyyvBgNUbXBZYzZ'
+        token: fonnteToken || '8UN12iqFjKNBYdds8FCG'
       }
     ];
   });

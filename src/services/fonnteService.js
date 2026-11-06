@@ -4,7 +4,7 @@
  * dengan Seamless Direct Fallback ke https://api.fonnte.com
  */
 
-const DEFAULT_TOKEN = 'XvFjdLyyvBgNUbXBZYzZ';
+const DEFAULT_TOKEN = '8UN12iqFjKNBYdds8FCG';
 
 function getStoredToken(customToken) {
   if (customToken && typeof customToken === 'string' && customToken.trim()) {
@@ -12,6 +12,10 @@ function getStoredToken(customToken) {
   }
   if (typeof window !== 'undefined' && window.localStorage) {
     const saved = localStorage.getItem('sr_fonnte_token');
+    if (!saved || saved === 'XvFjdLyyvBgNUbXBZYzZ') {
+      localStorage.setItem('sr_fonnte_token', DEFAULT_TOKEN);
+      return DEFAULT_TOKEN;
+    }
     if (saved && saved.trim()) return saved.trim();
   }
   return DEFAULT_TOKEN;
@@ -51,12 +55,12 @@ export async function fetchDeviceStatus(customToken = null) {
           success: data.success,
           status: data.status || (data.isConnected ? 'connect' : 'disconnect'),
           isConnected: data.isConnected || data.status === 'connect',
-          device: data.device || '08813576012',
-          name: data.name || 'Smart Permit Pesantren',
-          quota: data.quota || '931',
+          device: data.device || '6285960213654',
+          name: data.name || 'SmartRIAYAH',
+          quota: data.quota || '1000',
           messages: data.messages != null ? data.messages : 0,
           package: data.package || 'Free',
-          expired: data.expired || '-',
+          expired: data.expired || '7 Dec 2026',
           raw: data.raw || data,
           log: data.log || null
         };
@@ -79,12 +83,12 @@ export async function fetchDeviceStatus(customToken = null) {
       success: directRes.ok && (directData.status === true || directData.status === 'true'),
       status: directData.device_status || (isConnected ? 'connect' : 'disconnect'),
       isConnected,
-      device: directData.device || '08813576012',
-      name: directData.name || 'Smart Permit Pesantren',
-      quota: directData.quota || (directData.messages != null ? String(directData.messages) : '931'),
+      device: directData.device || '6285960213654',
+      name: directData.name || 'SmartRIAYAH',
+      quota: directData.quota || (directData.messages != null ? String(directData.messages) : '1000'),
       messages: directData.messages != null ? directData.messages : 0,
       package: directData.package || 'Free',
-      expired: directData.expired || '-',
+      expired: directData.expired || '7 Dec 2026',
       raw: directData,
       log: !isConnected ? {
         event: 'device disconnected',
@@ -99,12 +103,12 @@ export async function fetchDeviceStatus(customToken = null) {
       success: false,
       status: 'disconnect',
       isConnected: false,
-      device: '08813576012',
-      name: 'Smart Permit Pesantren',
-      quota: '0',
+      device: '6285960213654',
+      name: 'SmartRIAYAH',
+      quota: '1000',
       messages: 0,
       package: 'Free',
-      expired: '-',
+      expired: '7 Dec 2026',
       error: directErr.message,
       log: {
         event: 'device disconnected',

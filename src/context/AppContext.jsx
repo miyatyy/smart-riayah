@@ -266,10 +266,20 @@ export const AppProvider = ({ children }) => {
 
   // Real-Time WhatsApp Gateway Configuration (Fonnte API)
   const [fonnteToken, setFonnteTokenState] = useState(() => {
-    return localStorage.getItem('sr_fonnte_token') || 'XvFjdLyyvBgNUbXBZYzZ';
+    const saved = localStorage.getItem('sr_fonnte_token');
+    if (!saved || saved === 'XvFjdLyyvBgNUbXBZYzZ') {
+      localStorage.setItem('sr_fonnte_token', '8UN12iqFjKNBYdds8FCG');
+      return '8UN12iqFjKNBYdds8FCG';
+    }
+    return saved;
   });
   const [fonnteTargetNumber, setFonnteTargetNumberState] = useState(() => {
-    return localStorage.getItem('sr_fonnte_target') || '08813576012';
+    const saved = localStorage.getItem('sr_fonnte_target');
+    if (!saved || saved === '08813576012') {
+      localStorage.setItem('sr_fonnte_target', '6285960213654');
+      return '6285960213654';
+    }
+    return saved;
   });
   const [isFonnteEnabled, setIsFonnteEnabledState] = useState(() => {
     const saved = localStorage.getItem('sr_fonnte_enabled');
@@ -992,9 +1002,9 @@ export const AppProvider = ({ children }) => {
 
   // 3. FUNGSI PENGIRIMAN OTOMATIS KE API FONNTE (https://api.fonnte.com/send)
   const sendFonnteWhatsApp = async (targetNumber, messageText, eventType = 'GENERAL') => {
-    const token = (fonnteToken || 'XvFjdLyyvBgNUbXBZYzZ').trim();
-    // Gunakan nomor tujuan testing/wali santri (default 08813576012)
-    const rawTarget = fonnteTargetNumber || targetNumber || '08813576012';
+    const token = (fonnteToken || '8UN12iqFjKNBYdds8FCG').trim();
+    // Gunakan nomor tujuan testing/wali santri (default 6285960213654)
+    const rawTarget = fonnteTargetNumber || targetNumber || '6285960213654';
     const cleanTarget = rawTarget.replace(/[^0-9]/g, '');
 
     let latencyMs = 0;
@@ -1069,7 +1079,7 @@ export const AppProvider = ({ children }) => {
   };
 
   const testFonnteWhatsApp = async () => {
-    const target = fonnteTargetNumber || '08813576012';
+    const target = fonnteTargetNumber || '6285960213654';
     const testMsg = `📲 *[TES KONEKSI LIVE WHATSAPP GATEWAY]*\nAssalamu'alaikum Warahmatullahi Wabarakatuh.\n\nSistem Real-Time IoT Smart Gate & Smart Ri'ayah Pesantren Modern Darul Ulum berhasil terhubung ke WhatsApp Gateway Pesantren!\n\n• Waktu Pengujian: *${getNowWIB()}*\n• Target Uji: *${target}*\n• Status Gateway: *ONLINE & TERVERIFIKASI*\n\n_Pesan ini dikirim otomatis untuk validasi latensi & konektivitas data jurnal ilmiah._`;
     
     await sendWhatsAppNotification(
@@ -1088,7 +1098,7 @@ export const AppProvider = ({ children }) => {
       id,
       waktu: getNowWIB(),
       penerima,
-      nomor: fonnteTargetNumber || nomor || '08813576012',
+      nomor: fonnteTargetNumber || nomor || '6285960213654',
       tipe,
       pesan,
       latencyMs: null,

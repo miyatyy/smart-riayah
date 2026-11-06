@@ -140,14 +140,14 @@ export default function FonnteSettingsBox({ variant = 'compact', defaultExpanded
                   Nomor WA Tujuan (Wali / Testing):
                 </span>
                 <span className="text-[9px] text-slate-400 font-mono">
-                  Default: 08813576012
+                  Default: 6285960213654
                 </span>
               </label>
               <input
                 type="text"
                 value={fonnteTargetNumber}
                 onChange={(e) => setFonnteTargetNumber(e.target.value)}
-                placeholder="Contoh: 08813576012"
+                placeholder="Contoh: 6285960213654"
                 className="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-1.5 text-xs font-mono text-white focus:outline-none transition shadow-inner"
               />
             </div>

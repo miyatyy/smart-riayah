@@ -50,6 +50,7 @@ import {
   X,
   Lock,
   Eye,
+  EyeOff,
   UserCheck,
   Loader2,
   BellRing,
@@ -175,12 +176,12 @@ function EngageAiWorkspaceContent() {
   const [deviceData, setDeviceData] = useState({
     isConnected: false,
     status: 'disconnect',
-    device: '08813576012',
-    name: 'Smart Permit Pesantren',
-    quota: '931',
-    messages: 69,
+    device: '6285960213654',
+    name: 'SmartRIAYAH',
+    quota: '1.000',
+    messages: 0,
     package: 'Free',
-    expired: '16 November 2026',
+    expired: '7 Dec 2026',
     isLoading: false
   });
 
@@ -243,12 +244,12 @@ function EngageAiWorkspaceContent() {
       setDeviceData({
         isConnected: res.isConnected,
         status: res.status,
-        device: res.device || '08813576012',
-        name: res.name || 'Smart Permit Pesantren',
-        quota: res.quota || '931',
+        device: res.device || '6285960213654',
+        name: res.name || 'SmartRIAYAH',
+        quota: res.quota || '1.000',
         messages: res.messages != null ? res.messages : 0,
         package: res.package || 'Free',
-        expired: res.expired || '-',
+        expired: res.expired || '7 Dec 2026',
         isLoading: false
       });
 
@@ -311,12 +312,12 @@ function EngageAiWorkspaceContent() {
       setDeviceData({
         isConnected: res.isConnected,
         status: res.status,
-        device: res.device || '08813576012',
-        name: res.name || 'Smart Permit Pesantren',
-        quota: res.quota || '931',
+        device: res.device || '6285960213654',
+        name: res.name || 'SmartRIAYAH',
+        quota: res.quota || '1.000',
         messages: res.messages != null ? res.messages : 0,
         package: res.package || 'Free',
-        expired: res.expired || '-',
+        expired: res.expired || '7 Dec 2026',
         isLoading: false
       });
       if (res.isConnected) {
@@ -583,28 +584,24 @@ function TabDashboard({ onSwitchTab, onCopy, copiedText, deviceData, onRefreshSt
         <div className="lg:col-span-3 grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
             <span className="text-[10px] uppercase font-bold text-slate-400 block">Nama Paket</span>
-            <span className="text-sm font-extrabold text-slate-800 mt-1 block">Smart Riayah Pro</span>
-            <span className="text-[10px] text-emerald-600 font-semibold">{deviceData?.package || 'Free'} Gateway</span>
+            <span className="text-sm font-extrabold text-slate-800 mt-1 block">Free (1.000 Kuota)</span>
+            <span className="text-[10px] text-emerald-600 font-semibold">{deviceData?.package || 'Free'} Gateway • AI: 10</span>
           </div>
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
             <span className="text-[10px] uppercase font-bold text-slate-400 block">Status Subscription</span>
-            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 mt-1.5 rounded-full text-xs font-bold border ${
-              isConnected
-                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                : 'bg-rose-100 text-rose-800 border-rose-300'
-            }`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-              {isConnected ? 'Connected' : 'Disconnected'}
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 mt-1.5 rounded-full text-xs font-bold border bg-emerald-100 text-emerald-800 border-emerald-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Active
             </span>
           </div>
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
             <span className="text-[10px] uppercase font-bold text-slate-400 block">Sisa Kuota Pesan</span>
-            <span className="text-sm font-extrabold text-slate-800 mt-1 block">{deviceData?.quota || '931'} Pesan</span>
+            <span className="text-sm font-extrabold text-slate-800 mt-1 block">{deviceData?.quota || '1.000'} Pesan</span>
             <span className="text-[10px] text-slate-400 font-mono">Terkirim: {deviceData?.messages || 0}</span>
           </div>
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
             <span className="text-[10px] uppercase font-bold text-slate-400 block">Masa Aktif Paket</span>
-            <span className="text-xs font-bold text-slate-700 mt-1 block">{deviceData?.expired || '16 Nov 2026'}</span>
+            <span className="text-xs font-bold text-slate-700 mt-1 block">{deviceData?.expired || '7 Dec 2026'}</span>
             <span className="inline-block mt-1 text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800">
               Live Verified
             </span>
@@ -657,11 +654,11 @@ function TabDashboard({ onSwitchTab, onCopy, copiedText, deviceData, onRefreshSt
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-sm border border-emerald-200">
-              DU
+              SR
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h4 className="font-extrabold text-sm text-slate-900">{deviceData?.name || 'Pesantren Modern Darul Ulum Official'}</h4>
+                <h4 className="font-extrabold text-sm text-slate-900">{deviceData?.name || 'SmartRIAYAH'}</h4>
                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
                   isConnected
                     ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
@@ -672,15 +669,15 @@ function TabDashboard({ onSwitchTab, onCopy, copiedText, deviceData, onRefreshSt
                 </span>
               </div>
               <p className="text-xs font-mono font-extrabold text-slate-700 mt-0.5">
-                +62 {deviceData?.device || '881-3576-012'}
+                {deviceData?.device || '6285960213654'}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => onCopy(deviceData?.device || '08813576012', 'phone')}
-              className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition flex items-center gap-1.5"
+              onClick={() => onCopy(deviceData?.device || '6285960213654', 'phone')}
+              className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer"
             >
               {copiedText === 'phone' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
               <span>{copiedText === 'phone' ? 'Disalin!' : 'Copy Nomor'}</span>
@@ -805,8 +802,11 @@ function TabDashboard({ onSwitchTab, onCopy, copiedText, deviceData, onRefreshSt
               <div className="flex items-center gap-2.5">
                 <div className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-rose-500'}`} />
                 <div>
-                  <h5 className="font-extrabold text-xs text-slate-900">{deviceData?.name || 'Darul Ulum WhatsApp Gateway'}</h5>
-                  <span className="text-[10px] font-mono text-slate-500">+62 {deviceData?.device}</span>
+                  <div className="flex items-center gap-1.5">
+                    <h5 className="font-extrabold text-xs text-slate-900">{deviceData?.name || 'SmartRIAYAH'}</h5>
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-200 text-slate-700 font-bold">62859***3654</span>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-500">{deviceData?.device || '6285960213654'}</span>
                 </div>
               </div>
               <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${
@@ -987,7 +987,10 @@ function TabChannels({
   const [channelRole, setChannelRole] = useState('Legacy Campaign + Chatbot');
 
   // Token privat form state
-  const [tokenInput, setTokenInput] = useState(fonnteToken || 'XvFjdLyyvBgNUbXBZYzZ');
+  const [tokenInput, setTokenInput] = useState(() => fonnteToken || '8UN12iqFjKNBYdds8FCG');
+  const [showToken, setShowToken] = useState(false);
+  const [labelInput, setLabelInput] = useState(() => localStorage.getItem('sr_fonnte_label') || 'SmartRIAYAH');
+  const [deviceInput, setDeviceInput] = useState(() => localStorage.getItem('sr_fonnte_target') || '6285960213654');
   const [isTestingToken, setIsTestingToken] = useState(false);
 
   // QR Code state & auto-polling
@@ -1009,7 +1012,7 @@ function TabChannels({
   }, []);
 
   // Number validation state
-  const [validateInput, setValidateInput] = useState('08813576012');
+  const [validateInput, setValidateInput] = useState('6285960213654');
   const [isValidating, setIsValidating] = useState(false);
   const [validateResult, setValidateResult] = useState(null);
 
@@ -1028,7 +1031,8 @@ function TabChannels({
     showToast('Meminta QR Code resmi dari server WhatsApp...', 'info');
 
     try {
-      const res = await fetchQrCode('', fonnteToken);
+      const activeToken = (fonnteToken || tokenInput || '8UN12iqFjKNBYdds8FCG').trim();
+      const res = await fetchQrCode('', activeToken);
       setQrLoading(false);
 
       if (res.status === 'connected' || res.isConnected) {
@@ -1069,7 +1073,8 @@ function TabChannels({
         // Auto-polling status koneksi Fonnte setiap 5 detik
         qrPollRef.current = setInterval(async () => {
           try {
-            const check = await fetchDeviceStatus(fonnteToken);
+            const activeToken = (fonnteToken || tokenInput || '8UN12iqFjKNBYdds8FCG').trim();
+            const check = await fetchDeviceStatus(activeToken);
             if (check.isConnected) {
               if (qrPollRef.current) clearInterval(qrPollRef.current);
               if (qrTimerRef.current) clearInterval(qrTimerRef.current);
@@ -1136,10 +1141,11 @@ function TabChannels({
     setIsTestingToken(true);
     sound.playBeep?.();
     try {
-      const res = await fetchDeviceStatus(fonnteToken || tokenInput);
+      const activeToken = (fonnteToken || tokenInput || '8UN12iqFjKNBYdds8FCG').trim();
+      const res = await fetchDeviceStatus(activeToken);
       setIsTestingToken(false);
       if (res.success || res.status) {
-        showToast(`Gateway Terhubung & Aktif! Status: ${res.status} (${res.name || 'Smart Permit'} - Kuota: ${res.quota || '-'})`, 'success');
+        showToast(`Gateway Terhubung & Aktif! Status: ${res.status} (${res.name || 'SmartRIAYAH'} - Kuota: ${res.quota || '-'})`, 'success');
         sound.playSuccess?.();
       } else {
         showToast('Gateway tidak merespons atau periksa koneksi internet.', 'error');
@@ -1372,8 +1378,8 @@ function TabChannels({
 
               {/* Row 2: WhatsApp Gateway */}
               <tr className="hover:bg-slate-50/50">
-                <td className="py-3 px-3 font-extrabold text-slate-800">{deviceData?.name || 'Pesantren Darul Ulum'}</td>
-                <td className="py-3 px-3 font-mono text-slate-500 text-[11px]">wa-gw-main-01</td>
+                <td className="py-3 px-3 font-extrabold text-slate-800">{deviceData?.name || 'SmartRIAYAH'}</td>
+                <td className="py-3 px-3 font-mono text-slate-700 text-[11px] font-bold">62859***3654</td>
                 <td className="py-3 px-3">
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
                     WA 3rd Party
@@ -1381,7 +1387,7 @@ function TabChannels({
                 </td>
                 <td className="py-3 px-3">
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                    {channelRole}
+                    Legacy Campaign + Chatbot
                   </span>
                 </td>
                 <td className="py-3 px-3">
@@ -1392,10 +1398,10 @@ function TabChannels({
                 </td>
                 <td className="py-3 px-3">
                   <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-blue-100 text-blue-800">Cold</span>
-                  <span className="text-[9px] text-slate-400 block mt-0.5 font-mono">Bgt: 2/5 • Rsk: 0</span>
+                  <span className="text-[9px] text-slate-500 block mt-0.5 font-mono">Quota: {deviceData?.quota || '1.000'} · AI: 10</span>
                 </td>
-                <td className="py-3 px-3 font-mono font-bold text-slate-700">+62 {deviceData?.device || '8813576012'}</td>
-                <td className="py-3 px-3 font-mono text-slate-600 text-[11px] font-bold">{deviceData?.quota || '931'}</td>
+                <td className="py-3 px-3 font-mono font-bold text-slate-700">{deviceData?.device || '6285960213654'}</td>
+                <td className="py-3 px-3 font-mono text-slate-600 text-[11px] font-bold">{deviceData?.quota || '1.000'}</td>
                 <td className="py-3 px-3 text-right">
                   <button
                     onClick={() => { if (window.confirm('Ajukan restart koneksi channel ini?')) onRefreshStatus(); }}
@@ -1410,7 +1416,7 @@ function TabChannels({
         </div>
       </div>
 
-      {/* 5. Operasional Device WhatsApp (Accordion Panel) */}
+      {/* 5. Operasional Device Fonnte · SmartRIAYAH (Accordion Panel) */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-0">
         {/* Header Aksi Cepat Device */}
         <div className="p-4 bg-emerald-50/60 border-b border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1420,13 +1426,13 @@ function TabChannels({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h4 className="font-extrabold text-xs text-emerald-950">Operasional Device WhatsApp Terpasang</h4>
+                <h4 className="font-extrabold text-xs text-emerald-950">Operasional Device Fonnte · SmartRIAYAH</h4>
                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${isConnected ? 'bg-emerald-200/70 text-emerald-900' : 'bg-rose-100 text-rose-800'}`}>
                   {isConnected ? 'Campaign & Bot ON' : 'Offline / Standby'}
                 </span>
               </div>
               <p className="text-[11px] text-emerald-800 font-mono">
-                Device: {deviceData?.device || '08813576012'} • Status: <strong className={isConnected ? 'text-emerald-700' : 'text-rose-700'}>{deviceData?.status}</strong> • Kuota: {deviceData?.quota}
+                Device: {deviceData?.device || '6285960213654'} • Status: <strong className={isConnected ? 'text-emerald-700' : 'text-rose-700'}>{deviceData?.status}</strong> • Kuota: {deviceData?.quota || '1.000'}
               </p>
             </div>
           </div>
@@ -1473,60 +1479,150 @@ function TabChannels({
                 </div>
                 <div className="p-3 bg-white rounded-xl border border-slate-200">
                   <span className="text-[10px] font-bold text-slate-400 uppercase block">Nama Akun</span>
-                  <span className="font-bold text-xs text-slate-800 block mt-1 truncate">{deviceData?.name}</span>
+                  <span className="font-bold text-xs text-slate-800 block mt-1 truncate">{deviceData?.name || 'SmartRIAYAH'}</span>
                 </div>
                 <div className="p-3 bg-white rounded-xl border border-slate-200">
                   <span className="text-[10px] font-bold text-slate-400 uppercase block">Nomor WhatsApp</span>
-                  <span className="font-bold text-xs font-mono text-slate-700 block mt-1">+62 {deviceData?.device}</span>
+                  <span className="font-bold text-xs font-mono text-slate-700 block mt-1">{deviceData?.device || '6285960213654'}</span>
                 </div>
                 <div className="p-3 bg-white rounded-xl border border-slate-200">
                   <span className="text-[10px] font-bold text-slate-400 uppercase block">Sisa Kuota</span>
-                  <span className="font-extrabold text-xs text-emerald-700 block mt-1">{deviceData?.quota} Pesan</span>
+                  <span className="font-extrabold text-xs text-emerald-700 block mt-1">{deviceData?.quota || '1.000'} Pesan</span>
                 </div>
                 <div className="p-3 bg-white rounded-xl border border-slate-200">
                   <span className="text-[10px] font-bold text-slate-400 uppercase block">Masa Aktif</span>
-                  <span className="font-bold text-xs text-slate-700 block mt-1">{deviceData?.expired}</span>
+                  <span className="font-bold text-xs text-slate-700 block mt-1">{deviceData?.expired || '7 Dec 2026'}</span>
                 </div>
               </div>
 
-              {/* Status Kredensial & Kontrol Gateway (Token Privat Aman Tersimpan di Sistem) */}
-              <div className="p-4 bg-white rounded-xl border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100 shrink-0">
-                    <ShieldCheck className="w-5 h-5" />
+              {/* Form Pengaturan Kredensial Fonnte · SmartRIAYAH */}
+              <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <Key className="w-4 h-4 text-emerald-600" />
+                    <h5 className="font-extrabold text-xs text-slate-800">
+                      Pengaturan Kredensial WhatsApp Gateway (Fonnte API)
+                    </h5>
                   </div>
+                  <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-bold">
+                    Official Device Config
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* 1. Nama Label */}
                   <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-slate-800">Kredensial Gateway WhatsApp</span>
-                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
-                        Terkonfigurasi di Sistem
-                      </span>
+                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                      Nama Label
+                    </label>
+                    <input
+                      type="text"
+                      value={labelInput}
+                      onChange={(e) => setLabelInput(e.target.value)}
+                      placeholder="SmartRIAYAH"
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+
+                  {/* 2. Nomor Device */}
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                      Nomor Device
+                    </label>
+                    <input
+                      type="text"
+                      value={deviceInput}
+                      onChange={(e) => setDeviceInput(e.target.value)}
+                      placeholder="6285960213654"
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-mono font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+
+                  {/* 3. Token Privat Fonnte dengan Show/Hide */}
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                      Token Privat Fonnte
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showToken ? 'text' : 'password'}
+                        value={tokenInput}
+                        onChange={(e) => setTokenInput(e.target.value)}
+                        placeholder="8UN12iqFjKNBYdds8FCG"
+                        className="w-full px-3 py-2 pr-9 text-xs rounded-xl border border-slate-300 font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowToken(!showToken)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition"
+                        title={showToken ? 'Sembunyikan token' : 'Tampilkan token'}
+                      >
+                        {showToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
                     </div>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      Sistem terhubung aman ke endpoint WhatsApp Gateway dengan kredensial privat tersimpan aman di sistem.
-                    </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <button
-                    onClick={handleTestToken}
-                    disabled={isTestingToken}
-                    className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition flex items-center gap-1.5 justify-center shadow-2xs cursor-pointer"
-                    title="Uji koneksi gateway WhatsApp"
-                  >
-                    {isTestingToken ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 text-amber-500" />}
-                    <span>Uji Gateway</span>
-                  </button>
-                  <button
-                    onClick={onRefreshStatus}
-                    disabled={deviceData?.isLoading}
-                    className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs transition flex items-center gap-1.5 justify-center border border-emerald-200 shadow-2xs cursor-pointer"
-                    title="Perbarui status koneksi device"
-                  >
-                    {deviceData?.isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                    <span>Refresh Status</span>
-                  </button>
+                <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-100">
+                  <p className="text-[11px] text-slate-500">
+                    💡 Klik tombol di samping untuk menyimpan kredensial dan langsung memeriksa koneksi live ke <code className="text-emerald-700 font-mono">https://api.fonnte.com/device</code>.
+                  </p>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <button
+                      type="button"
+                      disabled={isTestingToken}
+                      onClick={handleTestToken}
+                      className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      title="Uji koneksi ping ke gateway"
+                    >
+                      {isTestingToken ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 text-amber-500" />}
+                      <span>Uji Ping</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const cleanToken = (tokenInput || '8UN12iqFjKNBYdds8FCG').trim();
+                        const cleanDevice = (deviceInput || '6285960213654').trim();
+                        const cleanLabel = (labelInput || 'SmartRIAYAH').trim();
+
+                        localStorage.setItem('sr_fonnte_token', cleanToken);
+                        localStorage.setItem('sr_fonnte_target', cleanDevice);
+                        localStorage.setItem('sr_fonnte_label', cleanLabel);
+                        if (onSaveToken) onSaveToken(cleanToken);
+
+                        sound.playBeep?.();
+                        showToast('Menyimpan kredensial & mengecek status live Fonnte...', 'info');
+
+                        try {
+                          const check = await fetchDeviceStatus(cleanToken);
+                          setDeviceData({
+                            isConnected: check.isConnected,
+                            status: check.status,
+                            device: check.device || cleanDevice,
+                            name: check.name || cleanLabel,
+                            quota: check.quota || '1.000',
+                            messages: check.messages != null ? check.messages : 0,
+                            package: check.package || 'Free',
+                            expired: check.expired || '7 Dec 2026',
+                            isLoading: false
+                          });
+                          sound.playSuccess?.();
+                          showToast(
+                            check.isConnected
+                              ? `✓ Berhasil terhubung ke ${check.name} (${check.device})! Kuota: ${check.quota}`
+                              : `Kredensial tersimpan. Status: ${check.status} (Siap Scan QR).`,
+                            check.isConnected ? 'success' : 'info'
+                          );
+                        } catch (err) {
+                          showToast(`Status Fonnte: ${err.message}`, 'error');
+                        }
+                      }}
+                      className="w-full sm:w-auto px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Simpan &amp; Refresh Koneksi</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1741,7 +1837,7 @@ function TabChannels({
                   type="text"
                   value={validateInput}
                   onChange={(e) => setValidateInput(e.target.value)}
-                  placeholder="08xxxxxxxxxx atau 628xxxxxxxxxx"
+                  placeholder="6285960213654"
                   className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-300 font-mono focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 />
                 <button
