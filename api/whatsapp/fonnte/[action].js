@@ -211,7 +211,7 @@ export default async function handler(req, res) {
 
   // 5. SEND
   if (action === 'send') {
-    const { target, message } = req.body || {};
+    const { target, message, url } = req.body || {};
     if (!target || !message) {
       return res.status(400).json({ success: false, message: 'Parameter target dan message wajib diisi!' });
     }
@@ -223,6 +223,9 @@ export default async function handler(req, res) {
       formData.append('message', message);
       formData.append('countryCode', '62');
       formData.append('preview', 'false');
+      if (url) {
+        formData.append('url', url);
+      }
 
       const response = await fetch('https://api.fonnte.com/send', {
         method: 'POST',

@@ -33,13 +33,15 @@ export default async function handler(req, res) {
 
     const cleanSantriName = (booking.nama_santri || 'Santri').replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase();
     const barcodeToken = booking.barcode_token || `GP-DU-${cleanSantriName}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(barcodeToken)}&format=png`;
 
     const approvalWaText = `🎉 *[PERMOHONAN KUNJUNGAN DISETUJUI ADMIN RI'AYAH]*\n` +
       `Assalamu'alaikum Wr. Wb. Bapak/Ibu *${booking.nama_penjenguk || 'Wali Santri'}*.\n\n` +
       `Permohonan kunjungan ananda *${booking.nama_santri}* (${booking.kelas || 'Pondok'}) untuk hari *${booking.hari_kunjungan || 'Senin–Kamis'}, ${booking.tanggal_kunjungan}* pukul *${booking.jam_kunjungan} - ${booking.jam_selesai || '15:30'} WIB* telah *DISETUJUI* oleh Admin Ri'ayah Pondok.\n\n` +
       `📦 *Titipan Barang:* ${booking.titipan_barang || '-'} (${booking.berat_barang_kg || 0} Kg)\n` +
-      `🎫 *Barcode Gate Pass Resmi:* *${barcodeToken}*\n\n` +
-      `Silakan tunjukkan Barcode ini kepada Satpam di Pos Gerbang untuk verifikasi check-in masuk pondok.`;
+      `🎫 *Kode Pass Resmi:* *${barcodeToken}*\n\n` +
+      `📷 *Gambar Barcode Gate Pass (Bisa Di-scan):*\n${qrImageUrl}\n\n` +
+      `Silakan simpan gambar QR Code / Barcode yang terlampir ini dan perlihatkan ke Satpam di Pos Gerbang untuk verifikasi check-in masuk pondok.`;
 
     let fonnteResult = null;
     let targetWa = String(booking.no_wa_penjenguk || '').replace(/[^0-9]/g, '');
@@ -58,7 +60,8 @@ export default async function handler(req, res) {
           },
           body: JSON.stringify({
             target: targetWa,
-            message: approvalWaText
+            message: approvalWaText,
+            url: qrImageUrl
           })
         });
         fonnteResult = await fRes.json().catch(() => ({}));

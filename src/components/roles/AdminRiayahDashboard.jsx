@@ -456,6 +456,18 @@ export default function AdminRiayahDashboard() {
                       📦 Titipan: <span className="font-semibold text-slate-700">{b.titipan_barang}</span> ({b.berat_barang_kg || 0} Kg)
                     </p>
                   )}
+
+                  <div className="flex items-center gap-2 mt-2 p-1.5 bg-amber-50/80 rounded-lg border border-amber-200/90">
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(b.barcode_token || `GP-DU-${(b.nama_santri || 'SANTRI').replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase()}-GATEPASS`)}&format=png`}
+                      alt="Preview Barcode"
+                      className="w-10 h-10 bg-white p-0.5 rounded border border-amber-200 shrink-0 object-contain shadow-2xs"
+                    />
+                    <div className="min-w-0">
+                      <span className="text-[10px] text-amber-900 font-bold block leading-tight">FORMAT E-BARCODE SIAP TERBIT</span>
+                      <span className="text-[9px] text-slate-500 block leading-tight">Gambar QR Code &amp; Barcode akan otomatis dikirim ke WA wali</span>
+                    </div>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 mt-3.5 pt-2.5 border-t border-slate-100">
                   <button

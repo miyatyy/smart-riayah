@@ -1170,7 +1170,7 @@ export const AppProvider = ({ children }) => {
   };
 
   // 3. FUNGSI PENGIRIMAN OTOMATIS KE API FONNTE (https://api.fonnte.com/send)
-  const sendFonnteWhatsApp = async (targetNumber, messageText, eventType = 'GENERAL') => {
+  const sendFonnteWhatsApp = async (targetNumber, messageText, eventType = 'GENERAL', mediaUrl = null) => {
     const token = (fonnteToken || '8UN12iqFjKNBYdds8FCG').trim();
     // Prioritaskan nomor tujuan wali santri aktual, fallback hanya jika nomor kosong
     const rawTarget = targetNumber || fonnteTargetNumber || '6285960213654';
@@ -1195,6 +1195,9 @@ export const AppProvider = ({ children }) => {
         formData.append('message', messageText);
         formData.append('countryCode', '62');
         formData.append('preview', 'false');
+        if (mediaUrl) {
+          formData.append('url', mediaUrl);
+        }
 
         const response = await fetch('https://api.fonnte.com/send', {
           method: 'POST',
@@ -1265,7 +1268,7 @@ export const AppProvider = ({ children }) => {
   };
 
   // Helper to push WhatsApp Notification with Fonnte Real-Time Dispatch & Latency Tracking
-  const sendWhatsAppNotification = async (penerima, nomor, tipe, pesan) => {
+  const sendWhatsAppNotification = async (penerima, nomor, tipe, pesan, mediaUrl = null) => {
     sound.playWhatsApp();
     const id = `WA-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
@@ -1285,6 +1288,7 @@ export const AppProvider = ({ children }) => {
       nomor: cleanTarget, // ✅ Ditujukan tepat ke nomor HP wali santri
       tipe,
       pesan,
+      mediaUrl: mediaUrl || null,
       latencyMs: null,
       latencySec: null,
       apiStatus: isFonnteEnabled ? 'SENDING' : 'SIMULATED',
@@ -1299,7 +1303,7 @@ export const AppProvider = ({ children }) => {
 
     // Call Fonnte API asynchronously in background langsung ke nomor wali santri
     try {
-      const res = await sendFonnteWhatsApp(cleanTarget, pesan, tipe);
+      const res = await sendFonnteWhatsApp(cleanTarget, pesan, tipe, mediaUrl);
       setWhatsappLogs(prev => prev.map(m => {
         if (m.id === id) {
           return {
@@ -3452,18 +3456,24 @@ export const AppProvider = ({ children }) => {
     const targetPhone = newBooking.no_wa_penjenguk;
     if (newBooking.booking_source === 'WHATSAPP') {
       if (statusKunjungan === 'Disetujui (Siap Datang)') {
+        const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(barcodeToken)}&format=png`;
+        const barcode128Url = `https://quickchart.io/barcode?type=code128&text=${encodeURIComponent(barcodeToken)}&includeText=true&height=75`;
+        newBooking.barcode_image_url = qrImageUrl;
+        newBooking.barcode_linear_url = barcode128Url;
+
         sendWhatsAppNotification(
           `${newBooking.nama_penjenguk} (Wali ${newBooking.nama_santri})`,
           targetPhone,
           'VISIT_AUTO_APPROVED',
-          `✅ *[BOOKING KUNJUNGAN DISETUJUI OTOMATIS - WEEKEND]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${newBooking.nama_penjenguk}*.\n\nPermohonan sambangan ananda *${newBooking.nama_santri}* (${newBooking.kelas}) pada hari *${hari}, ${tgl}* pukul *${newBooking.jam_kunjungan} - ${newBooking.jam_selesai} WIB* telah *DISETUJUI OTOMATIS*.\n\n📦 *Titipan Barang:* ${newBooking.titipan_barang} (${newBooking.berat_barang_kg} Kg)\n🎫 *Barcode Gate Pass:* *${barcodeToken}*\n\nSilakan tunjukkan barcode ini ke Satpam saat tiba di Gerbang Utama Pesantren Modern Darul Ulum.`
+          `✅ *[BOOKING KUNJUNGAN DISETUJUI OTOMATIS - WEEKEND]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${newBooking.nama_penjenguk}*.\n\nPermohonan sambangan ananda *${newBooking.nama_santri}* (${newBooking.kelas}) pada hari *${hari}, ${tgl}* pukul *${newBooking.jam_kunjungan} - ${newBooking.jam_selesai} WIB* telah *DISETUJUI OTOMATIS*.\n\n📦 *Titipan Barang:* ${newBooking.titipan_barang} (${newBooking.berat_barang_kg} Kg)\n🎫 *Kode Pass Resmi:* *${barcodeToken}*\n\n📷 *Gambar Barcode Gate Pass (Bisa Di-scan):*\n${qrImageUrl}\n\nSilakan simpan gambar QR Code / Barcode yang kami lampirkan di pesan ini dan perlihatkan ke Satpam di Gerbang Utama Pesantren Modern Darul Ulum untuk di-scan saat tiba di pondok.`,
+          qrImageUrl
         );
       } else {
         sendWhatsAppNotification(
           `${newBooking.nama_penjenguk} (Wali ${newBooking.nama_santri})`,
           targetPhone,
           'VISIT_WAITING_APPROVAL',
-          `⏳ *[PERMOHONAN KUNJUNGAN TERCATAT - HARI KERJA]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${newBooking.nama_penjenguk}*.\n\nPermohonan kunjungan ananda *${newBooking.nama_santri}* untuk hari kerja (*${hari}, ${tgl}*) telah tercatat dan sedang *MENUNGGU PERSETUJUAN* Admin Ri'ayah.\n\nBarcode kunjungan resmi akan dikirimkan ke nomor WhatsApp ini setelah disetujui.`
+          `⏳ *[PERMOHONAN KUNJUNGAN TERCATAT - HARI KERJA]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${newBooking.nama_penjenguk}*.\n\nPermohonan kunjungan ananda *${newBooking.nama_santri}* untuk hari kerja (*${hari}, ${tgl}*) telah tercatat dan sedang *MENUNGGU PERSETUJUAN* Admin Ri'ayah.\n\nGambar Barcode Gate Pass resmi akan dikirimkan otomatis ke WhatsApp ini setelah permohonan disetujui Pengasuhan.`
         );
       }
     }
@@ -3479,11 +3489,15 @@ export const AppProvider = ({ children }) => {
     const clock = getRealtimePondokClock();
     const cleanSantriName = (booking.nama_santri || 'Santri').replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase();
     const barcodeToken = booking.barcode_token || `GP-DU-${cleanSantriName}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(barcodeToken)}&format=png`;
+    const barcode128Url = `https://quickchart.io/barcode?type=code128&text=${encodeURIComponent(barcodeToken)}&includeText=true&height=75`;
 
     const updatedBooking = {
       ...booking,
       status_kunjungan: 'Disetujui (Siap Datang)',
       barcode_token: barcodeToken,
+      barcode_image_url: qrImageUrl,
+      barcode_linear_url: barcode128Url,
       waktu_disetujui: clock.timestamp_iso
     };
 
@@ -3499,7 +3513,8 @@ export const AppProvider = ({ children }) => {
       `${booking.nama_penjenguk} (Wali ${booking.nama_santri})`,
       booking.no_wa_penjenguk,
       'VISIT_APPROVED_ADMIN',
-      `🎉 *[PERMOHONAN KUNJUNGAN DISETUJUI ADMIN RI'AYAH]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${booking.nama_penjenguk}*.\n\nPermohonan kunjungan ananda *${booking.nama_santri}* (${booking.kelas}) untuk hari *${booking.hari_kunjungan}, ${booking.tanggal_kunjungan}* pukul *${booking.jam_kunjungan} - ${booking.jam_selesai} WIB* telah *DISETUJUI* oleh Admin Ri'ayah Pondok.\n\n📦 *Titipan Barang:* ${booking.titipan_barang} (${booking.berat_barang_kg} Kg)\n🎫 *Barcode Gate Pass Resmi:* *${barcodeToken}*\n\nSilakan tunjukkan Barcode ini kepada Satpam di Pos Gerbang untuk verifikasi check-in masuk pondok.`
+      `🎉 *[PERMOHONAN KUNJUNGAN DISETUJUI ADMIN RI'AYAH]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${booking.nama_penjenguk}*.\n\nPermohonan kunjungan ananda *${booking.nama_santri}* (${booking.kelas}) untuk hari *${booking.hari_kunjungan}, ${booking.tanggal_kunjungan}* pukul *${booking.jam_kunjungan} - ${booking.jam_selesai} WIB* telah *DISETUJUI* oleh Admin Ri'ayah Pondok.\n\n📦 *Titipan Barang:* ${booking.titipan_barang} (${booking.berat_barang_kg} Kg)\n🎫 *Kode Pass Resmi:* *${barcodeToken}*\n\n📷 *Gambar Barcode Gate Pass (Bisa Di-scan):*\n${qrImageUrl}\n\nSilakan simpan gambar QR Code / Barcode yang kami lampirkan di pesan ini dan tunjukkan kepada Satpam di Pos Gerbang untuk verifikasi check-in masuk pondok.`,
+      qrImageUrl
     );
 
     // Sinkronkan ke Supabase & siarkan update

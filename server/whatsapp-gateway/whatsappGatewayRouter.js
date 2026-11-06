@@ -451,7 +451,7 @@ router.post('/fonnte/disconnect', async (req, res) => {
  */
 router.post('/fonnte/send', async (req, res) => {
   const token = resolveFonnteToken(req);
-  const { target, message } = req.body;
+  const { target, message, url } = req.body;
 
   if (!target || !message) {
     return res.status(400).json({
@@ -468,6 +468,9 @@ router.post('/fonnte/send', async (req, res) => {
     formData.append('message', message);
     formData.append('countryCode', '62');
     formData.append('preview', 'false');
+    if (url) {
+      formData.append('url', url);
+    }
 
     const response = await fetch('https://api.fonnte.com/send', {
       method: 'POST',

@@ -337,7 +337,7 @@ export async function disconnectFonnteDevice(customToken = null) {
 /**
  * 5. Kirim Pesan Manual Override WhatsApp
  */
-export async function sendManualOverrideMessage(target, message, customToken = null) {
+export async function sendManualOverrideMessage(target, message, customToken = null, mediaUrl = null) {
   const token = getStoredToken(customToken);
   const normalized = normalizePhone(target);
 
@@ -356,7 +356,7 @@ export async function sendManualOverrideMessage(target, message, customToken = n
         'Content-Type': 'application/json',
         'x-fonnte-token': token,
       },
-      body: JSON.stringify({ token, target: normalized, message }),
+      body: JSON.stringify({ token, target: normalized, message, url: mediaUrl || undefined }),
     });
 
     if (res.ok) {
@@ -374,6 +374,9 @@ export async function sendManualOverrideMessage(target, message, customToken = n
     formData.append('message', message);
     formData.append('countryCode', '62');
     formData.append('preview', 'false');
+    if (mediaUrl) {
+      formData.append('url', mediaUrl);
+    }
 
     const directRes = await fetch('https://api.fonnte.com/send', {
       method: 'POST',

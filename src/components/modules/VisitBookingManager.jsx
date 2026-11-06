@@ -32,6 +32,7 @@ import {
 import { sound } from '../../utils/audio';
 import { parseBookingWithDeepSeek } from '../../services/deepseekVisitService';
 import { getRealtimePondokClock, calculateVisitCountdown } from '../../utils/pondokTimeUtils';
+import { getBarcodeImageUrl, getVisitGatePassUrls, downloadBarcodeImage } from '../../utils/barcodeUtils';
 
 export default function VisitBookingManager({ isCompact = false }) {
   const {
@@ -803,54 +804,56 @@ export default function VisitBookingManager({ isCompact = false }) {
 
             {/* Badan Tiket & Visual Barcode */}
             <div className="p-6 space-y-5 text-center">
-              {/* Visual Box QR & Barcode */}
-              <div className="p-4 bg-slate-50 border-2 border-dashed border-emerald-300 rounded-2xl space-y-3">
-                <div className="w-40 h-40 mx-auto bg-white p-2 rounded-xl border border-slate-200 shadow-sm flex items-center justify-center">
-                  {/* SVG QR Code Simulation */}
-                  <svg viewBox="0 0 100 100" className="w-full h-full">
-                    {/* Corner squares */}
-                    <rect x="5" y="5" width="28" height="28" fill="#047857" rx="3" />
-                    <rect x="9" y="9" width="20" height="20" fill="white" />
-                    <rect x="13" y="13" width="12" height="12" fill="#047857" />
+              {/* Visual Box QR & Barcode Nyata (Real Scannable Image) */}
+              {(() => {
+                const token = selectedBookingForPass.barcode_token || selectedBookingForPass.id;
+                const { qrCodeUrl, linearBarcodeUrl } = getVisitGatePassUrls(token);
 
-                    <rect x="67" y="5" width="28" height="28" fill="#047857" rx="3" />
-                    <rect x="71" y="9" width="20" height="20" fill="white" />
-                    <rect x="75" y="13" width="12" height="12" fill="#047857" />
+                return (
+                  <div className="p-4 bg-slate-50 border-2 border-dashed border-emerald-400/80 rounded-2xl space-y-4">
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-4 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+                      {/* Format 1: 2D QR Code Image */}
+                      <div className="flex flex-col items-center">
+                        <div className="w-36 h-36 bg-white p-1 rounded-xl border border-slate-200 shadow-xs flex items-center justify-center overflow-hidden group relative">
+                          <img
+                            src={qrCodeUrl}
+                            alt={`QR Code Pass - ${token}`}
+                            className="w-full h-full object-contain"
+                            loading="eager"
+                          />
+                        </div>
+                        <span className="text-[10px] font-mono font-bold text-slate-500 mt-1 uppercase tracking-wider">
+                          QR Code 2D (Smartphone / Gate)
+                        </span>
+                      </div>
 
-                    <rect x="5" y="67" width="28" height="28" fill="#047857" rx="3" />
-                    <rect x="9" y="71" width="20" height="20" fill="white" />
-                    <rect x="13" y="75" width="12" height="12" fill="#047857" />
+                      {/* Format 2: 1D Linear Barcode 128 Image */}
+                      <div className="flex flex-col items-center justify-center sm:border-l sm:border-slate-100 sm:pl-4">
+                        <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-center overflow-hidden max-w-[220px]">
+                          <img
+                            src={linearBarcodeUrl}
+                            alt={`Barcode 128 - ${token}`}
+                            className="h-16 object-contain"
+                            loading="eager"
+                          />
+                        </div>
+                        <span className="text-[10px] font-mono font-bold text-slate-500 mt-1 uppercase tracking-wider">
+                          Barcode 1D (Code 128 Laser Satpam)
+                        </span>
+                      </div>
+                    </div>
 
-                    {/* Data dots pattern */}
-                    <rect x="40" y="10" width="6" height="6" fill="#0f172a" />
-                    <rect x="50" y="15" width="8" height="5" fill="#047857" />
-                    <rect x="42" y="25" width="14" height="6" fill="#0f172a" />
-                    <rect x="10" y="42" width="6" height="14" fill="#047857" />
-                    <rect x="25" y="45" width="8" height="6" fill="#0f172a" />
-                    <rect x="40" y="40" width="20" height="20" fill="#047857" rx="2" />
-                    <rect x="68" y="42" width="12" height="6" fill="#0f172a" />
-                    <rect x="85" y="48" width="6" height="12" fill="#047857" />
-                    <rect x="42" y="70" width="14" height="6" fill="#0f172a" />
-                    <rect x="65" y="72" width="8" height="10" fill="#047857" />
-                    <rect x="80" y="80" width="10" height="8" fill="#0f172a" />
-                  </svg>
-                </div>
+                    <div className="font-mono text-xs font-bold text-slate-800 tracking-wider">
+                      KODE TOKEN: <span className="text-emerald-700 font-extrabold">{token || 'MENUNGGU APPROVAL'}</span>
+                    </div>
 
-                {/* Barcode Lines Representation */}
-                <div className="flex justify-center items-center gap-0.5 h-7 px-4">
-                  {[2, 1, 3, 1, 2, 4, 1, 3, 2, 1, 4, 2, 1, 3, 1, 2, 3, 1, 4, 2, 1, 3].map((w, idx) => (
-                    <div
-                      key={idx}
-                      className="bg-slate-900 h-full rounded-xs"
-                      style={{ width: `${w * 2}px` }}
-                    />
-                  ))}
-                </div>
-
-                <div className="font-mono text-xs font-bold text-slate-800 tracking-wider">
-                  TOKEN: <span className="text-emerald-700 font-extrabold">{selectedBookingForPass.barcode_token || 'MENUNGGU APPROVAL'}</span>
-                </div>
-              </div>
+                    <div className="text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 py-1.5 px-3 rounded-xl flex items-center justify-center gap-1.5">
+                      <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Gambar barcode di atas aktif &amp; siap di-scan langsung oleh kamera / barcode scanner pos gerbang</span>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Data Detail Tiket */}
               <div className="text-left bg-slate-50 p-4 rounded-2xl space-y-2 text-xs border border-slate-200/80">
@@ -883,22 +886,45 @@ export default function VisitBookingManager({ isCompact = false }) {
               </div>
 
               {/* Action Buttons Tiket */}
-              <div className="flex items-center gap-2 pt-1">
-                <button
-                  onClick={() => copyToClipboard(selectedBookingForPass.barcode_token || selectedBookingForPass.id)}
-                  className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition flex items-center justify-center gap-1.5"
-                >
-                  {copiedToken ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4 text-slate-500" />}
-                  <span>{copiedToken ? 'Disalin!' : 'Salin Token'}</span>
-                </button>
-                <button
-                  onClick={() => { window.print(); sound.playBeep?.(); }}
-                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-sm flex items-center justify-center gap-1.5"
-                >
-                  <Printer className="w-4 h-4" />
-                  <span>Cetak Tiket</span>
-                </button>
-              </div>
+              {(() => {
+                const token = selectedBookingForPass.barcode_token || selectedBookingForPass.id;
+                const { qrCodeUrl } = getVisitGatePassUrls(token);
+
+                return (
+                  <div className="flex items-center gap-2 pt-1 flex-wrap">
+                    <button
+                      onClick={() => copyToClipboard(token)}
+                      className="flex-1 py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition flex items-center justify-center gap-1.5"
+                    >
+                      {copiedToken ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4 text-slate-500" />}
+                      <span>{copiedToken ? 'Disalin!' : 'Salin Token'}</span>
+                    </button>
+                    <button
+                      onClick={() => downloadBarcodeImage(qrCodeUrl, `Barcode_GatePass_${selectedBookingForPass.nama_santri}.png`)}
+                      className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-xs transition flex items-center justify-center gap-1.5"
+                      title="Unduh file gambar QR Code ke laptop/HP"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Unduh Gambar</span>
+                    </button>
+                    <button
+                      onClick={() => window.open(qrCodeUrl, '_blank')}
+                      className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition flex items-center justify-center gap-1"
+                      title="Buka gambar penuh di tab baru"
+                    >
+                      <Eye className="w-4 h-4" />
+                      <span className="hidden sm:inline">Lihat Gambar</span>
+                    </button>
+                    <button
+                      onClick={() => { window.print(); sound.playBeep?.(); }}
+                      className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-sm flex items-center justify-center gap-1.5"
+                    >
+                      <Printer className="w-4 h-4" />
+                      <span>Cetak Tiket</span>
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>

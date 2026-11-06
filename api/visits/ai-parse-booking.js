@@ -100,13 +100,15 @@ export default async function handler(req, res) {
       approvalType = 'AUTO_WEEKEND';
       statusKunjungan = 'Disetujui (Auto-Approved Weekend)';
       barcodeToken = `GP-DU-${cleanSantriName}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(barcodeToken)}&format=png`;
 
       replyWaText = `✅ *[BOOKING KUNJUNGAN DISETUJUI OTOMATIS - WEEKEND]*\n` +
         greeting +
         `Permohonan sambangan santri *${extracted.nama_santri}* (${extracted.kelas}) pada hari *${hariKunjunganNormalized}, ${extracted.tanggal_kunjungan}* pukul *${extracted.jam_kunjungan} - ${extracted.jam_selesai} WITA* telah *DISETUJUI OTOMATIS*.\n\n` +
         `📦 *Titipan Barang:* ${extracted.titipan_barang || '-'} (${extracted.berat_barang_kg || 0} Kg - Batas Max 5 Kg)\n` +
-        `🎫 *Barcode Gate Pass:* *${barcodeToken}*\n\n` +
-        `⚖️ *Tata Tertib:* Wajib menunjukkan Barcode ini atau *Tap Kartu RFID* di Pos Jaga Satpam saat tiba di Gerbang Utama. Durasi maksimal kunjungan 90 menit.` + hoursWarning;
+        `🎫 *Kode Gate Pass:* *${barcodeToken}*\n\n` +
+        `📷 *Gambar Barcode Gate Pass (Bisa Di-scan):*\n${qrImageUrl}\n\n` +
+        `⚖️ *Tata Tertib:* Wajib menunjukkan gambar Barcode ini atau *Tap Kartu RFID* di Pos Jaga Satpam saat tiba di Gerbang Utama. Durasi maksimal kunjungan 90 menit.` + hoursWarning;
     }
 
     const bookingRecord = {
@@ -145,16 +147,22 @@ export default async function handler(req, res) {
     }
     if (targetWa && fonnteToken) {
       try {
+        const qrUrlForFonnte = barcodeToken ? `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(barcodeToken)}&format=png` : null;
+        const fonntePayload = {
+          target: targetWa,
+          message: replyWaText
+        };
+        if (qrUrlForFonnte && !isWeekday) {
+          fonntePayload.url = qrUrlForFonnte;
+        }
+
         const fonnteRes = await fetch('https://api.fonnte.com/send', {
           method: 'POST',
           headers: {
             'Authorization': fonnteToken,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({
-            target: targetWa,
-            message: replyWaText
-          })
+          body: JSON.stringify(fonntePayload)
         });
         waSendResult = await fonnteRes.json().catch(() => ({}));
       } catch (waErr) {

@@ -365,16 +365,36 @@ export default function SecurityVisitGateModule() {
                     {verificationResult.message}
                   </h4>
                   {verificationResult.booking && (
-                    <div className="text-xs text-slate-200 mt-1 space-y-0.5">
+                    <div className="text-xs text-slate-200 mt-2 space-y-1">
                       <p>
-                        Santri: <strong>{verificationResult.booking.nama_santri}</strong> ({verificationResult.booking.kelas}) • Asal: <strong>{verificationResult.booking.asal}</strong>
+                        Santri: <strong className="text-white">{verificationResult.booking.nama_santri}</strong> ({verificationResult.booking.kelas}) • Asal: <strong className="text-white">{verificationResult.booking.asal}</strong>
                       </p>
                       <p>
-                        Penjenguk: <strong>{verificationResult.booking.nama_penjenguk}</strong> ({verificationResult.booking.status_penjenguk}) • No WA: <strong className="font-mono">{verificationResult.booking.no_wa_penjenguk}</strong>
+                        Penjenguk: <strong className="text-white">{verificationResult.booking.nama_penjenguk}</strong> ({verificationResult.booking.status_penjenguk}) • No WA: <strong className="font-mono text-emerald-300">{verificationResult.booking.no_wa_penjenguk}</strong>
                       </p>
                       <p>
                         📦 Titipan Barang: <strong>{verificationResult.booking.titipan_barang || '-'}</strong> (Berat: <strong className="text-cyan-300">{verificationResult.booking.berat_barang_kg || 0} Kg</strong>)
                       </p>
+
+                      {/* Visual Scannable Barcode & QR Code Image for Satpam Verification */}
+                      <div className="mt-3 flex items-center gap-3 bg-black/40 p-2.5 rounded-xl border border-emerald-500/40">
+                        <img
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(verificationResult.booking.barcode_token || verificationResult.booking.id)}&format=png`}
+                          alt="QR Code Gate Pass"
+                          className="w-14 h-14 bg-white p-1 rounded-lg shrink-0 object-contain shadow-xs"
+                        />
+                        <div className="min-w-0">
+                          <span className="text-[10px] font-mono font-bold text-emerald-400 block tracking-wider">
+                            E-BARCODE GATE PASS RESMI (VALID)
+                          </span>
+                          <span className="text-sm font-black font-mono text-white tracking-wider">
+                            {verificationResult.booking.barcode_token || verificationResult.booking.id}
+                          </span>
+                          <span className="text-[10px] text-slate-300 block mt-0.5">
+                            Format: QR Code 2D &amp; Code 128 Standar Scanner Satpam
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -729,7 +749,22 @@ export default function SecurityVisitGateModule() {
                           })()}
                         </div>
                       </td>
-                      <td className="py-3 px-3 font-bold text-slate-900">{item.nama_santri}</td>
+                      <td className="py-3 px-3">
+                        <div className="font-bold text-slate-900">{item.nama_santri}</div>
+                        {item.barcode_token && (
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <img
+                              src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(item.barcode_token)}&format=png`}
+                              alt="QR"
+                              className="w-5 h-5 bg-white border border-slate-200 rounded shrink-0 object-contain shadow-2xs"
+                              loading="lazy"
+                            />
+                            <span className="text-[9px] font-mono font-bold text-emerald-800 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
+                              {item.barcode_token}
+                            </span>
+                          </div>
+                        )}
+                      </td>
                       <td className="py-3 px-3">
                         <div className="text-slate-800 font-semibold">{item.kelas}</div>
                         <div className="text-[10px] text-slate-400 font-mono">{item.asal || 'Surabaya'}</div>
