@@ -280,12 +280,147 @@ export async function findLiveSantriByPhone(cleanPhone) {
 }
 
 /**
- * Otak AI Otonom: Menganalisis pesan dan menghasilkan balasan islami & cerdas
+ * Helper salam natural: Hanya menjawab salam jika lawan bicara mengucap salam
+ */
+function getNaturalGreeting(incomingText, name = '') {
+  const text = String(incomingText || '').toLowerCase();
+  const hasSalam =
+    text.includes('assalamu') ||
+    text.includes('aslam') ||
+    text.includes('ass ') ||
+    text.includes('mikum') ||
+    text.includes('kumsalam');
+
+  const targetName = name && name !== 'Wali Santri' ? name : 'Bapak/Ibu';
+
+  if (hasSalam) {
+    return `Wa'alaikumsalam ${targetName}. `;
+  }
+  if (text.includes('pagi')) return `Selamat pagi ${targetName}. `;
+  if (text.includes('siang')) return `Selamat siang ${targetName}. `;
+  if (text.includes('sore')) return `Selamat sore ${targetName}. `;
+  if (text.includes('malam')) return `Selamat malam ${targetName}. `;
+
+  return `Halo ${targetName}, `;
+}
+
+/**
+ * Helper waktu pondok real-time (WITA / Asia/Makassar) untuk backend
+ */
+function getRealtimePondokClockBackend() {
+  const d = new Date();
+  const namaHariArr = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+  const dayIndex = d.getDay();
+  const namaHari = namaHariArr[dayIndex];
+  const ymd = d.toISOString().slice(0, 10);
+  const tglLengkap = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+  const jamMenit = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const jamMenitDetik = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  const isWeekday = dayIndex >= 1 && dayIndex <= 4; // Senin - Kamis
+
+  const refDays = [];
+  for (let i = 0; i < 7; i++) {
+    const cd = new Date(d);
+    cd.setDate(d.getDate() + i);
+    const cdDay = namaHariArr[cd.getDay()];
+    const cdYmd = cd.toISOString().slice(0, 10);
+    const cdIsWeekday = cd.getDay() >= 1 && cd.getDay() <= 4;
+    refDays.push({
+      offset: i,
+      label: i === 0 ? 'Hari ini' : (i === 1 ? 'Besok' : (i === 2 ? 'Lusa' : `${cdDay} depan`)),
+      hari: cdDay,
+      tanggal: cdYmd,
+      is_weekday: cdIsWeekday,
+      rule: cdIsWeekday ? 'Wajib Approval Admin Ri\'ayah' : 'Auto-Approved (Langsung Terbit Barcode)'
+    });
+  }
+
+  return {
+    dayIndex,
+    namaHari,
+    ymd,
+    tglLengkap,
+    jamMenit,
+    jamMenitDetik,
+    isWeekday,
+    refDays
+  };
+}
+
+/**
+ * Ambil riwayat chat terakhir untuk nomor HP ini agar percakapan berkesinambungan (multi-turn context)
+ */
+export async function getRecentChatHistory(cleanPhone) {
+  try {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('sender_role, message_text, created_at')
+      .eq('room_id', `wa_${cleanPhone}`)
+      .order('created_at', { ascending: false })
+      .limit(6);
+
+    if (!error && Array.isArray(data)) {
+      return data.reverse().map(m => ({
+        role: m.sender_role === 'user' ? 'user' : 'assistant',
+        content: m.message_text
+      }));
+    }
+  } catch (e) {
+    console.warn('getRecentChatHistory error:', e.message);
+  }
+  return [];
+}
+
+/**
+ * Simpan pesan chat ke tabel messages Supabase
+ */
+export async function recordChatMessage(cleanPhone, role, text, senderName) {
+  try {
+    await supabase.from('messages').insert([{
+      room_id: `wa_${cleanPhone}`,
+      sender_email: role === 'user' ? `${cleanPhone}@whatsapp.user` : 'ai@smartriayah.com',
+      sender_name: senderName || (role === 'user' ? 'Wali Santri' : 'Smart Riayah AI'),
+      sender_role: role,
+      message_text: text,
+      is_read: true
+    }]);
+  } catch (e) {
+    console.warn('recordChatMessage error:', e.message);
+  }
+}
+
+/**
+ * Simpan booking kunjungan ke antrean dan broadcast ke Supabase Realtime
+ */
+export async function saveBookingToSystem(bookingData) {
+  try {
+    await broadcastToSupabaseRealtime('whatsapp.visit_booking', bookingData);
+
+    await supabase.from('messages').insert([{
+      room_id: 'visit_bookings_log',
+      sender_email: 'ai@smartriayah.com',
+      sender_name: 'Smart Riayah AI Gate Pass',
+      sender_role: 'system',
+      message_text: JSON.stringify(bookingData),
+      reaction: bookingData.is_weekday ? 'VISIT_MANUAL_WEEKDAY' : 'VISIT_AUTO_WEEKEND',
+      is_read: false
+    }]);
+
+    console.log(`🎫 [Visit Booking Saved]: ${bookingData.id} for ${bookingData.nama_santri} (${bookingData.hari_kunjungan}) - ${bookingData.status_kunjungan}`);
+    return true;
+  } catch (err) {
+    console.error('❌ [saveBookingToSystem Error]:', err.message);
+    return false;
+  }
+}
+
+/**
+ * Otak AI Otonom: Menganalisis pesan dan menghasilkan balasan islami, natural & cerdas
  */
 export async function generateAutonomousReply(senderPhone, incomingText, senderName = 'Wali Santri') {
   const cleanPhone = normalizePhone(senderPhone);
 
-  // 1. Cek live database Supabase terlebih dahulu (Mendukung Wali yang baru ganti nomor di Tabel RFID!)
+  // 1. Cek live database Supabase terlebih dahulu
   const liveWali = await findLiveSantriByPhone(cleanPhone);
 
   const waliData = liveWali || KNOWN_WALI_MAP[cleanPhone] || KNOWN_WALI_MAP[senderPhone] || {
@@ -302,6 +437,8 @@ export async function generateAutonomousReply(senderPhone, incomingText, senderN
   };
 
   const textLower = String(incomingText || '').toLowerCase();
+  const naturalGreeting = getNaturalGreeting(incomingText, waliData.namaWali);
+  const rtc = getRealtimePondokClockBackend();
 
   // ─── INTENT PRIORITAS TERTINGGI: CLOSINGAN / WALI INGIN BICARA DENGAN ADMIN ───
   const isAdminRequest =
@@ -330,10 +467,8 @@ export async function generateAutonomousReply(senderPhone, incomingText, senderN
   if (isAdminRequest) {
     console.log(`🔔 [Smart Handoff Triggered]: Wali ${cleanPhone} meminta bicara dengan Admin! Mengalihkan ke Mode Manual.`);
 
-    // 1. Simpan nomor ini ke Mode Ambil Alih Manual di Supabase & memory cache
     await setManualTakeover(cleanPhone, true);
 
-    // 2. Siarkan event takeover otomatis ke dashboard admin secara real-time
     try {
       await broadcastToSupabaseRealtime('whatsapp.takeover', {
         phone: cleanPhone,
@@ -347,63 +482,69 @@ export async function generateAutonomousReply(senderPhone, incomingText, senderN
       console.warn('Takeover broadcast warning:', e.message);
     }
 
-    return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nBaik Bapak/Ibu, percakapan ini sekarang kami alihkan langsung ke *Admin Ri'ayah / Ustadz Musyrif Asrama*.\n\nUstadz akan segera membaca dan membalas pesan Bapak/Ibu secara langsung di sini. Mohon ditunggu sebentar ya Bapak/Ibu. 🙏\n\n_— Smart Ri'ayah Handoff System_`;
+    const handoffReply = `${naturalGreeting}percakapan ini sekarang kami alihkan langsung ke *Admin Ri'ayah / Ustadz Musyrif Asrama* ya.\n\nUstadz akan segera membaca dan membalas pesan Bapak/Ibu secara langsung di sini. Mohon ditunggu sebentar ya Bapak/Ibu. 🙏`;
+    await recordChatMessage(cleanPhone, 'user', incomingText, waliData.namaWali);
+    await recordChatMessage(cleanPhone, 'assistant', handoffReply, 'Smart Ri\'ayah AI');
+    return handoffReply;
   }
 
-  // ─── INTENT KUNJUNGAN / JENGUK / JADWAL / BOOKING (TUGAS 3) ───
-  const isVisitingIntent =
-    textLower.includes('kunjungan') ||
-    textLower.includes('kunjung') ||
-    textLower.includes('jenguk') ||
-    textLower.includes('sambang') ||
-    textLower.includes('besuk') ||
-    textLower.includes('jadwal') ||
-    textLower.includes('booking');
+  // Rekam pesan masuk pengguna ke riwayat
+  await recordChatMessage(cleanPhone, 'user', incomingText, waliData.namaWali);
 
-  if (isVisitingIntent) {
-    // Deteksi apakah ini form booking dengan parameter lengkap atau sekadar pertanyaan jadwal/aturan
-    const hasBookingDetails =
-      (textLower.includes('bawa') || textLower.includes('titip') || textLower.includes('kg') || textLower.includes('berat') || textLower.includes('penjenguk') || textLower.includes('booking')) &&
-      (textLower.includes('senin') || textLower.includes('selasa') || textLower.includes('rabu') || textLower.includes('kamis') || textLower.includes('jumat') || textLower.includes('sabtu') || textLower.includes('minggu') || textLower.includes('besok') || textLower.includes('lusa') || textLower.includes('hari ini') || /\d{1,2}[:.]\d{2}/.test(textLower));
+  // Ambil riwayat chat sebelumnya agar percakapan nyambung
+  const recentHistory = await getRecentChatHistory(cleanPhone);
 
-    if (!hasBookingDetails) {
-      // KONDISI 1: Hanya Bertanya / Permintaan Info Jadwal Kunjungan & Peraturan Pondok
-      const d = new Date();
-      const namaHariArr = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-      const namaHari = namaHariArr[d.getDay()];
-      const tglLengkap = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-      const jamStr = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WITA';
-      const waktuStr = `${namaHari}, ${tglLengkap} • ${jamStr}`;
-
-      return `🕌 *INFORMASI JADWAL KUNJUNGAN AKTIF & TATA TERTIB PONDOK*
-🕒 *Waktu Sistem Pondok Saat Ini:* ${waktuStr}
-
-📅 *1. JADWAL KUNJUNGAN AKTIF:*
-• *Jumat – Minggu (Weekend):*
-  - Sesi Pagi: *08.30 – 11.30 WITA*
-  - Sesi Sore: *13.30 – 16.30 WITA*
-  *(✅ Auto-Approval: Tiket E-Barcode WA langsung terbit otomatis)*
-• *Senin – Kamis (Hari Kerja):*
-  - Sesi Sore: *14.00 – 16.30 WITA* (Setelah jam KBM santri)
-  *(⏳ Wajib Approval Admin Ri'ayah sebelum E-Barcode dikirim ke WA)*
-
-⚖️ *2. PERATURAN PENTING KUNJUNGAN & TITIPAN BARANG:*
-• Durasi kunjungan maksimal *90 menit* per sesi.
-• Barang/makanan titipan wajib ditimbang di Pos Satpam (Maksimal *5 Kg*) dan bebas dari barang terlarang (HP/gadget, rokok/vape, alat masak listrik).
-• Penjenguk wajib berbusana muslim/muslimah sopan dan hanya bertemu di Aula/Gazebo Kunjungan (dilarang masuk asrama tidur).
-• Wajib menunjukkan *E-Barcode Kunjungan dari WhatsApp ini* atau *Tap Kartu RFID* di Pos Jaga Satpam saat tiba.
-
----
-📝 *FORMAT BOOKING KUNJUNGAN CEPAT:*
-Silakan balas pesan ini dengan menyebutkan data berikut (bisa diketik bebas):
-_Nama Santri/Wati, Kelas, Asal, Hari & Jam Kunjungan, Jam Selesai, Titipan Barang, Berat Barang (Kg), Nama Penjenguk, dan Status Penjenguk (Wali/Keluarga)._`;
-    }
-  }
-
-  // 1. Coba gunakan DeepSeek / Gemini AI jika token tersedia
+  // 1. Coba gunakan DeepSeek AI jika token tersedia
   const deepseekKey = process.env.DEEPSEEK_API_KEY || 'sk-5b97e9e1d00846818565250d944cc047';
   if (deepseekKey) {
     try {
+      const systemPrompt = `Anda adalah pengasuh/ustadz ramah dan cerdas di Pesantren Modern Darul Ulum yang membalas pesan WhatsApp wali santri.
+
+WAKTU SISTEM PONDOK REAL-TIME SAAT INI:
+- Hari & Tanggal: ${rtc.namaHari}, ${rtc.tglLengkap} (Format YMD: ${rtc.ymd})
+- Jam: ${rtc.jamMenit} WITA
+- Referensi Kalender 7 Hari Ke Depan:
+${rtc.refDays.map(r => `  * [${r.label}] -> ${r.hari}, ${r.tanggal} (${r.rule})`).join('\n')}
+
+DATA SANTRI DI SISTEM:
+- Wali: ${waliData.namaWali} (No. WA: ${cleanPhone})
+- Santri Terdaftar: ${waliData.santriNama} (${waliData.kelas}, ${waliData.kamar})
+- Status Asrama: ${waliData.statusAsrama}, Saldo RFID: ${waliData.saldoRfid}
+
+PANDUAN KOMUNIKASI & ALUR BOOKING KUNJUNGAN:
+1. BAHASA HARUS NATURAL, SANTUN, DAN NYAMBUNG:
+   - Jawab secara luwes, bersahabat, dan langsung ke inti pertanyaan orang tua.
+   - JANGAN PERNAH membuat daftar menu nomor (1, 2, 3...) atau format kaku robotik.
+   - JANGAN menyemburkan template panjang atau brosur peraturan. Percakapan harus santai dan mengalir.
+
+2. MENJAWAB SALAM SEPERLUNYA:
+   - Jawab salam ("Wa'alaikumsalam...") HANYA JIKA orang tua memang mengucap salam.
+   - Jika orang tua TIDAK mengucap salam (misal hanya bilang "mau jenguk anak", "bisa nengok gak", atau "halo"), JANGAN menjawab dengan salam panjang "Wa'alaikumsalam Warahmatullahi Wabarakatuh". Gunakan sapaan wajar ("Halo Bapak/Ibu", "Iya Bapak/Ibu", dll).
+
+3. ALUR PENGUMPULAN DATA BOOKING KUNJUNGAN SECARA BERTAHAP:
+   - Jika orang tua bilang ingin menjenguk/nengok anak:
+     a) Jika belum jelas nama santrinya: tanyakan secara santai atas nama santri siapa dan kelas berapa, serta rencana berkunjung hari apa dan jam berapa. (Jika di data sistem sudah terdaftar ananda ${waliData.santriNama}, Anda boleh langsung mengonfirmasi dengan ramah: "Bisa Bapak/Ibu. Mau menjenguk ananda ${waliData.santriNama} ya? Rencana berkunjung hari apa dan jam berapa?").
+     b) Jika nama santri sudah ada tapi belum menyebutkan hari/jam: tanyakan rencana berkunjung hari apa dan jam berapa, serta apakah ada titipan barang/makanan yang mau dibawa.
+     c) Jika data kunjungan SUDAH LENGKAP (ada nama santri, hari/tanggal, dan perkiraan jam):
+        - Cek hari kunjungannya:
+          * JIKA SENIN, SELASA, RABU, atau KAMIS (HARI KERJA / WEEKDAY):
+            Kunjungan hari kerja membutuhkan persetujuan Admin Ri'ayah.
+            Beri tahu bahwa permohonan kunjungan di hari kerja sudah dicatat dan sedang diteruskan ke Admin Ri'ayah untuk persetujuan. Barcode kunjungan resmi akan dikirim otomatis ke WhatsApp ini segera setelah disetujui. Ingatkan titipan barang maksimal 5 Kg.
+          * JIKA JUMAT, SABTU, atau MINGGU (AKHIR PEKAN / WEEKEND):
+            Kunjungan akhir pekan LANGSUNG DISETUJUI OTOMATIS (Auto-Approved)!
+            Beri tahu bahwa kunjungan sudah langsung disetujui otomatis. Berikan kode Barcode Gate Pass (contoh format: GP-DU-[NAMA]-[4 ANGKA]). Beritahu untuk menunjukkan pesan/barcode ke satpam di pos gerbang dan titipan maks 5 Kg.
+        - PENTING: Saat data booking kunjungan berhasil difinalkan, sertakan DI BARIS TERAKHIR tag JSON penanda booking berikut:
+          <!--BOOKING_DATA:{"nama_santri":"...","kelas":"...","hari_kunjungan":"...","tanggal_kunjungan":"YYYY-MM-DD","jam_kunjungan":"HH:mm","jam_selesai":"HH:mm","titipan_barang":"...","berat_barang_kg":...,"nama_penjenguk":"...","is_weekday":true/false,"barcode_token":"..."}-->
+
+4. PERTANYAAN LAIN (KABAR, SALDO, KESEHATAN, IZIN):
+   - Jawab secara wajar dan to the point sesuai data santri yang ada.`;
+
+      const messagesPayload = [
+        { role: 'system', content: systemPrompt },
+        ...recentHistory.slice(-4),
+        { role: 'user', content: incomingText }
+      ];
+
       const dsRes = await fetch('https://api.deepseek.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -412,71 +553,218 @@ _Nama Santri/Wati, Kelas, Asal, Hari & Jam Kunjungan, Jam Selesai, Titipan Baran
         },
         body: JSON.stringify({
           model: 'deepseek-chat',
-          messages: [
-            {
-              role: 'system',
-              content: `Anda adalah pengasuh/ustadz ramah dari Pesantren Modern Darul Ulum yang membalas pesan WhatsApp wali santri.
-Konteks: Wali ${waliData.namaWali}, Santri ${waliData.santriNama} (${waliData.kelas}, ${waliData.kamar}). Status: ${waliData.statusAsrama}, Saldo: ${waliData.saldoRfid}.
-ATURAN PENTING:
-- Balas pesan senatural mungkin, santun, hangat, dan bersahabat layaknya percakapan nyata.
-- JANGAN PERNAH membuat daftar/list menu berupa angka (1, 2, 3...) atau poin-poin kaku penanganan masalah.
-- Jawab langsung secara wajar, lalu tanyakan keperluannya apa atau apa yang bisa dibantu.`
-            },
-            {
-              role: 'user',
-              content: incomingText
-            }
-          ],
+          messages: messagesPayload,
           temperature: 0.3,
-          max_tokens: 250
+          max_tokens: 350
         })
       });
 
       if (dsRes.ok) {
         const dsJson = await dsRes.json();
-        const reply = dsJson.choices?.[0]?.message?.content?.trim();
-        if (reply) return reply;
+        let reply = dsJson.choices?.[0]?.message?.content?.trim();
+
+        if (reply) {
+          // Deteksi apakah DeepSeek menyertakan tag data booking
+          const bookingMatch = reply.match(/<!--BOOKING_DATA:(.*?)-->/s);
+          if (bookingMatch && bookingMatch[1]) {
+            try {
+              const bData = JSON.parse(bookingMatch[1]);
+              const cleanSantri = (bData.nama_santri || waliData.santriNama || 'Santri').replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase();
+              const isWkday = Boolean(bData.is_weekday);
+              const barcode = bData.barcode_token || (isWkday ? null : `GP-DU-${cleanSantri}-${Math.floor(1000 + Math.random() * 9000)}`);
+
+              const bookingRecord = {
+                id: `VST-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`,
+                booking_source: 'WHATSAPP_AI_NATURAL',
+                nama_santri: bData.nama_santri || waliData.santriNama,
+                kelas: bData.kelas || waliData.kelas,
+                asal: 'Surabaya',
+                tanggal_kunjungan: bData.tanggal_kunjungan || rtc.ymd,
+                hari_kunjungan: bData.hari_kunjungan || rtc.namaHari,
+                jam_kunjungan: bData.jam_kunjungan || '14:00',
+                jam_selesai: bData.jam_selesai || '15:30',
+                titipan_barang: bData.titipan_barang || '-',
+                berat_barang_kg: Number(bData.berat_barang_kg) || 0,
+                nama_penjenguk: bData.nama_penjenguk || waliData.namaWali,
+                status_penjenguk: 'Wali Santri',
+                no_wa_penjenguk: cleanPhone,
+                barcode_token: barcode,
+                approval_type: isWkday ? 'MANUAL_WEEKDAY' : 'AUTO_WEEKEND',
+                status_kunjungan: isWkday ? 'Menunggu Approval' : 'Disetujui (Auto-Approved Weekend)',
+                is_weekday: isWkday,
+                waktu_chat_masuk: `${rtc.namaHari}, ${rtc.tglLengkap} • ${rtc.jamMenitDetik} WITA`,
+                waktu_disetujui: isWkday ? null : `${rtc.namaHari}, ${rtc.tglLengkap} • ${rtc.jamMenitDetik} WITA`,
+                created_at: new Date().toISOString()
+              };
+
+              // Simpan ke sistem booking & broadcast ke dashboard
+              await saveBookingToSystem(bookingRecord);
+            } catch (pErr) {
+              console.warn('Booking JSON parse error:', pErr.message);
+            }
+
+            // Bersihkan tag booking agar WhatsApp hanya menerima pesan percakapan yang bersih
+            reply = reply.replace(/<!--BOOKING_DATA:(.*?)-->/s, '').trim();
+          }
+
+          // Rekam balasan asisten ke database chat
+          await recordChatMessage(cleanPhone, 'assistant', reply, 'Smart Ri\'ayah AI');
+          return reply;
+        }
       }
     } catch (llmErr) {
       console.warn('⚠️ [AI Otonom] DeepSeek AI offline/fallback ke Smart Local Reasoning:', llmErr.message);
     }
   }
 
-  // 2. Smart Local Reasoning Engine (Context-Aware Instant Fallback)
-  // Periksa intent spesifik secara bertingkat:
+  // ─── 2. SMART LOCAL REASONING ENGINE (FALLBACK NATURAL BERBASIS KONTEKS) ───
 
-  // TOPIK 1: SALDO RFID / DOMPET PINTAR / UANG SAKU
+  // A. INTENT KUNJUNGAN / SAMBANGAN / JENGUK
+  const isVisiting =
+    textLower.includes('jenguk') ||
+    textLower.includes('kunjung') ||
+    textLower.includes('sambang') ||
+    textLower.includes('besuk') ||
+    textLower.includes('tengok') ||
+    textLower.includes('ketemu');
+
+  if (isVisiting) {
+    const hasDayMention =
+      textLower.includes('senin') ||
+      textLower.includes('selasa') ||
+      textLower.includes('rabu') ||
+      textLower.includes('kamis') ||
+      textLower.includes('jumat') ||
+      textLower.includes('sabtu') ||
+      textLower.includes('minggu') ||
+      textLower.includes('besok') ||
+      textLower.includes('lusa') ||
+      textLower.includes('hari ini');
+
+    const hasTimeMention =
+      textLower.includes('jam') ||
+      textLower.includes('pukul') ||
+      textLower.includes('siang') ||
+      textLower.includes('pagi') ||
+      textLower.includes('sore') ||
+      /\d{1,2}[:.]\d{2}/.test(textLower);
+
+    // KASUS 1: Baru bilang mau jenguk (belum ada rincian waktu/anak)
+    if (!hasDayMention && !hasTimeMention) {
+      if (waliData.santriNama && waliData.santriNama !== 'Ananda') {
+        const reply = `${naturalGreeting}bisa Bapak/Ibu. Mau menjenguk ananda *${waliData.santriNama}* ya? Rencananya mau datang hari apa dan perkiraan jam berapa?`;
+        await recordChatMessage(cleanPhone, 'assistant', reply, 'Smart Ri\'ayah AI');
+        return reply;
+      }
+      const reply = `${naturalGreeting}bisa Bapak/Ibu. Mau menjenguk ananda atas nama siapa dan kelas berapa ya? Rencananya mau berkunjung hari apa dan jam berapa?`;
+      await recordChatMessage(cleanPhone, 'assistant', reply, 'Smart Ri\'ayah AI');
+      return reply;
+    }
+
+    // KASUS 2: Sudah sebut hari/waktu kunjungan -> Kumpulkan data dan masukkan ke sistem booking!
+    let targetDayName = 'Minggu';
+    let targetYmd = rtc.ymd;
+    let isWeekdayBooking = false;
+
+    if (textLower.includes('senin')) { targetDayName = 'Senin'; isWeekdayBooking = true; }
+    else if (textLower.includes('selasa')) { targetDayName = 'Selasa'; isWeekdayBooking = true; }
+    else if (textLower.includes('rabu')) { targetDayName = 'Rabu'; isWeekdayBooking = true; }
+    else if (textLower.includes('kamis')) { targetDayName = 'Kamis'; isWeekdayBooking = true; }
+    else if (textLower.includes('jumat')) { targetDayName = 'Jumat'; isWeekdayBooking = false; }
+    else if (textLower.includes('sabtu')) { targetDayName = 'Sabtu'; isWeekdayBooking = false; }
+    else if (textLower.includes('minggu')) { targetDayName = 'Minggu'; isWeekdayBooking = false; }
+    else if (textLower.includes('besok')) {
+      const matchBesok = rtc.refDays.find(r => r.offset === 1);
+      if (matchBesok) {
+        targetDayName = matchBesok.hari;
+        targetYmd = matchBesok.tanggal;
+        isWeekdayBooking = matchBesok.is_weekday;
+      }
+    } else {
+      targetDayName = rtc.namaHari;
+      targetYmd = rtc.ymd;
+      isWeekdayBooking = rtc.isWeekday;
+    }
+
+    const matchedRef = rtc.refDays.find(r => r.hari.toLowerCase() === targetDayName.toLowerCase());
+    if (matchedRef) {
+      targetYmd = matchedRef.tanggal;
+    }
+
+    const targetSantriName = waliData.santriNama !== 'Ananda' ? waliData.santriNama : 'Santri';
+    const cleanSantriName = targetSantriName.replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase();
+    const barcode = isWeekdayBooking ? null : `GP-DU-${cleanSantriName}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const bookingRecord = {
+      id: `VST-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`,
+      booking_source: 'WHATSAPP_LOCAL_NATURAL',
+      nama_santri: targetSantriName,
+      kelas: waliData.kelas,
+      asal: 'Surabaya',
+      tanggal_kunjungan: targetYmd,
+      hari_kunjungan: targetDayName,
+      jam_kunjungan: '14:00',
+      jam_selesai: '15:30',
+      titipan_barang: textLower.includes('makan') ? 'Makanan / Snack' : (textLower.includes('baju') ? 'Pakaian & Perlengkapan' : '-'),
+      berat_barang_kg: 2,
+      nama_penjenguk: waliData.namaWali,
+      status_penjenguk: 'Wali Santri',
+      no_wa_penjenguk: cleanPhone,
+      barcode_token: barcode,
+      approval_type: isWeekdayBooking ? 'MANUAL_WEEKDAY' : 'AUTO_WEEKEND',
+      status_kunjungan: isWeekdayBooking ? 'Menunggu Approval' : 'Disetujui (Auto-Approved Weekend)',
+      is_weekday: isWeekdayBooking,
+      waktu_chat_masuk: `${rtc.namaHari}, ${rtc.tglLengkap} • ${rtc.jamMenitDetik} WITA`,
+      waktu_disetujui: isWeekdayBooking ? null : `${rtc.namaHari}, ${rtc.tglLengkap} • ${rtc.jamMenitDetik} WITA`,
+      created_at: new Date().toISOString()
+    };
+
+    // Masukkan data booking ke sistem
+    await saveBookingToSystem(bookingRecord);
+
+    let reply = '';
+    if (isWeekdayBooking) {
+      reply = `${naturalGreeting}jadwal kunjungan untuk ananda *${targetSantriName}* pada hari *${targetDayName}* sudah kami catat di sistem ya.\n\nKarena kunjungannya di hari kerja (${targetDayName}), permohonan ini kami teruskan dulu ke Admin Ri'ayah untuk persetujuan. Barcode kunjungannya akan langsung dikirimkan ke WhatsApp ini begitu disetujui ya Bapak/Ibu.\n\nSebagai catatan, barang atau makanan titipan maksimal 5 Kg ya.`;
+    } else {
+      reply = `${naturalGreeting}kunjungan untuk ananda *${targetSantriName}* pada hari *${targetDayName}* sudah *langsung disetujui otomatis* di sistem pondok.\n\n🎫 *Barcode Gate Pass Anda:* *${barcode}*\n\nNanti pas tiba di gerbang, tinggal perlihatkan pesan barcode ini ke petugas satpam di pos jaga ya. Titipan barang maksimal 5 Kg. Semoga perjalanannya lancar ya Bapak/Ibu.`;
+    }
+
+    await recordChatMessage(cleanPhone, 'assistant', reply, 'Smart Ri\'ayah AI');
+    return reply;
+  }
+
+  // B. TOPIK SALDO RFID / DOMPET PINTAR
   if (textLower.includes('saldo') || textLower.includes('uang') || textLower.includes('dompet') || textLower.includes('jajan') || textLower.includes('rfid') || textLower.includes('topup') || textLower.includes('top up')) {
-    return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nAlhamdulillah, sisa saldo kartu RFID ananda *${waliData.santriNama}* saat ini *${waliData.saldoRfid}* dengan batas jajan ${waliData.limitHarian} per hari.\n\nAda keperluan isi saldo (Top Up) atau hal lain yang bisa kami bantu untuk ananda? Silakan disampaikan ya Bapak/Ibu. 🙏`;
+    const reply = `${naturalGreeting}alhamdulillah sisa saldo kartu RFID ananda *${waliData.santriNama}* saat ini *${waliData.saldoRfid}* dengan limit jajan ${waliData.limitHarian} per hari.\n\nAda yang perlu kami bantu untuk pengisian saldo atau kebutuhan ananda?`;
+    await recordChatMessage(cleanPhone, 'assistant', reply, 'Smart Ri\'ayah AI');
+    return reply;
   }
 
-  // TOPIK 2: PERIZINAN & PERPANJANGAN LIBURAN
-  if (textLower.includes('izin') || textLower.includes('pulang') || textLower.includes('libur') || textLower.includes('perpanjang') || textLower.includes('pesiar') || textLower.includes('keluar')) {
-    return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nUntuk perizinan ananda *${waliData.santriNama}*, permohonan izin pulang maupun pesiar dapat diajukan via aplikasi Smart Ri'ayah minimal H-1 ya Bapak/Ibu. Saat ini status izin ananda: *${waliData.izinTerakhir}*.\n\nAda keperluan izin apa yang ingin diajukan untuk ananda? Silakan disampaikan ya Bapak/Ibu. 🙏`;
+  // C. TOPIK KABAR / KONDISI SANTRI
+  if (textLower.includes('kabar') || textLower.includes('sehat') || textLower.includes('kondisi') || textLower.includes('kegiatan') || textLower.includes('sholat') || textLower.includes('shalat') || textLower.includes('anak saya')) {
+    const reply = `${naturalGreeting}alhamdulillah ananda *${waliData.santriNama}* saat ini dalam kondisi sehat wal'afiat di asrama (${waliData.kamar}). Aktivitas mengaji, sholat berjamaah, dan sekolah berjalan dengan baik.\n\nAda pesan khusus yang ingin disampaikan untuk ananda?`;
+    await recordChatMessage(cleanPhone, 'assistant', reply, 'Smart Ri\'ayah AI');
+    return reply;
   }
 
-  // TOPIK 3: KESEHATAN / SAKIT / UKS / POSKESTREN
+  // D. TOPIK KESEHATAN / SAKIT / UKS / POSKESTREN
   if (textLower.includes('sakit') || textLower.includes('demam') || textLower.includes('obat') || textLower.includes('uks') || textLower.includes('poskestren') || textLower.includes('klinik') || textLower.includes('dokter')) {
-    return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nAlhamdulillah kondisi medis ananda *${waliData.santriNama}* saat ini terpantau baik di pondok. Petugas kesehatan Poskestren asrama juga siaga 24 jam mendampingi para santri.\n\nAda keluhan atau keperluan khusus terkait kesehatan ananda yang ingin disampaikan Bapak/Ibu? Silakan ya. 🙏`;
+    const reply = `${naturalGreeting}alhamdulillah ananda *${waliData.santriNama}* terpantau sehat di pondok. Petugas kesehatan Poskestren juga siaga 24 jam mendampingi santri. Apakah ananda sempat mengeluhkan sesuatu saat menelepon?`;
+    await recordChatMessage(cleanPhone, 'assistant', reply, 'Smart Ri\'ayah AI');
+    return reply;
   }
 
-  // TOPIK 4: JAM KUNJUNGAN / SAMBANGAN WALI
-  if (textLower.includes('sambang') || textLower.includes('kunjung') || textLower.includes('besuk') || textLower.includes('tengok')) {
-    return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nUntuk jadwal sambangan santri dibuka setiap hari Ahad (Minggu) pukul 08.00 s/d 17.00 WIB di aula ma'had, atau melalui permohonan booking kunjungan hari kerja yang disetujui.\n\nAda rencana berkunjung hari apa dan jam berapa untuk ananda *${waliData.santriNama}*? Silakan disampaikan ya Bapak/Ibu. 🙏`;
+  // E. TOPIK PERIZINAN & PULANG
+  if (textLower.includes('izin') || textLower.includes('pulang') || textLower.includes('libur') || textLower.includes('perpanjang') || textLower.includes('pesiar') || textLower.includes('keluar')) {
+    const reply = `${naturalGreeting}untuk perizinan ananda *${waliData.santriNama}*, permohonan dapat diajukan via aplikasi Smart Ri'ayah minimal H-1 ya. Status izin ananda saat ini: *${waliData.izinTerakhir}*. Ada izin apa yang ingin diajukan untuk ananda?`;
+    await recordChatMessage(cleanPhone, 'assistant', reply, 'Smart Ri\'ayah AI');
+    return reply;
   }
 
-  // TOPIK 5: KABAR & KONDISI SANTRI / AKTIVITAS HARIAN
-  if (textLower.includes('kabar') || textLower.includes('sehat') || textLower.includes('kondisi') || textLower.includes('kegiatan') || textLower.includes('sholat') || textLower.includes('shalat') || textLower.includes('fauzi') || textLower.includes('anak saya')) {
-    return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nAlhamdulillah ananda *${waliData.santriNama}* saat ini dalam kondisi sehat dan aktif beraktivitas di asrama (${waliData.kamar}). Sholat berjamaah dan halaqah santri berjalan tertib.\n\nAda yang ingin dititipkan atau ditanyakan untuk ananda hari ini Bapak/Ibu? 🙏`;
-  }
-
-  // TOPIK 6: SALAM ATAU SAPAAN UMUM
-  if (textLower.includes('assalamu') || textLower.includes('halo') || textLower.includes('selamat') || textLower.includes('pagi') || textLower.includes('siang') || textLower.includes('sore') || textLower.includes('malam') || textLower.includes('ping') || textLower.includes('tes')) {
-    return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nTerima kasih sudah menghubungi kami di Pesantren Modern Darul Ulum. Ada yang bisa kami bantu? Silakan sampaikan keperluannya ya Bapak/Ibu. 🙏`;
-  }
-
-  // TOPIK DEFAULT / PERTANYAAN LAINNYA
-  return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nTerima kasih atas pesannya. Ada yang bisa kami bantu untuk ananda *${waliData.santriNama}*? Silakan sampaikan keperluannya ya Bapak/Ibu. 🙏`;
+  // F. SAPAAN UMUM / DEFAULT
+  const reply = `${naturalGreeting}ada yang bisa kami bantu terkait ananda *${waliData.santriNama}* di Pesantren Modern Darul Ulum? Silakan disampaikan ya Bapak/Ibu. 🙏`;
+  await recordChatMessage(cleanPhone, 'assistant', reply, 'Smart Ri\'ayah AI');
+  return reply;
 }
 
 /**

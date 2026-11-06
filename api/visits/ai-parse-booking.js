@@ -64,6 +64,9 @@ export default async function handler(req, res) {
 
     const waktuSekarangStr = `${rtc.namaHari}, ${rtc.tanggalLengkap} • ${rtc.jamMenitDetik} WITA`;
 
+    const hasSalam = /assalamu|aslam|mikum/i.test(messageText);
+    const greeting = hasSalam ? `Wa'alaikumsalam Bapak/Ibu *${extracted.nama_penjenguk}*.\n\n` : `Baik Bapak/Ibu *${extracted.nama_penjenguk}*,\n\n`;
+
     // Validasi Jam Operasional Kunjungan
     let hoursWarning = '';
     const [h, m] = (extracted.jam_kunjungan || '14:00').split(':').map(v => parseInt(v, 10) || 0);
@@ -80,7 +83,7 @@ export default async function handler(req, res) {
       barcodeToken = null;
 
       replyWaText = `⏳ *[PERMOHONAN KUNJUNGAN TERCATAT - HARI KERJA]*\n` +
-        `Assalamu'alaikum Wr. Wb. Bapak/Ibu *${extracted.nama_penjenguk}*.\n\n` +
+        greeting +
         `Permohonan kunjungan Anda pada hari kerja (*${hariKunjunganNormalized}, ${extracted.tanggal_kunjungan}*) telah dicatat oleh sistem Smart Riayah dan sedang *MENUNGGU PERSETUJUAN* Admin Ri'ayah.\n\n` +
         `• Santri: *${extracted.nama_santri}* (${extracted.kelas})\n` +
         `• Jadwal: *${extracted.jam_kunjungan} - ${extracted.jam_selesai} WITA*\n` +
@@ -99,7 +102,7 @@ export default async function handler(req, res) {
       barcodeToken = `GP-DU-${cleanSantriName}-${Math.floor(1000 + Math.random() * 9000)}`;
 
       replyWaText = `✅ *[BOOKING KUNJUNGAN DISETUJUI OTOMATIS - WEEKEND]*\n` +
-        `Assalamu'alaikum Wr. Wb. Bapak/Ibu *${extracted.nama_penjenguk}*.\n\n` +
+        greeting +
         `Permohonan sambangan santri *${extracted.nama_santri}* (${extracted.kelas}) pada hari *${hariKunjunganNormalized}, ${extracted.tanggal_kunjungan}* pukul *${extracted.jam_kunjungan} - ${extracted.jam_selesai} WITA* telah *DISETUJUI OTOMATIS*.\n\n` +
         `📦 *Titipan Barang:* ${extracted.titipan_barang || '-'} (${extracted.berat_barang_kg || 0} Kg - Batas Max 5 Kg)\n` +
         `🎫 *Barcode Gate Pass:* *${barcodeToken}*\n\n` +

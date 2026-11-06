@@ -841,6 +841,21 @@ export const AppProvider = ({ children }) => {
         };
         setWhatsappLogs(prev => [replyEntry, ...prev]);
       })
+      .on('broadcast', { event: 'whatsapp.visit_booking' }, ({ payload }) => {
+        if (!isMounted || !payload?.id) return;
+        sound.playSuccess?.();
+        setVisitBookings(prev => {
+          const exists = prev.some(b => b.id === payload.id);
+          if (exists) return prev;
+          const updated = [payload, ...prev];
+          try {
+            localStorage.setItem('sr_visit_bookings', JSON.stringify(updated));
+          } catch (e) {
+            console.warn('Failed to save visit bookings from realtime:', e);
+          }
+          return updated;
+        });
+      })
       .subscribe((status) => {
         console.log('📡 [AppContext Supabase Realtime whatsapp-room] Status:', status);
       });
