@@ -84,6 +84,13 @@ import {
   disconnectFonnteDevice,
   sendManualOverrideMessage
 } from '../../services/fonnteService';
+import {
+  testDeepSeekConnection,
+  parseBookingWithDeepSeek,
+  DEFAULT_DEEPSEEK_KEY,
+  DEFAULT_DEEPSEEK_BASE_URL,
+  DEFAULT_DEEPSEEK_MODEL
+} from '../../services/deepseekVisitService';
 import VisitBookingManager from './VisitBookingManager';
 
 class WorkspaceErrorBoundary extends React.Component {
@@ -511,7 +518,7 @@ function EngageAiWorkspaceContent() {
       {activeTab === 'campaigns' && <TabCampaigns />}
 
       {/* ─── L. TAB 11: AI SETTINGS ─── */}
-      {activeTab === 'ai_settings' && <TabAiSettings />}
+      {activeTab === 'ai_settings' && <TabAiSettings showToast={showToast} />}
 
       {/* ─── M. TAB 12: REPORTS ─── */}
       {activeTab === 'reports' && <TabReports showToast={showToast} deviceData={deviceData} />}
@@ -3826,28 +3833,343 @@ function TabCampaigns() {
   );
 }
 
-function TabAiSettings() {
+function TabAiSettings({ showToast }) {
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('sr_deepseek_key') || DEFAULT_DEEPSEEK_KEY);
+  const [baseUrl, setBaseUrl] = useState(() => localStorage.getItem('sr_deepseek_base_url') || DEFAULT_DEEPSEEK_BASE_URL);
+  const [model, setModel] = useState(() => localStorage.getItem('sr_deepseek_model') || DEFAULT_DEEPSEEK_MODEL);
+  const [showKey, setShowKey] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+
+  // Playground state
+  const [sampleChat, setSampleChat] = useState(
+    "Assalamu'alaikum ustadz, saya Bu Fatimah wali dari ananda Ahmad Fauzi kelas 10-A kamar Umar 204 dari Surabaya, insya Allah mau sambang hari Senin tgl 2026-11-09 jam 14.00 sampai 15.30 WIB bawa madu herbal dan pakaian ganti seberat 2 kg."
+  );
+  const [isParsingPlayground, setIsParsingPlayground] = useState(false);
+  const [parsedPlayground, setParsedPlayground] = useState(null);
+
+  const handleTestConnection = async () => {
+    setIsTesting(true);
+    setTestResult(null);
+    sound.playBeep?.();
+    showToast?.('Menguji koneksi ke DeepSeek API...', 'info');
+
+    try {
+      const res = await testDeepSeekConnection(apiKey);
+      setIsTesting(false);
+      setTestResult(res);
+
+      if (res.success) {
+        sound.playSuccess?.();
+        showToast?.(`✓ DeepSeek API Berhasil Terhubung! Latensi: ${res.latencyMs}ms (Model: ${res.model})`, 'success');
+      } else {
+        showToast?.(`Koneksi DeepSeek Gagal: ${res.error}`, 'error');
+      }
+    } catch (err) {
+      setIsTesting(false);
+      showToast?.(`Error: ${err.message}`, 'error');
+    }
+  };
+
+  const handleTestParse = async () => {
+    if (!sampleChat.trim()) {
+      showToast?.('Ketik contoh pesan chat terlebih dahulu!', 'warning');
+      return;
+    }
+    setIsParsingPlayground(true);
+    setParsedPlayground(null);
+    sound.playBeep?.();
+    showToast?.('DeepSeek sedang mengekstrak 9 atribut booking kunjungan...', 'info');
+
+    try {
+      const res = await parseBookingWithDeepSeek(sampleChat, '6285960213654', 'Ibu Fatimah Az-Zahra', apiKey);
+      setIsParsingPlayground(false);
+      if (res && res.booking) {
+        setParsedPlayground(res.booking);
+        sound.playSuccess?.();
+        showToast?.(
+          res.is_weekday
+            ? `✓ Ekstraksi Berhasil (Senin-Kamis)! Status: Menunggu Approval Admin Ri'ayah.`
+            : `✓ Ekstraksi Berhasil (Weekend)! Status: Auto-Approved Barcode (${res.booking.barcode_token}).`,
+          'success'
+        );
+      }
+    } catch (err) {
+      setIsParsingPlayground(false);
+      showToast?.(`Gagal parse: ${err.message}`, 'error');
+    }
+  };
+
+  const handleSaveConfig = () => {
+    localStorage.setItem('sr_deepseek_key', apiKey.trim());
+    localStorage.setItem('sr_deepseek_base_url', baseUrl.trim());
+    localStorage.setItem('sr_deepseek_model', model.trim());
+    sound.playSuccess?.();
+    showToast?.('Konfigurasi DeepSeek AI berhasil disimpan!', 'success');
+  };
+
   return (
-    <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4 text-xs">
-      <h3 className="font-extrabold text-sm text-slate-900">AI Personality &amp; LLM Configuration</h3>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <label className="font-bold text-slate-700 block mb-1">Model LLM Engine</label>
-          <select className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white">
-            <option>Google Gemini 1.5 Flash (Default)</option>
-            <option>Groq Llama 3.3 70B</option>
-            <option>DeepSeek Chat</option>
-            <option>OpenAI GPT-4o Mini</option>
-          </select>
+    <div className="space-y-6">
+      {/* ─── 1. DeepSeek AI Engine & Barcode Token Generator ─── */}
+      <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-5 text-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-600 text-white flex items-center justify-center font-black shadow-sm">
+              <Bot className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-black text-sm text-slate-900">
+                  DeepSeek AI Engine &amp; Barcode Token Generator
+                </h3>
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-[10px] flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Active ({model})
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Pemroses pesan alami wali santri (NLP Booking), validasi hari kerja vs weekend, dan generator Barcode Gate Pass resmi.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleTestConnection}
+              disabled={isTesting}
+              className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+            >
+              {isTesting ? <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" /> : <Zap className="w-3.5 h-3.5 text-amber-500" />}
+              <span>Tes Koneksi DeepSeek</span>
+            </button>
+            <button
+              onClick={handleSaveConfig}
+              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-sm flex items-center gap-1.5 cursor-pointer"
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>Simpan Pengaturan</span>
+            </button>
+          </div>
         </div>
-        <div>
-          <label className="font-bold text-slate-700 block mb-1">Temperature / Kreativitas</label>
-          <input type="range" min="0" max="1" step="0.1" defaultValue="0.7" className="w-full mt-2" />
+
+        {/* Form Kredensial DeepSeek */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="font-bold text-slate-700 block mb-1">
+              DeepSeek API Key (Token)
+            </label>
+            <div className="relative">
+              <input
+                type={showKey ? 'text' : 'password'}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="sk-5b97e9e1d00846818565250d944cc047"
+                className="w-full px-3 py-2 pr-9 text-xs rounded-xl border border-slate-300 font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+              <button
+                type="button"
+                onClick={() => setShowKey(!showKey)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition"
+                title={showKey ? 'Sembunyikan token' : 'Tampilkan token'}
+              >
+                {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+            <span className="text-[10px] text-slate-400 mt-1 block">
+              Header: <code className="text-emerald-700 font-mono">Authorization: Bearer sk-...</code>
+            </span>
+          </div>
+
+          <div>
+            <label className="font-bold text-slate-700 block mb-1">
+              Endpoint Base URL
+            </label>
+            <input
+              type="text"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="https://api.deepseek.com/v1/chat/completions"
+              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-mono text-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            />
+            <span className="text-[10px] text-slate-400 mt-1 block">
+              Format: <code className="text-slate-600 font-mono">POST /v1/chat/completions</code>
+            </span>
+          </div>
+
+          <div>
+            <label className="font-bold text-slate-700 block mb-1">
+              Pilihan Model LLM
+            </label>
+            <input
+              type="text"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder="deepseek-chat"
+              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-mono font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            />
+            <span className="text-[10px] text-slate-400 mt-1 block">
+              Mode respon: <code className="text-emerald-700 font-mono">json_object (Structured Output)</code>
+            </span>
+          </div>
+        </div>
+
+        {/* Live Test Status Banner */}
+        {testResult && (
+          <div className={`p-3.5 rounded-2xl border text-xs flex items-center justify-between gap-3 ${
+            testResult.success
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              : 'bg-rose-50 border-rose-200 text-rose-900'
+          }`}>
+            <div className="flex items-center gap-2">
+              {testResult.success ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              )}
+              <div>
+                <strong>{testResult.success ? 'Koneksi Berhasil!' : 'Koneksi Gagal!'}</strong>{' '}
+                <span>{testResult.success ? `Respon model "${testResult.reply}" diterima dalam ${testResult.latencyMs}ms.` : testResult.error}</span>
+              </div>
+            </div>
+            <span className="font-mono text-[10px] bg-white px-2 py-0.5 rounded border border-slate-200">
+              {testResult.model || model}
+            </span>
+          </div>
+        )}
+
+        {/* ─── INTERACTIVE PLAYGROUND: UJI PARSE AI BOOKING ─── */}
+        <div className="pt-4 border-t border-slate-100 space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              Uji Coba AI Natural Language Booking Parser (DeepSeek API)
+            </h4>
+            <span className="text-[10px] text-slate-400 font-mono">Simulasi Ekstraksi 9 Atribut JSON</span>
+          </div>
+
+          <div className="space-y-2">
+            <textarea
+              rows={3}
+              value={sampleChat}
+              onChange={(e) => setSampleChat(e.target.value)}
+              placeholder="Ketik pesan chat bebas dari wali santri di sini..."
+              className="w-full p-3 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 leading-relaxed font-sans"
+            />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSampleChat("Assalamu'alaikum ustadz, saya Bu Fatimah wali dari ananda Ahmad Fauzi kelas 10-A kamar Umar 204 dari Surabaya, insya Allah mau sambang hari Senin tgl 2026-11-09 jam 14.00 sampai 15.30 WIB bawa madu herbal dan pakaian ganti seberat 2 kg.")}
+                  className="text-[10px] text-emerald-700 hover:underline font-bold"
+                >
+                  Contoh: Senin (Hari Kerja)
+                </button>
+                <span className="text-slate-300">•</span>
+                <button
+                  type="button"
+                  onClick={() => setSampleChat("Assalamu'alaikum ustadz, saya Pak Bambang wali ananda Muhammad Rayhan kelas 10-B mau jenguk hari Ahad tanggal 8 November 2026 jam 10 pagi bawa sarung dan roti bolu 1.5 kg.")}
+                  className="text-[10px] text-teal-700 hover:underline font-bold"
+                >
+                  Contoh: Ahad (Weekend)
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={handleTestParse}
+                disabled={isParsingPlayground}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs transition shadow-sm flex items-center gap-1.5 cursor-pointer"
+              >
+                {isParsingPlayground ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 text-amber-300" />}
+                <span>Uji Parse DeepSeek AI</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Hasil Parsed JSON Card */}
+          {parsedPlayground && (
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3 animate-in fade-in-50">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                <span className="font-extrabold text-[11px] text-slate-800 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  Hasil Ekstraksi Atribut DeepSeek AI:
+                </span>
+                <span className={`px-2.5 py-0.5 rounded-full font-bold text-[10px] ${
+                  parsedPlayground.is_weekday
+                    ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                    : 'bg-teal-100 text-teal-900 border border-teal-300'
+                }`}>
+                  {parsedPlayground.is_weekday ? 'Hari Kerja (Senin–Kamis) • Butuh Approval' : 'Weekend (Jumat–Minggu) • Auto-Approved'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-[11px]">
+                <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-slate-400 block font-bold uppercase">Santri</span>
+                  <strong className="text-slate-800">{parsedPlayground.nama_santri}</strong>
+                  <span className="text-[10px] text-slate-500 block">{parsedPlayground.kelas}</span>
+                </div>
+                <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-slate-400 block font-bold uppercase">Penjenguk</span>
+                  <strong className="text-slate-800">{parsedPlayground.nama_penjenguk}</strong>
+                  <span className="text-[10px] text-slate-500 block">({parsedPlayground.status_penjenguk})</span>
+                </div>
+                <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-slate-400 block font-bold uppercase">Jadwal</span>
+                  <strong className="text-slate-800">{parsedPlayground.hari_kunjungan}, {parsedPlayground.tanggal_kunjungan}</strong>
+                  <span className="text-[10px] text-emerald-700 block font-mono font-bold">{parsedPlayground.jam_kunjungan} - {parsedPlayground.jam_selesai} WIB</span>
+                </div>
+                <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-slate-400 block font-bold uppercase">Titipan Barang</span>
+                  <strong className="text-slate-800 truncate block">{parsedPlayground.titipan_barang}</strong>
+                  <span className="text-[10px] text-slate-500 block font-mono">{parsedPlayground.berat_barang_kg} Kg</span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-white rounded-xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2">
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-bold block">Status Alur Tiket Barcode</span>
+                  <span className={`font-black text-xs ${parsedPlayground.is_weekday ? 'text-amber-700' : 'text-emerald-700'}`}>
+                    {parsedPlayground.is_weekday
+                      ? '⏳ Menunggu Approval Admin Ri\'ayah (Barcode diterbitkan setelah disetujui)'
+                      : `✅ Barcode Langsung Terbit: ${parsedPlayground.barcode_token}`}
+                  </span>
+                </div>
+                {parsedPlayground.barcode_token && (
+                  <span className="px-3 py-1 bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-lg font-mono font-bold text-xs">
+                    {parsedPlayground.barcode_token}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
-      <button onClick={() => alert('Konfigurasi AI disimpan!')} className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold">
-        Simpan Parameter AI
-      </button>
+
+      {/* ─── 2. Parameter AI Personality Tambahan ─── */}
+      <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4 text-xs">
+        <h3 className="font-extrabold text-sm text-slate-900">Parameter LLM &amp; Aturan Percakapan</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="font-bold text-slate-700 block mb-1">Pilihan Engine Utama</label>
+            <select className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white font-medium">
+              <option>DeepSeek Chat (deepseek-chat) - Recommended</option>
+              <option>Google Gemini 1.5 Flash</option>
+              <option>Groq Llama 3.3 70B</option>
+            </select>
+          </div>
+          <div>
+            <label className="font-bold text-slate-700 block mb-1">Temperature / Kreativitas (0.1 - 0.7)</label>
+            <input type="range" min="0" max="1" step="0.1" defaultValue="0.2" className="w-full mt-2 accent-emerald-600" />
+            <span className="text-[10px] text-slate-400 block mt-0.5">Nilai rendah (0.1) direkomendasikan untuk akurasi ekstraksi JSON tinggi.</span>
+          </div>
+        </div>
+        <button
+          onClick={() => { sound.playSuccess?.(); showToast?.('Parameter AI tersimpan!', 'success'); }}
+          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition cursor-pointer"
+        >
+          Simpan Parameter Tambahan
+        </button>
+      </div>
     </div>
   );
 }

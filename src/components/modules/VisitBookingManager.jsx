@@ -25,9 +25,12 @@ import {
   Send,
   Eye,
   Check,
-  ArrowRight
+  ArrowRight,
+  Bot,
+  Loader2
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
+import { parseBookingWithDeepSeek } from '../../services/deepseekVisitService';
 
 export default function VisitBookingManager({ isCompact = false }) {
   const {
@@ -52,6 +55,8 @@ export default function VisitBookingManager({ isCompact = false }) {
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
   const [selectedBookingForPass, setSelectedBookingForPass] = useState(null);
   const [copiedToken, setCopiedToken] = useState(false);
+  const [customWaChat, setCustomWaChat] = useState("Assalamu'alaikum ustadz, saya Bu Fatimah wali ananda Ahmad Fauzi kelas 10A kamar Umar 204 dari Surabaya, mau sambang hari Senin tgl 2026-11-09 jam 14.00 WIB bawa madu herbal 2 kg.");
+  const [isAiParsing, setIsAiParsing] = useState(false);
 
   // Settings local state
   const [localSettings, setLocalSettings] = useState({ ...visitSettings });
@@ -165,6 +170,24 @@ export default function VisitBookingManager({ isCompact = false }) {
       no_wa_penjenguk: '',
       tanggal_kunjungan: new Date().toISOString().slice(0, 10)
     });
+  };
+
+  const handleAiSimulate = async () => {
+    if (!customWaChat.trim()) return;
+    setIsAiParsing(true);
+    sound.playBeep?.();
+    try {
+      const res = await parseBookingWithDeepSeek(customWaChat);
+      setIsAiParsing(false);
+      if (res && res.booking) {
+        addVisitBooking(res.booking);
+        setIsSimulateModalOpen(false);
+        sound.playSuccess?.();
+      }
+    } catch (e) {
+      setIsAiParsing(false);
+      alert('Gagal memproses AI DeepSeek: ' + e.message);
+    }
   };
 
   const copyToClipboard = (text) => {
@@ -606,7 +629,7 @@ export default function VisitBookingManager({ isCompact = false }) {
                                 title="Setujui permohonan kunjungan dan kirim Barcode Gate Pass via WhatsApp"
                               >
                                 <Check className="w-3 h-3" />
-                                <span>Setujui &amp; Kirim Barcode</span>
+                                <span>Setujui &amp; Kirim Barcode WA</span>
                               </button>
                               <button
                                 onClick={() => {
@@ -826,6 +849,35 @@ export default function VisitBookingManager({ isCompact = false }) {
                   Wali mengajukan kunjungan hari kerja. Permohonan masuk ke antrean "Menunggu Approval", dan barcode baru terkirim setelah Admin Ri'ayah menyetujui.
                 </p>
               </button>
+
+              {/* Skenario 3: Input Bebas Chat Wali via DeepSeek AI Parser */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <strong className="text-xs text-emerald-950 font-bold flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-emerald-600" />
+                    Skenario 3: AI DeepSeek Natural Language Parser (Teks Bebas)
+                  </strong>
+                  <span className="text-[10px] px-2 py-0.5 rounded font-bold bg-emerald-200 text-emerald-900 font-mono">
+                    deepseek-chat
+                  </span>
+                </div>
+                <textarea
+                  rows={2}
+                  value={customWaChat}
+                  onChange={(e) => setCustomWaChat(e.target.value)}
+                  placeholder="Ketik teks pesan WhatsApp bebas dari wali santri..."
+                  className="w-full p-2.5 text-xs rounded-xl border border-emerald-300 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 leading-relaxed font-sans"
+                />
+                <button
+                  type="button"
+                  onClick={handleAiSimulate}
+                  disabled={isAiParsing}
+                  className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  {isAiParsing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bot className="w-3.5 h-3.5" />}
+                  <span>{isAiParsing ? 'Mengekstrak via DeepSeek AI...' : 'Ekstrak & Simulasikan via DeepSeek AI'}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

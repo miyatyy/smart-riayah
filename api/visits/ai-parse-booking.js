@@ -1,0 +1,311 @@
+/**
+ * Vercel Serverless Function: /api/visits/ai-parse-booking
+ * Natural Language Booking Parser & Gate Pass Router via DeepSeek AI Engine & Fonnte WhatsApp Gateway
+ * 
+ * Aturan Hari:
+ * - Senin - Kamis (is_weekday = true)  : 'Menunggu Approval' (MANUAL_WEEKDAY) -> Notifikasi WA tunggu persetujuan
+ * - Jumat - Minggu (is_weekday = false) : 'Disetujui (Auto-Approved Weekend)' -> Barcode diterbitkan seketika + WA
+ */
+
+const DEFAULT_DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY || 'sk-5b97e9e1d00846818565250d944cc047';
+const DEFAULT_FONNTE_TOKEN = process.env.FONNTE_TOKEN || '8UN12iqFjKNBYdds8FCG';
+
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+
+  if (req.method === 'GET') {
+    return res.status(200).json({
+      status: 'active',
+      engine: 'DeepSeek Chat (deepseek-chat)',
+      endpoint: '/api/visits/ai-parse-booking',
+      description: 'AI Natural Language Booking Parser & Smart Gate Pass Router'
+    });
+  }
+
+  try {
+    const payload = req.body || {};
+    const messageText = payload.message || payload.text || '';
+    const sender = payload.sender || payload.phone || payload.target || '';
+    const senderName = payload.name || payload.sender_name || 'Wali Santri';
+    const apiKey = payload.deepseek_api_key || DEFAULT_DEEPSEEK_KEY;
+    const fonnteToken = payload.fonnte_token || DEFAULT_FONNTE_TOKEN;
+
+    if (!messageText.trim()) {
+      return res.status(400).json({ success: false, error: 'Pesan chat booking kunjungan wajib diisi' });
+    }
+
+    // 1. Panggil DeepSeek AI untuk Ekstraksi 9 Atribut JSON Wajib
+    let extracted = await callDeepSeekParser(messageText, sender, senderName, apiKey);
+
+    // Fallback regex jika DeepSeek gagal atau respons kosong
+    if (!extracted || !extracted.nama_santri) {
+      extracted = fallbackRegexParser(messageText, sender, senderName);
+    }
+
+    // 2. Normalisasi & Validasi Hari Kunjungan (Senin - Minggu)
+    const hariKunjunganNormalized = normalizeDayName(extracted.hari_kunjungan, extracted.tanggal_kunjungan);
+    const isWeekday = ['Senin', 'Selasa', 'Rabu', 'Kamis'].includes(hariKunjunganNormalized);
+    const cleanSantriName = (extracted.nama_santri || 'Santri').replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase();
+    const bookingId = `VST-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
+
+    let approvalType = 'MANUAL_WEEKDAY';
+    let statusKunjungan = 'Menunggu Approval';
+    let barcodeToken = null;
+    let replyWaText = '';
+
+    if (isWeekday) {
+      // SENIN - KAMIS (WEEKDAY): MENUNGGU APPROVAL ADMIN RI'AYAH (TIDAK ADA BARCODE AWAL)
+      approvalType = 'MANUAL_WEEKDAY';
+      statusKunjungan = 'Menunggu Approval';
+      barcodeToken = null;
+
+      replyWaText = `⏳ *[PERMOHONAN KUNJUNGAN TERCATAT - HARI KERJA]*\n` +
+        `Assalamu'alaikum Wr. Wb. Bapak/Ibu *${extracted.nama_penjenguk}*.\n\n` +
+        `Permohonan kunjungan Anda pada hari kerja (*${hariKunjunganNormalized}, ${extracted.tanggal_kunjungan}*) telah dicatat oleh sistem Smart Riayah dan sedang *MENUNGGU PERSETUJUAN* Admin Ri'ayah.\n\n` +
+        `Santri: *${extracted.nama_santri}* (${extracted.kelas})\n` +
+        `Jadwal: *${extracted.jam_kunjungan} - ${extracted.jam_selesai} WIB*\n` +
+        `Titipan: *${extracted.titipan_barang || '-'}* (${extracted.berat_barang_kg || 0} Kg)\n\n` +
+        `Barcode kunjungan resmi akan dikirimkan ke nomor WhatsApp ini setelah disetujui.`;
+    } else {
+      // JUMAT - MINGGU (WEEKEND): AUTO-APPROVED + BARCODE GATE PASS INSTAN
+      approvalType = 'AUTO_WEEKEND';
+      statusKunjungan = 'Disetujui (Auto-Approved Weekend)';
+      barcodeToken = `GP-DU-${cleanSantriName}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      replyWaText = `✅ *[BOOKING KUNJUNGAN DISETUJUI OTOMATIS - WEEKEND]*\n` +
+        `Assalamu'alaikum Wr. Wb. Bapak/Ibu *${extracted.nama_penjenguk}*.\n\n` +
+        `Permohonan sambangan santri *${extracted.nama_santri}* (${extracted.kelas}) pada hari *${hariKunjunganNormalized}, ${extracted.tanggal_kunjungan}* pukul *${extracted.jam_kunjungan} - ${extracted.jam_selesai} WIB* telah *DISETUJUI OTOMATIS*.\n\n` +
+        `📦 *Titipan Barang:* ${extracted.titipan_barang || '-'} (${extracted.berat_barang_kg || 0} Kg)\n` +
+        `🎫 *Barcode Gate Pass:* *${barcodeToken}*\n\n` +
+        `Silakan tunjukkan barcode/pesan ini ke Satpam saat tiba di Gerbang Utama Pesantren Modern Darul Ulum.`;
+    }
+
+    const bookingRecord = {
+      id: bookingId,
+      booking_source: 'WHATSAPP_AI_DEEPSEEK',
+      nama_santri: extracted.nama_santri,
+      kelas: extracted.kelas,
+      asal: extracted.asal,
+      tanggal_kunjungan: extracted.tanggal_kunjungan,
+      hari_kunjungan: hariKunjunganNormalized,
+      jam_kunjungan: extracted.jam_kunjungan,
+      jam_selesai: extracted.jam_selesai,
+      titipan_barang: extracted.titipan_barang || '-',
+      berat_barang_kg: extracted.berat_barang_kg || 0,
+      nama_penjenguk: extracted.nama_penjenguk,
+      status_penjenguk: extracted.status_penjenguk || 'Wali Santri',
+      no_wa_penjenguk: sender || extracted.no_wa_penjenguk || '',
+      barcode_token: barcodeToken,
+      approval_type: approvalType,
+      status_kunjungan: statusKunjungan,
+      is_weekday: isWeekday,
+      created_at: new Date().toISOString()
+    };
+
+    // 3. Kirim WhatsApp Auto-Reply via Fonnte jika nomor tujuan tersedia
+    let waSendResult = null;
+    const targetWa = bookingRecord.no_wa_penjenguk;
+    if (targetWa && fonnteToken) {
+      try {
+        const fonnteRes = await fetch('https://api.fonnte.com/send', {
+          method: 'POST',
+          headers: {
+            'Authorization': fonnteToken,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            target: targetWa,
+            message: replyWaText
+          })
+        });
+        waSendResult = await fonnteRes.json().catch(() => ({}));
+      } catch (waErr) {
+        console.warn('Fonnte send error:', waErr.message);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      ai_engine: 'DeepSeek Chat (deepseek-chat)',
+      is_weekday: isWeekday,
+      booking: bookingRecord,
+      replyMessage: replyWaText,
+      waSendResult: waSendResult
+    });
+
+  } catch (err) {
+    console.error('Error in /api/visits/ai-parse-booking:', err);
+    return res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+}
+
+/**
+ * Panggil DeepSeek API dengan structured JSON output
+ */
+async function callDeepSeekParser(message, sender, senderName, apiKey) {
+  try {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const todayDayName = dayNames[new Date().getDay()];
+
+    const systemPrompt = `Anda adalah AI Asisten Cerdas Pondok Pesantren Modern Darul Ulum untuk memproses pendaftaran booking kunjungan/sambangan wali santri dari chat WhatsApp.
+Hari ini adalah: ${todayDayName}, ${todayStr}.
+Tugas Anda: Ekstrak pesan permohonan kunjungan wali santri ke dalam format JSON yang valid dengan 9 atribut wajib:
+1. "nama_santri": string nama santri yang dijenguk.
+2. "kelas": string kelas / kamar santri (misal: "10-A (Umar 204)").
+3. "asal": string kota / daerah asal santri / wali (misal: "Surabaya", "Gresik", "Sidoarjo").
+4. "hari_kunjungan": string hari kunjungan ("Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu").
+5. "tanggal_kunjungan": string format "YYYY-MM-DD" (jika hanya menyebut hari, hitung tanggal terdekat dari hari ini).
+6. "jam_kunjungan": string format "HH:mm" (waktu mulai berkunjung, default "14:00").
+7. "jam_selesai": string format "HH:mm" (waktu selesai berkunjung, default 1-2 jam setelah mulai, misal "15:30").
+8. "titipan_barang": string deskripsi barang yang dibawa/dititipkan (misal: "Pakaian ganti, madu, vitamin").
+9. "berat_barang_kg": number berat barang dalam Kg (misal 2.0).
+10. "nama_penjenguk": string nama wali atau penjenguk.
+11. "status_penjenguk": string salah satu dari "Wali Santri", "Keluarga", "Kerabat", atau "Lainnya".
+12. "is_weekday": boolean (true jika hari_kunjungan adalah Senin, Selasa, Rabu, atau Kamis; false jika Jumat, Sabtu, atau Minggu).
+
+Wajib menghasilkan output HANYA berupa JSON object murni.`;
+
+    const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Pesan Wali Santri: "${message}"\nPengirim WA: ${sender || '-'}\nNama Pengirim: ${senderName || '-'}` }
+        ],
+        temperature: 0.1
+      })
+    });
+
+    if (!res.ok) {
+      console.warn('DeepSeek HTTP status not OK:', res.status);
+      return null;
+    }
+
+    const json = await res.json();
+    const content = json.choices?.[0]?.message?.content;
+    if (!content) return null;
+
+    return JSON.parse(content);
+  } catch (err) {
+    console.warn('DeepSeek API parse error:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Normalisasi Nama Hari
+ */
+function normalizeDayName(hariStr, tanggalStr) {
+  const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+  if (hariStr) {
+    const clean = hariStr.trim().toLowerCase();
+    for (const d of dayNames) {
+      if (d.toLowerCase() === clean) return d;
+    }
+  }
+  if (tanggalStr) {
+    const d = new Date(tanggalStr);
+    if (!isNaN(d.getTime())) {
+      return dayNames[d.getDay()];
+    }
+  }
+  return dayNames[new Date().getDay()];
+}
+
+/**
+ * Regex Fallback Parser jika API eksternal offline
+ */
+function fallbackRegexParser(text, sender, senderName) {
+  const clean = text || '';
+  const now = new Date();
+  const defaultDate = now.toISOString().slice(0, 10);
+
+  const matchField = (patterns, fallback = '') => {
+    for (const pat of patterns) {
+      const match = clean.match(pat);
+      if (match && match[1]) return match[1].trim();
+    }
+    return fallback;
+  };
+
+  const namaSantri = matchField([
+    /(?:nama\s*santri|santri|ananda)\s*[:=]\s*([^\n,]+)/i,
+    /(?:menjenguk|sambang|jenguk)\s+([a-zA-Z\s]{3,30})/i
+  ], 'Ahmad Fauzi');
+
+  const kelas = matchField([
+    /(?:kelas|kamar|asrama)\s*[:=]\s*([^\n,]+)/i
+  ], '10-A (Umar bin Khattab 204)');
+
+  const asal = matchField([
+    /(?:asal|kota|daerah)\s*[:=]\s*([^\n,]+)/i
+  ], 'Surabaya');
+
+  const tanggal = matchField([
+    /(?:tanggal|tgl|hari\/tgl)\s*[:=]\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/i,
+    /(?:tanggal|tgl)\s*[:=]\s*([^\n,]+)/i
+  ], defaultDate);
+
+  const hariKunjungan = matchField([
+    /(?:hari)\s*[:=]\s*([a-zA-Z]+)/i
+  ], 'Senin');
+
+  const jamMulai = matchField([
+    /(?:jam|waktu|pukul)\s*[:=]?\s*([0-9]{1,2}[:.][0-9]{2})/i
+  ], '14:00').replace('.', ':');
+
+  const jamSelesai = matchField([
+    /(?:s\/d|sampai|-)\s*([0-9]{1,2}[:.][0-9]{2})/i,
+    /(?:jam\s*selesai|selesai)\s*[:=]?\s*([0-9]{1,2}[:.][0-9]{2})/i
+  ], '15:30').replace('.', ':');
+
+  const titipan = matchField([
+    /(?:titipan|barang|titip|bawaan)\s*[:=]\s*([^\n]+)/i
+  ], 'Pakaian ganti & Madu Herbal');
+
+  const beratStr = matchField([
+    /(?:berat|kg)\s*[:=]?\s*([0-9]+(?:[.,][0-9]+)?)\s*(?:kg)?/i,
+    /([0-9]+(?:[.,][0-9]+)?)\s*kg/i
+  ], '2.0').replace(',', '.');
+  const berat = parseFloat(beratStr) || 2.0;
+
+  const penjenguk = matchField([
+    /(?:nama\s*penjenguk|penjenguk|wali|orang\s*tua)\s*[:=]\s*([^\n,]+)/i
+  ], senderName || 'Ibu Fatimah Az-Zahra');
+
+  const statusPenjenguk = matchField([
+    /(?:status\s*penjenguk|status|hubungan)\s*[:=]\s*([^\n,]+)/i
+  ], 'Wali Santri');
+
+  return {
+    nama_santri: namaSantri,
+    kelas: kelas,
+    asal: asal,
+    hari_kunjungan: hariKunjungan,
+    tanggal_kunjungan: tanggal,
+    jam_kunjungan: jamMulai,
+    jam_selesai: jamSelesai,
+    titipan_barang: titipan,
+    berat_barang_kg: berat,
+    nama_penjenguk: penjenguk,
+    status_penjenguk: statusPenjenguk,
+    no_wa_penjenguk: sender
+  };
+}
+
