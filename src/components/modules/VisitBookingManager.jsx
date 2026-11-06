@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   Calendar,
@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
 import { parseBookingWithDeepSeek } from '../../services/deepseekVisitService';
+import { getRealtimePondokClock, calculateVisitCountdown } from '../../utils/pondokTimeUtils';
 
 export default function VisitBookingManager({ isCompact = false }) {
   const {
@@ -58,24 +59,54 @@ export default function VisitBookingManager({ isCompact = false }) {
   const [customWaChat, setCustomWaChat] = useState("Assalamu'alaikum ustadz, saya Bu Fatimah wali ananda Ahmad Fauzi kelas 10A kamar Umar 204 dari Surabaya, mau sambang hari Senin tgl 2026-11-09 jam 14.00 WIB bawa madu herbal 2 kg.");
   const [isAiParsing, setIsAiParsing] = useState(false);
 
+  // Live Clock Ticking Engine (1000ms)
+  const [liveClock, setLiveClock] = useState(() => getRealtimePondokClock());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setLiveClock(getRealtimePondokClock());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Settings local state
   const [localSettings, setLocalSettings] = useState({ ...visitSettings });
 
-  // Manual input form state
-  const [manualForm, setManualForm] = useState({
-    nama_santri: '',
-    kelas: '',
-    asal: '',
-    jam_kunjungan: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':'),
-    jam_selesai: '',
-    titipan_barang: '',
-    berat_barang_kg: 1.0,
-    nama_penjenguk: '',
-    status_penjenguk: 'Wali Santri',
-    status_penjenguk_lainnya: '',
-    no_wa_penjenguk: '',
-    tanggal_kunjungan: new Date().toISOString().slice(0, 10)
+  // Manual input form state (auto-fill real-time clock)
+  const [manualForm, setManualForm] = useState(() => {
+    const clock = getRealtimePondokClock();
+    const [h, m] = clock.jam_menit.split(':').map(Number);
+    const endH = String((h + 1) % 24).padStart(2, '0');
+    const endM = String(m).padStart(2, '0');
+    return {
+      nama_santri: '',
+      kelas: '',
+      asal: '',
+      jam_kunjungan: clock.jam_menit,
+      jam_selesai: `${endH}:${endM}`,
+      titipan_barang: '',
+      berat_barang_kg: 1.0,
+      nama_penjenguk: '',
+      status_penjenguk: 'Wali Santri',
+      status_penjenguk_lainnya: '',
+      no_wa_penjenguk: '',
+      tanggal_kunjungan: clock.tanggal_ymd
+    };
   });
+
+  const handleOpenManualModal = () => {
+    const clock = getRealtimePondokClock();
+    const [h, m] = clock.jam_menit.split(':').map(Number);
+    const endH = String((h + 1) % 24).padStart(2, '0');
+    const endM = String(m).padStart(2, '0');
+    setManualForm(prev => ({
+      ...prev,
+      tanggal_kunjungan: clock.tanggal_ymd,
+      jam_kunjungan: clock.jam_menit,
+      jam_selesai: `${endH}:${endM}`
+    }));
+    setIsManualModalOpen(true);
+  };
 
   // Calculate metrics
   const bookings = Array.isArray(visitBookings) ? visitBookings : [];
@@ -199,6 +230,45 @@ export default function VisitBookingManager({ isCompact = false }) {
 
   return (
     <div className="space-y-6 font-sans">
+      {/* ─── BARIS STATUS JAM & HARI REAL-TIME (LIVE CLOCK & MODE SISTEM) ─── */}
+      <div className="bg-slate-900 border border-slate-700/80 rounded-2xl p-4 shadow-lg text-white flex flex-col md:flex-row items-start md:items-center justify-between gap-3 font-sans">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400 shadow-inner shrink-0">
+            <Clock className="w-5 h-5 animate-pulse" />
+          </div>
+          <div>
+            <div className="text-[11px] font-bold tracking-wider text-slate-400 uppercase font-mono flex items-center gap-1.5">
+              <span>🕒 Waktu Sistem Real-Time</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
+            </div>
+            <div className="text-sm sm:text-base font-extrabold text-white font-mono flex items-center gap-2 mt-0.5">
+              <span>{liveClock.nama_hari}, {liveClock.tanggal_lengkap}</span>
+              <span className="text-emerald-400 font-bold">•</span>
+              <span className="text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-500/40 font-bold">
+                {liveClock.jam_menit_detik} WITA
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="text-right hidden lg:block">
+            <div className="text-[10px] text-slate-400 font-medium">📅 Mode Sistem Hari Ini:</div>
+          </div>
+          {liveClock.is_weekday ? (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-400/40 shadow-sm animate-pulse">
+              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>HARI KERJA (SENIN–KAMIS) — Booking WA Wajib Approval Admin Ri'ayah &amp; Wajib Scan Barcode WA</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 shadow-sm">
+              <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>AKHIR PEKAN (JUMAT–MINGGU) — Auto-Approval Booking WA Aktif</span>
+            </span>
+          )}
+        </div>
+      </div>
+
       {/* ─── 1. HEADER & 4 KARTU METRIK UTAMA ─── */}
       <div className="bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 text-white rounded-3xl p-6 sm:p-7 shadow-xl border border-emerald-700/40 relative overflow-hidden">
         <div className="absolute right-0 top-0 bottom-0 w-96 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-emerald-500/10 via-transparent to-transparent pointer-events-none" />
@@ -232,7 +302,7 @@ export default function VisitBookingManager({ isCompact = false }) {
               <span>Simulasi Booking WA</span>
             </button>
             <button
-              onClick={() => setIsManualModalOpen(true)}
+              onClick={handleOpenManualModal}
               className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 font-bold text-xs transition flex items-center gap-2"
             >
               <Plus className="w-4 h-4 text-emerald-300" />
@@ -500,23 +570,38 @@ export default function VisitBookingManager({ isCompact = false }) {
                       {/* Kolom 1: Waktu & Sumber */}
                       <td className="py-3 px-4">
                         <div className="space-y-1">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
-                            b.booking_source === 'WHATSAPP'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-blue-100 text-blue-800'
-                          }`}>
-                            {b.booking_source === 'WHATSAPP' ? (
-                              <>
-                                <Smartphone className="w-2.5 h-2.5" />
-                                Via WhatsApp
-                              </>
-                            ) : (
-                              <>
-                                <Shield className="w-2.5 h-2.5" />
-                                Input Satpam
-                              </>
-                            )}
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
+                              b.booking_source === 'WHATSAPP'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-blue-100 text-blue-800'
+                            }`}>
+                              {b.booking_source === 'WHATSAPP' ? (
+                                <>
+                                  <Smartphone className="w-2.5 h-2.5" />
+                                  Via WhatsApp
+                                </>
+                              ) : (
+                                <>
+                                  <Shield className="w-2.5 h-2.5" />
+                                  Input Satpam
+                                </>
+                              )}
+                            </span>
+                            {(b.created_at || b.waktu_chat_masuk) && (() => {
+                              const ts = new Date(b.created_at || b.waktu_chat_masuk).getTime();
+                              const diffMs = Date.now() - ts;
+                              if (diffMs < 5 * 60 * 1000 && diffMs >= 0) {
+                                const timeStr = new Date(ts).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace('.', ':');
+                                return (
+                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse font-mono">
+                                    Baru saja • {timeStr}
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })()}
+                          </div>
                           <div className="font-bold text-slate-800 text-xs">
                             {b.hari_kunjungan}, {b.tanggal_kunjungan}
                           </div>
@@ -549,13 +634,46 @@ export default function VisitBookingManager({ isCompact = false }) {
                         <div className="text-slate-800 font-bold">
                           {b.jam_kunjungan} - {b.jam_selesai || '15:30'} WIB
                         </div>
-                        {isOngoing && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-600 animate-pulse mt-0.5">
-                            <Clock className="w-2.5 h-2.5" />
-                            Aktif di Area Kunjungan
-                          </span>
+                        {isOngoing && (() => {
+                          const cd = calculateVisitCountdown(b.jam_selesai, b.tanggal_kunjungan);
+                          if (!cd) {
+                            return (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-600 animate-pulse mt-0.5">
+                                <Clock className="w-2.5 h-2.5" />
+                                Aktif di Area Kunjungan
+                              </span>
+                            );
+                          }
+                          if (cd.isOverstay) {
+                            return (
+                              <div className="mt-1">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 animate-pulse">
+                                  <AlertCircle className="w-2.5 h-2.5 text-rose-600" />
+                                  ⚠️ Waktu Habis ({cd.remainingText})
+                                </span>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="mt-1">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-300">
+                                <Clock className="w-2.5 h-2.5 text-blue-600 animate-spin" />
+                                ⏳ Sisa: {cd.remainingText}
+                              </span>
+                            </div>
+                          );
+                        })()}
+                        {b.jam_masuk_aktual && (
+                          <div className="text-[10px] text-emerald-600 font-mono mt-0.5">
+                            Masuk: {b.jam_masuk_aktual}
+                          </div>
                         )}
-                        {isCompleted && (
+                        {b.jam_keluar_aktual && (
+                          <div className="text-[10px] text-slate-500 font-mono">
+                            Keluar: {b.jam_keluar_aktual}
+                          </div>
+                        )}
+                        {isCompleted && !b.jam_keluar_aktual && (
                           <span className="text-[10px] text-slate-400">
                             Selesai {b.jam_checkout_aktual || ''}
                           </span>

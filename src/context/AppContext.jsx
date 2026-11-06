@@ -3,6 +3,7 @@ import confetti from 'canvas-confetti';
 import { sound } from '../utils/audio';
 import { webSerial } from '../utils/webSerial';
 import { DEFAULT_DEEPSEEK_TOKEN, testDeepSeekConnection } from '../utils/deepseekApi';
+import { getRealtimePondokClock } from '../utils/pondokTimeUtils';
 import { deleteRoomData } from '../utils/roomService';
 import { deleteSantriData } from '../utils/santriService';
 import { supabase } from '../utils/supabaseClient';
@@ -2840,9 +2841,55 @@ export const AppProvider = ({ children }) => {
     }
   });
 
+  // Cross-Tab Real-Time Sync (BroadcastChannel & Storage Event)
+  useEffect(() => {
+    let bc = null;
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        bc = new BroadcastChannel('smart_riayah_visit_channel');
+        bc.onmessage = (event) => {
+          if (event.data?.type === 'SYNC_VISITS' && Array.isArray(event.data?.payload)) {
+            setVisitBookings(event.data.payload);
+          }
+        };
+      }
+    } catch (e) {
+      console.warn('BroadcastChannel setup error:', e);
+    }
+
+    const handleStorage = (e) => {
+      if (e.key === 'sr_visit_bookings' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) {
+            setVisitBookings(parsed);
+          }
+        } catch (err) {
+          console.warn('Storage sync error:', err);
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      if (bc) bc.close();
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
+
   useEffect(() => {
     try {
       localStorage.setItem('sr_visit_bookings', JSON.stringify(visitBookings));
+      // Broadcast to other tabs immediately
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const bc = new BroadcastChannel('smart_riayah_visit_channel');
+        bc.postMessage({
+          type: 'SYNC_VISITS',
+          payload: visitBookings,
+          updated_at: new Date().toISOString()
+        });
+        bc.close();
+      }
     } catch (e) {
       console.warn('Failed to save visit bookings:', e);
     }
@@ -2870,26 +2917,30 @@ export const AppProvider = ({ children }) => {
   };
 
   const addVisitBooking = (bookingData) => {
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const clock = getRealtimePondokClock();
+    const todayStr = clock.tanggal_ymd;
     const tgl = bookingData.tanggal_kunjungan || todayStr;
     const hari = bookingData.hari_kunjungan || getDayName(tgl);
     const isWeekend = ['Jumat', 'Sabtu', 'Minggu'].includes(hari);
 
-    const bookingId = bookingData.id || `VST-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
+    const bookingId = bookingData.id || `VST-${clock.tanggal_ymd.replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
     const cleanSantriName = (bookingData.nama_santri || 'Santri').replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase();
 
     let approvalType = 'MANUAL_WEEKDAY';
     let statusKunjungan = 'Menunggu Approval';
     let barcodeToken = null;
+    let waktuDisetujui = null;
 
     if (bookingData.booking_source === 'MANUAL_SATPAM') {
       approvalType = isWeekend ? 'AUTO_WEEKEND' : 'MANUAL_WEEKDAY';
       statusKunjungan = bookingData.status_kunjungan || (isWeekend ? 'Disetujui (Siap Datang)' : 'Sedang Berkunjung');
       barcodeToken = `GP-DU-${cleanSantriName}-${Math.floor(1000 + Math.random() * 9000)}`;
+      waktuDisetujui = clock.timestamp_iso;
     } else if (isWeekend && visitSettings.auto_approve_weekend) {
       approvalType = 'AUTO_WEEKEND';
       statusKunjungan = 'Disetujui (Siap Datang)';
       barcodeToken = `GP-DU-${cleanSantriName}-${Math.floor(1000 + Math.random() * 9000)}`;
+      waktuDisetujui = clock.timestamp_iso;
     } else {
       approvalType = 'MANUAL_WEEKDAY';
       statusKunjungan = 'Menunggu Approval';
@@ -2904,7 +2955,7 @@ export const AppProvider = ({ children }) => {
       asal: bookingData.asal || 'Surabaya',
       tanggal_kunjungan: tgl,
       hari_kunjungan: hari,
-      jam_kunjungan: bookingData.jam_kunjungan || '14:00',
+      jam_kunjungan: bookingData.jam_kunjungan || clock.jam_menit,
       jam_selesai: bookingData.jam_selesai || '15:30',
       titipan_barang: bookingData.titipan_barang || '-',
       berat_barang_kg: parseFloat(bookingData.berat_barang_kg) || 0,
@@ -2916,7 +2967,13 @@ export const AppProvider = ({ children }) => {
       barcode_token: barcodeToken,
       approval_type: approvalType,
       status_kunjungan: statusKunjungan,
-      created_at: new Date().toISOString()
+      waktu_chat_masuk: bookingData.waktu_chat_masuk || clock.timestamp_iso,
+      waktu_disetujui: waktuDisetujui || bookingData.waktu_disetujui || null,
+      jam_masuk_aktual: bookingData.jam_masuk_aktual || (statusKunjungan === 'Sedang Berkunjung' ? clock.jam_menit_detik : null),
+      jam_keluar_aktual: bookingData.jam_keluar_aktual || null,
+      jam_checkin_aktual: bookingData.jam_checkin_aktual || (statusKunjungan === 'Sedang Berkunjung' ? clock.jam_menit : null),
+      jam_checkout_aktual: bookingData.jam_checkout_aktual || null,
+      created_at: clock.timestamp_iso
     };
 
     setVisitBookings(prev => [newBooking, ...prev]);
@@ -2949,6 +3006,7 @@ export const AppProvider = ({ children }) => {
     const booking = visitBookings.find(b => b.id === bookingId);
     if (!booking) return;
 
+    const clock = getRealtimePondokClock();
     const cleanSantriName = (booking.nama_santri || 'Santri').replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase();
     const barcodeToken = booking.barcode_token || `GP-DU-${cleanSantriName}-${Math.floor(1000 + Math.random() * 9000)}`;
 
@@ -2957,7 +3015,8 @@ export const AppProvider = ({ children }) => {
         return {
           ...b,
           status_kunjungan: 'Disetujui (Siap Datang)',
-          barcode_token: barcodeToken
+          barcode_token: barcodeToken,
+          waktu_disetujui: clock.timestamp_iso
         };
       }
       return b;
@@ -2999,13 +3058,14 @@ export const AppProvider = ({ children }) => {
   };
 
   const checkInVisitBooking = (bookingId, method = 'BARCODE') => {
-    const nowHHMM = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':');
+    const clock = getRealtimePondokClock();
     setVisitBookings(prev => prev.map(b => {
       if (b.id === bookingId) {
         return {
           ...b,
           status_kunjungan: 'Sedang Berkunjung',
-          jam_checkin_aktual: nowHHMM,
+          jam_masuk_aktual: clock.jam_menit_detik,
+          jam_checkin_aktual: clock.jam_menit,
           metode_verifikasi: method
         };
       }
@@ -3015,13 +3075,14 @@ export const AppProvider = ({ children }) => {
   };
 
   const checkOutVisitBooking = (bookingId) => {
-    const nowHHMM = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':');
+    const clock = getRealtimePondokClock();
     setVisitBookings(prev => prev.map(b => {
       if (b.id === bookingId) {
         return {
           ...b,
           status_kunjungan: 'Selesai',
-          jam_checkout_aktual: nowHHMM
+          jam_keluar_aktual: clock.jam_menit_detik,
+          jam_checkout_aktual: clock.jam_menit
         };
       }
       return b;

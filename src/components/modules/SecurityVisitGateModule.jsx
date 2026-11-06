@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   Shield,
@@ -7,6 +7,7 @@ import {
   CheckCircle,
   XCircle,
   AlertTriangle,
+  AlertCircle,
   Clock,
   Package,
   User,
@@ -22,6 +23,7 @@ import {
   FileText
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
+import { getRealtimePondokClock, calculateVisitCountdown } from '../../utils/pondokTimeUtils';
 
 export default function SecurityVisitGateModule() {
   const {
@@ -43,27 +45,62 @@ export default function SecurityVisitGateModule() {
   const [activeTabSub, setActiveTabSub] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'PENDING' | 'DONE'
   const [searchTable, setSearchTable] = useState('');
 
-  // Form Input Manual Satpam state
-  const [isManualFormOpen, setIsManualFormOpen] = useState(false);
-  const [satpamForm, setSatpamForm] = useState({
-    nama_santri: '',
-    kelas: '',
-    asal: '',
-    jam_kunjungan: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':'),
-    jam_selesai: calculateEndTime(visitSettings?.max_durasi_menit || 90),
-    titipan_barang: '',
-    berat_barang_kg: 1.0,
-    nama_penjenguk: '',
-    status_penjenguk: 'Wali (Ayah/Ibu)',
-    status_penjenguk_lainnya: '',
-    no_wa_penjenguk: '081234567890'
-  });
+  // Live Clock Ticking Engine (1000ms)
+  const [liveClock, setLiveClock] = useState(() => getRealtimePondokClock());
 
-  function calculateEndTime(minutesToAdd = 90) {
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setLiveClock(getRealtimePondokClock());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  function calculateEndTime(minutesToAdd = 60) {
     const now = new Date();
     const end = new Date(now.getTime() + minutesToAdd * 60000);
     return end.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':');
   }
+
+  // Form Input Manual Satpam state (auto-fill live clock & +1 hour end time)
+  const [isManualFormOpen, setIsManualFormOpen] = useState(false);
+  const [satpamForm, setSatpamForm] = useState(() => {
+    const clock = getRealtimePondokClock();
+    const [h, m] = clock.jam_menit.split(':').map(Number);
+    const endH = String((h + 1) % 24).padStart(2, '0');
+    const endM = String(m).padStart(2, '0');
+    return {
+      nama_santri: '',
+      kelas: '',
+      asal: '',
+      tanggal_kunjungan: clock.tanggal_ymd,
+      jam_kunjungan: clock.jam_menit,
+      jam_selesai: `${endH}:${endM}`,
+      titipan_barang: '',
+      berat_barang_kg: 1.0,
+      nama_penjenguk: '',
+      status_penjenguk: 'Wali (Ayah/Ibu)',
+      status_penjenguk_lainnya: '',
+      no_wa_penjenguk: '081234567890'
+    };
+  });
+
+  const handleOpenManualForm = () => {
+    if (isManualFormOpen) {
+      setIsManualFormOpen(false);
+      return;
+    }
+    const clock = getRealtimePondokClock();
+    const [h, m] = clock.jam_menit.split(':').map(Number);
+    const endH = String((h + 1) % 24).padStart(2, '0');
+    const endM = String(m).padStart(2, '0');
+    setSatpamForm(prev => ({
+      ...prev,
+      tanggal_kunjungan: clock.tanggal_ymd,
+      jam_kunjungan: clock.jam_menit,
+      jam_selesai: `${endH}:${endM}`
+    }));
+    setIsManualFormOpen(true);
+  };
 
   // Handle barcode verification
   const handleVerifyBarcode = (e) => {
@@ -180,6 +217,45 @@ export default function SecurityVisitGateModule() {
 
   return (
     <div className="space-y-6 font-sans">
+      {/* ─── BARIS STATUS JAM & HARI REAL-TIME (LIVE CLOCK & MODE SISTEM POS SATPAM) ─── */}
+      <div className="bg-slate-900 border border-slate-700/80 rounded-2xl p-4 shadow-lg text-white flex flex-col md:flex-row items-start md:items-center justify-between gap-3 font-sans">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400 shadow-inner shrink-0">
+            <Clock className="w-5 h-5 animate-pulse" />
+          </div>
+          <div>
+            <div className="text-[11px] font-bold tracking-wider text-slate-400 uppercase font-mono flex items-center gap-1.5">
+              <span>🕒 Waktu Sistem Real-Time (Pos Jaga Satpam)</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
+            </div>
+            <div className="text-sm sm:text-base font-extrabold text-white font-mono flex items-center gap-2 mt-0.5">
+              <span>{liveClock.nama_hari}, {liveClock.tanggal_lengkap}</span>
+              <span className="text-emerald-400 font-bold">•</span>
+              <span className="text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-500/40 font-bold">
+                {liveClock.jam_menit_detik} WITA
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="text-right hidden lg:block">
+            <div className="text-[10px] text-slate-400 font-medium">📅 Mode Sistem Hari Ini:</div>
+          </div>
+          {liveClock.is_weekday ? (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-400/40 shadow-sm animate-pulse">
+              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>HARI KERJA (SENIN–KAMIS) — Booking WA Wajib Approval Admin Ri'ayah &amp; Wajib Scan Barcode WA</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 shadow-sm">
+              <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>AKHIR PEKAN (JUMAT–MINGGU) — Auto-Approval Booking WA Aktif</span>
+            </span>
+          )}
+        </div>
+      </div>
+
       {/* ─── BAGIAN A: PANEL VERIFIKASI KEDATANGAN (SCAN BARCODE WA / TAP RFID) ─── */}
       <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-emerald-950 text-white rounded-3xl p-6 shadow-xl border border-slate-700 space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -197,7 +273,7 @@ export default function SecurityVisitGateModule() {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setIsManualFormOpen(!isManualFormOpen)}
+              onClick={handleOpenManualForm}
               className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-sm flex items-center gap-1.5"
             >
               <Plus className="w-4 h-4" />
@@ -477,6 +553,16 @@ export default function SecurityVisitGateModule() {
 
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
               <div>
+                <label className="font-bold text-slate-700 block mb-1">Hari &amp; Tanggal</label>
+                <input
+                  type="date"
+                  value={satpamForm.tanggal_kunjungan}
+                  onChange={(e) => setSatpamForm(prev => ({ ...prev, tanggal_kunjungan: e.target.value }))}
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-mono font-bold"
+                />
+              </div>
+
+              <div>
                 <label className="font-bold text-slate-700 block mb-1">Jam Check-In Masuk</label>
                 <input
                   type="text"
@@ -487,7 +573,7 @@ export default function SecurityVisitGateModule() {
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Batas Jam Selesai</label>
+                <label className="font-bold text-slate-700 block mb-1">Batas Jam Selesai (+1 Jam)</label>
                 <input
                   type="text"
                   value={satpamForm.jam_selesai}
@@ -496,8 +582,8 @@ export default function SecurityVisitGateModule() {
                 />
               </div>
 
-              <div className="sm:col-span-2">
-                <label className="font-bold text-slate-700 block mb-1">Berat Titipan Barang (Kg)</label>
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Berat Titipan (Kg)</label>
                 <input
                   type="number"
                   step="0.1"
@@ -620,24 +706,67 @@ export default function SecurityVisitGateModule() {
                         {index + 1}. {item.id.slice(-7)}
                       </td>
                       <td className="py-3 px-3">
-                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
-                          item.booking_source === 'WHATSAPP'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-blue-100 text-blue-800'
-                        }`}>
-                          {item.booking_source === 'WHATSAPP' ? 'WA Booking' : 'Manual Satpam'}
-                        </span>
+                        <div className="space-y-1">
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-bold inline-block ${
+                            item.booking_source === 'WHATSAPP'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {item.booking_source === 'WHATSAPP' ? 'WA Booking' : 'Manual Satpam'}
+                          </span>
+                          {(item.created_at || item.waktu_chat_masuk) && (() => {
+                            const ts = new Date(item.created_at || item.waktu_chat_masuk).getTime();
+                            const diffMs = Date.now() - ts;
+                            if (diffMs < 5 * 60 * 1000 && diffMs >= 0) {
+                              const timeStr = new Date(ts).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace('.', ':');
+                              return (
+                                <span className="block text-[8px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-1 py-0.2 rounded font-mono animate-pulse">
+                                  Baru saja • {timeStr}
+                                </span>
+                              );
+                            }
+                            return null;
+                          })()}
+                        </div>
                       </td>
                       <td className="py-3 px-3 font-bold text-slate-900">{item.nama_santri}</td>
                       <td className="py-3 px-3">
                         <div className="text-slate-800 font-semibold">{item.kelas}</div>
                         <div className="text-[10px] text-slate-400 font-mono">{item.asal || 'Surabaya'}</div>
                       </td>
-                      <td className="py-3 px-3 font-mono font-bold text-slate-800">
-                        {item.jam_kunjungan} WIB
+                      <td className="py-3 px-3 font-mono text-slate-800">
+                        <div className="font-bold">{item.jam_kunjungan} WIB</div>
+                        {item.jam_masuk_aktual && (
+                          <div className="text-[10px] text-emerald-600 font-semibold font-mono mt-0.5">
+                            Masuk: {item.jam_masuk_aktual}
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 px-3 font-mono text-slate-600">
-                        {item.jam_selesai} WIB
+                        <div>{item.jam_selesai} WIB</div>
+                        {isOngoing && (() => {
+                          const cd = calculateVisitCountdown(item.jam_selesai, item.tanggal_kunjungan);
+                          if (!cd) return null;
+                          if (cd.isOverstay) {
+                            return (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-100 text-rose-800 border border-rose-300 animate-pulse mt-0.5">
+                                <AlertTriangle className="w-2.5 h-2.5 text-rose-600" />
+                                ⚠️ Overstay ({cd.remainingText})
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-100 text-blue-800 border border-blue-300 mt-0.5">
+                              <Clock className="w-2.5 h-2.5 text-blue-600 animate-spin" />
+                              ⏳ Sisa: {cd.remainingText}
+                            </span>
+                          );
+                        })()}
+                        {item.jam_keluar_aktual && (
+                          <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                            Keluar: {item.jam_keluar_aktual}
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 px-3">
                         <div className="text-slate-700 max-w-[150px] truncate" title={item.titipan_barang}>

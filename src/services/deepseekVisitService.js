@@ -3,6 +3,8 @@
  * Handles AI natural language extraction, connection testing, and barcode gate pass generation
  */
 
+import { getRealtimePondokClock, formatCalendarPromptForDeepSeek } from '../utils/pondokTimeUtils';
+
 export const DEFAULT_DEEPSEEK_KEY = 'sk-5b97e9e1d00846818565250d944cc047';
 export const DEFAULT_DEEPSEEK_BASE_URL = 'https://api.deepseek.com/v1/chat/completions';
 export const DEFAULT_DEEPSEEK_MODEL = 'deepseek-chat';
@@ -87,22 +89,23 @@ export async function parseBookingWithDeepSeek(messageText, sender = '', senderN
     console.warn('Serverless endpoint not reachable, trying client-side DeepSeek call...', e);
   }
 
-  // Fallback Client-side langsung ke DeepSeek API
+  // Fallback Client-side langsung ke DeepSeek API dengan Injeksi Waktu Real-Time
   const cleanKey = (apiKey || DEFAULT_DEEPSEEK_KEY).trim();
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-  const todayDayName = dayNames[new Date().getDay()];
+  const clock = getRealtimePondokClock();
+  const calendarPrompt = formatCalendarPromptForDeepSeek(clock);
 
   const systemPrompt = `Anda adalah AI Asisten Cerdas Pondok Pesantren Modern Darul Ulum untuk memproses pendaftaran booking kunjungan/sambangan wali santri dari chat WhatsApp.
-Hari ini adalah: ${todayDayName}, ${todayStr}.
-Tugas Anda: Ekstrak pesan permohonan kunjungan wali santri ke dalam format JSON yang valid dengan atribut wajib:
+
+${calendarPrompt}
+
+Ekstrak pesan permohonan kunjungan wali santri ke dalam format JSON yang valid dengan atribut wajib:
 - nama_santri (string)
 - kelas (string, e.g. "10-A (Umar 204)")
 - asal (string, e.g. "Surabaya")
 - hari_kunjungan ("Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu")
 - tanggal_kunjungan ("YYYY-MM-DD")
 - jam_kunjungan ("HH:mm", e.g. "14:00")
-- jam_selesai ("HH:mm", e.g. "15:30")
+- jam_selesai ("HH:mm", default 90 menit setelah mulai, e.g. "15:30")
 - titipan_barang (string)
 - berat_barang_kg (number)
 - nama_penjenguk (string)
@@ -134,10 +137,11 @@ Output HANYA berupa JSON object murni.`;
       const content = data.choices?.[0]?.message?.content;
       if (content) {
         const parsed = JSON.parse(content);
-        const dayNormalized = parsed.hari_kunjungan || todayDayName;
+        const dayNormalized = parsed.hari_kunjungan || clock.nama_hari;
         const isWeekday = ['Senin', 'Selasa', 'Rabu', 'Kamis'].includes(dayNormalized);
         const cleanSantri = (parsed.nama_santri || 'Santri').replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase();
         const barcodeToken = isWeekday ? null : `GP-DU-${cleanSantri}-${Math.floor(1000 + Math.random() * 9000)}`;
+        const waktuSekarangStr = `${clock.nama_hari}, ${clock.tanggal_lengkap} • ${clock.jam_menit_detik} WITA`;
 
         return {
           success: true,
@@ -149,7 +153,7 @@ Output HANYA berupa JSON object murni.`;
             nama_santri: parsed.nama_santri || 'Ahmad Fauzi',
             kelas: parsed.kelas || '10-A',
             asal: parsed.asal || 'Surabaya',
-            tanggal_kunjungan: parsed.tanggal_kunjungan || todayStr,
+            tanggal_kunjungan: parsed.tanggal_kunjungan || clock.tanggal_ymd,
             hari_kunjungan: dayNormalized,
             jam_kunjungan: parsed.jam_kunjungan || '14:00',
             jam_selesai: parsed.jam_selesai || '15:30',
@@ -162,6 +166,10 @@ Output HANYA berupa JSON object murni.`;
             approval_type: isWeekday ? 'MANUAL_WEEKDAY' : 'AUTO_WEEKEND',
             status_kunjungan: isWeekday ? 'Menunggu Approval' : 'Disetujui (Auto-Approved Weekend)',
             is_weekday: isWeekday,
+            waktu_chat_masuk: waktuSekarangStr,
+            waktu_disetujui: isWeekday ? null : waktuSekarangStr,
+            jam_masuk_aktual: null,
+            jam_keluar_aktual: null,
             created_at: new Date().toISOString()
           }
         };
