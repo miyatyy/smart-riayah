@@ -572,14 +572,14 @@ export default function VisitBookingManager({ isCompact = false }) {
                         <div className="space-y-1">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
-                              b.booking_source === 'WHATSAPP'
+                              b.booking_source?.includes('WHATSAPP')
                                 ? 'bg-emerald-100 text-emerald-800'
                                 : 'bg-blue-100 text-blue-800'
                             }`}>
-                              {b.booking_source === 'WHATSAPP' ? (
+                              {b.booking_source?.includes('WHATSAPP') ? (
                                 <>
                                   <Smartphone className="w-2.5 h-2.5" />
-                                  Via WhatsApp
+                                  Via WhatsApp AI
                                 </>
                               ) : (
                                 <>

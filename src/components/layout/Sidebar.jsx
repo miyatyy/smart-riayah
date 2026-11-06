@@ -115,7 +115,7 @@ const ROLE_CONFIG = {
 /* ─────────────────────────────────────────────
    MENU ITEMS per role
 ───────────────────────────────────────────── */
-function getMenuItems(role, { permits, rooms, santriList, blacklistedUids, gateLogs, medicalRecords, pendingPermitsCount, warningPermitsCount, santriDiLuar }) {
+function getMenuItems(role, { permits, rooms, santriList, blacklistedUids, gateLogs, medicalRecords, pendingPermitsCount, warningPermitsCount, santriDiLuar, pendingVisitsCount = 0 }) {
   switch (role) {
     case 'superadmin':
       return [
@@ -136,7 +136,7 @@ function getMenuItems(role, { permits, rooms, santriList, blacklistedUids, gateL
         { id: 'rfid_cards', label: 'Tabel RFID', icon: CreditCard, badge: `${santriList.length}` },
         { id: 'rfid_pairing', label: 'Scanner RFID', icon: Radio, badge: 'Scan' },
         { id: 'express_kiosk', label: 'Kiosk Izin', icon: Zap, badge: 'Cepat' },
-        { id: 'visit_bookings', label: 'Kunjungan Tamu', icon: Calendar, badge: 'QR Pass' },
+        { id: 'visit_bookings', label: 'Kunjungan Tamu', icon: Calendar, badge: pendingVisitsCount > 0 ? `${pendingVisitsCount} Menunggu` : 'QR Pass', urgent: pendingVisitsCount > 0 },
         { id: 'gate_logs', label: 'Log Gerbang', icon: ClipboardList, badge: `${gateLogs.length}` },
         { id: 'whatsapp_manager', label: 'WhatsApp', icon: Smartphone, badge: 'Live' },
         { id: 'ai_analytics', label: 'AI Evaluasi', icon: Sparkles, badge: 'AI', highlight: true },
@@ -162,7 +162,7 @@ function getMenuItems(role, { permits, rooms, santriList, blacklistedUids, gateL
     case 'security':
       return [
         { id: 'gate', label: 'Gate Gerbang', icon: Radio, badge: 'Gate 01' },
-        { id: 'pos_kunjungan', label: 'Pos Kunjungan', icon: Package, badge: 'QR Pass' },
+        { id: 'pos_kunjungan', label: 'Pos Kunjungan', icon: Package, badge: pendingVisitsCount > 0 ? `${pendingVisitsCount} Menunggu` : 'QR Pass', urgent: pendingVisitsCount > 0 },
         { id: 'headcount', label: 'Live Headcount', icon: Users, badge: `${santriDiLuar} Luar`, urgent: santriDiLuar > 0 },
         { id: 'logs', label: 'Log Audit', icon: Activity, badge: `${gateLogs.length}` },
         { id: 'ai_security', label: 'AI Pola', icon: Sparkles, badge: 'AI', highlight: true },
@@ -242,7 +242,8 @@ export default function Sidebar({ onOpenFlutterModal }) {
     setIsWaDrawerOpen,
     unreadWaCount,
     setUnreadWaCount,
-    isFonnteEnabled
+    isFonnteEnabled,
+    visitBookings
   } = useApp();
 
   const [showDevSwitcher, setShowDevSwitcher] = useState(false);
@@ -251,6 +252,9 @@ export default function Sidebar({ onOpenFlutterModal }) {
   // Stats
   const pendingPermitsCount = permits.filter(p => p.status === 'PENDING').length;
   const santriDiLuar = santriList.filter(s => s.statusAsrama === 'DI_LUAR' || s.statusAsrama === 'TERLAMBAT').length;
+  const pendingVisitsCount = Array.isArray(visitBookings) 
+    ? visitBookings.filter(b => b.status_kunjungan === 'Menunggu Approval').length 
+    : 0;
   const now = Date.now();
   const warningPermitsCount = permits.filter(p => {
     if (p.status !== 'ACTIVE') return false;
@@ -263,7 +267,7 @@ export default function Sidebar({ onOpenFlutterModal }) {
 
   const menuItems = getMenuItems(role, {
     permits, rooms, santriList, blacklistedUids, gateLogs, medicalRecords,
-    pendingPermitsCount, warningPermitsCount, santriDiLuar
+    pendingPermitsCount, warningPermitsCount, santriDiLuar, pendingVisitsCount
   });
 
   const handleMenuClick = (id) => {

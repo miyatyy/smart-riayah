@@ -31,7 +31,9 @@ import {
   dbToMedical,
   dbToRfidTransaction,
   dbToMessage,
-  syncMessageToSupabase
+  syncMessageToSupabase,
+  fetchVisitBookingsFromSupabase,
+  syncBookingStatusToSupabase
 } from '../utils/supabaseSync';
 import {
   INITIAL_SANTRI,
@@ -674,6 +676,22 @@ export const AppProvider = ({ children }) => {
         if (remoteData.medicalRecords?.length) setMedicalRecords(remoteData.medicalRecords);
         if (remoteData.rfidTransactions?.length) setRfidTransactions(remoteData.rfidTransactions);
         if (remoteData.mutabaahList?.length) setMutabaahList(remoteData.mutabaahList);
+        if (remoteData.visitBookings?.length) {
+          setVisitBookings(prev => {
+            const remoteMap = new Map();
+            remoteData.visitBookings.forEach(b => remoteMap.set(b.id, b));
+            const merged = [...remoteData.visitBookings];
+            (prev || []).forEach(local => {
+              if (!remoteMap.has(local.id)) {
+                merged.push(local);
+              }
+            });
+            try {
+              localStorage.setItem('sr_visit_bookings', JSON.stringify(merged));
+            } catch (e) {}
+            return merged;
+          });
+        }
         if (remoteData.messages?.length) {
           const formatted = remoteData.messages.map(msg => ({
             id: msg.id,
@@ -735,6 +753,41 @@ export const AppProvider = ({ children }) => {
       },
       onMessageChange: (payload) => {
         if (!isMounted) return;
+
+        // Cek jika ini adalah data booking kunjungan wali santri (room_id: visit_bookings_log)
+        if (payload.new && payload.new.room_id === 'visit_bookings_log') {
+          try {
+            const booking = JSON.parse(payload.new.message_text);
+            if (booking && booking.id) {
+              const bookingData = { ...booking, _supabaseMessageId: payload.new.id };
+              if (payload.eventType === 'INSERT') {
+                sound.playSuccess?.();
+                setVisitBookings(prev => {
+                  const exists = prev.some(item => item.id === booking.id);
+                  const updated = exists 
+                    ? prev.map(item => item.id === booking.id ? bookingData : item)
+                    : [bookingData, ...prev];
+                  try {
+                    localStorage.setItem('sr_visit_bookings', JSON.stringify(updated));
+                  } catch (e) {}
+                  return updated;
+                });
+              } else if (payload.eventType === 'UPDATE') {
+                setVisitBookings(prev => {
+                  const updated = prev.map(item => item.id === booking.id ? bookingData : item);
+                  try {
+                    localStorage.setItem('sr_visit_bookings', JSON.stringify(updated));
+                  } catch (e) {}
+                  return updated;
+                });
+              }
+            }
+          } catch (err) {
+            console.warn('Realtime visit_bookings_log error:', err);
+          }
+          return; // Jangan dimasukkan ke WhatsApp Chat Logs biasa
+        }
+
         if (payload.eventType === 'INSERT' && payload.new) {
           const msg = dbToMessage(payload.new);
           sound.playWhatsApp();
@@ -856,6 +909,16 @@ export const AppProvider = ({ children }) => {
           return updated;
         });
       })
+      .on('broadcast', { event: 'whatsapp.visit_booking_updated' }, ({ payload }) => {
+        if (!isMounted || !payload?.id) return;
+        setVisitBookings(prev => {
+          const updated = prev.map(b => b.id === payload.id ? { ...b, ...payload } : b);
+          try {
+            localStorage.setItem('sr_visit_bookings', JSON.stringify(updated));
+          } catch (e) {}
+          return updated;
+        });
+      })
       .subscribe((status) => {
         console.log('📡 [AppContext Supabase Realtime whatsapp-room] Status:', status);
       });
@@ -864,6 +927,34 @@ export const AppProvider = ({ children }) => {
       isMounted = false;
       supabase.removeChannel(waChannel);
     };
+  }, []);
+
+  // Direct instant fetch for visit_bookings_log from Supabase on mount
+  useEffect(() => {
+    let isMounted = true;
+    fetchVisitBookingsFromSupabase()
+      .then(remoteBookings => {
+        if (!isMounted || !Array.isArray(remoteBookings) || remoteBookings.length === 0) return;
+        setVisitBookings(prev => {
+          const remoteMap = new Map();
+          remoteBookings.forEach(b => remoteMap.set(b.id, b));
+          const merged = [...remoteBookings];
+          (prev || []).forEach(local => {
+            if (!remoteMap.has(local.id)) {
+              merged.push(local);
+            }
+          });
+          try {
+            localStorage.setItem('sr_visit_bookings', JSON.stringify(merged));
+          } catch (e) {}
+          return merged;
+        });
+      })
+      .catch(err => {
+        console.warn('Direct fetch visit bookings warning:', err);
+      });
+
+    return () => { isMounted = false; };
   }, []);
 
   // Server-side sync via /api/sync (Cross-profile, cross-browser, incognito sync)
@@ -3389,17 +3480,20 @@ export const AppProvider = ({ children }) => {
     const cleanSantriName = (booking.nama_santri || 'Santri').replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase();
     const barcodeToken = booking.barcode_token || `GP-DU-${cleanSantriName}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    setVisitBookings(prev => prev.map(b => {
-      if (b.id === bookingId) {
-        return {
-          ...b,
-          status_kunjungan: 'Disetujui (Siap Datang)',
-          barcode_token: barcodeToken,
-          waktu_disetujui: clock.timestamp_iso
-        };
-      }
-      return b;
-    }));
+    const updatedBooking = {
+      ...booking,
+      status_kunjungan: 'Disetujui (Siap Datang)',
+      barcode_token: barcodeToken,
+      waktu_disetujui: clock.timestamp_iso
+    };
+
+    setVisitBookings(prev => {
+      const next = prev.map(b => b.id === bookingId ? updatedBooking : b);
+      try {
+        localStorage.setItem('sr_visit_bookings', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
 
     sendWhatsAppNotification(
       `${booking.nama_penjenguk} (Wali ${booking.nama_santri})`,
@@ -3408,6 +3502,9 @@ export const AppProvider = ({ children }) => {
       `🎉 *[PERMOHONAN KUNJUNGAN DISETUJUI ADMIN RI'AYAH]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${booking.nama_penjenguk}*.\n\nPermohonan kunjungan ananda *${booking.nama_santri}* (${booking.kelas}) untuk hari *${booking.hari_kunjungan}, ${booking.tanggal_kunjungan}* pukul *${booking.jam_kunjungan} - ${booking.jam_selesai} WIB* telah *DISETUJUI* oleh Admin Ri'ayah Pondok.\n\n📦 *Titipan Barang:* ${booking.titipan_barang} (${booking.berat_barang_kg} Kg)\n🎫 *Barcode Gate Pass Resmi:* *${barcodeToken}*\n\nSilakan tunjukkan Barcode ini kepada Satpam di Pos Gerbang untuk verifikasi check-in masuk pondok.`
     );
 
+    // Sinkronkan ke Supabase & siarkan update
+    syncBookingStatusToSupabase(updatedBooking, 'VISIT_APPROVED');
+
     sound.playSuccess?.();
   };
 
@@ -3415,16 +3512,19 @@ export const AppProvider = ({ children }) => {
     const booking = visitBookings.find(b => b.id === bookingId);
     if (!booking) return;
 
-    setVisitBookings(prev => prev.map(b => {
-      if (b.id === bookingId) {
-        return {
-          ...b,
-          status_kunjungan: 'Ditolak',
-          catatan_penolakan: reason
-        };
-      }
-      return b;
-    }));
+    const updatedBooking = {
+      ...booking,
+      status_kunjungan: 'Ditolak',
+      catatan_penolakan: reason
+    };
+
+    setVisitBookings(prev => {
+      const next = prev.map(b => b.id === bookingId ? updatedBooking : b);
+      try {
+        localStorage.setItem('sr_visit_bookings', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
 
     sendWhatsAppNotification(
       `${booking.nama_penjenguk} (Wali ${booking.nama_santri})`,
@@ -3432,6 +3532,9 @@ export const AppProvider = ({ children }) => {
       'VISIT_REJECTED',
       `❌ *[PERMOHONAN KUNJUNGAN BELUM DAPAT DISETUJUI]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${booking.nama_penjenguk}*.\n\nMohon maaf, permohonan kunjungan ananda *${booking.nama_santri}* untuk tanggal *${booking.tanggal_kunjungan}* belum dapat disetujui oleh Pengasuhan Pondok.\nAlasan: "${reason}".\nSilakan ajukan kembali pada hari berkunjung resmi (Jumat, Sabtu, atau Minggu).`
     );
+
+    // Sinkronkan ke Supabase & siarkan update
+    syncBookingStatusToSupabase(updatedBooking, 'VISIT_REJECTED');
 
     sound.playBeep?.();
   };

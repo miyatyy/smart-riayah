@@ -602,6 +602,97 @@ export async function updatePermitStatusInSupabase(permitId, status, extra = {})
 // 3. FETCH SELURUH KATEGORI DATA AWAL DARI SUPABASE
 // ----------------------------------------------------------------------------
 
+export async function fetchVisitBookingsFromSupabase() {
+  try {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('room_id', 'visit_bookings_log')
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (error) {
+      console.warn('⚠️ [Supabase] Gagal mengambil visit_bookings_log:', error.message);
+      return [];
+    }
+
+    const bookings = [];
+    if (Array.isArray(data)) {
+      for (const row of data) {
+        try {
+          const parsed = JSON.parse(row.message_text);
+          if (parsed && parsed.id) {
+            bookings.push({
+              ...parsed,
+              _supabaseMessageId: row.id
+            });
+          }
+        } catch (e) {
+          console.warn('Gagal parse visit booking JSON dari Supabase messages:', row.id, e);
+        }
+      }
+    }
+    return bookings;
+  } catch (err) {
+    console.warn('fetchVisitBookingsFromSupabase error:', err);
+    return [];
+  }
+}
+
+export async function syncBookingStatusToSupabase(booking, reaction = 'VISIT_APPROVED') {
+  try {
+    if (booking._supabaseMessageId) {
+      await supabase
+        .from('messages')
+        .update({
+          message_text: JSON.stringify(booking),
+          reaction,
+          is_read: true
+        })
+        .eq('id', booking._supabaseMessageId);
+    } else {
+      const { data: rows } = await supabase
+        .from('messages')
+        .select('id, message_text')
+        .eq('room_id', 'visit_bookings_log')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (rows && rows.length > 0) {
+        const found = rows.find(r => {
+          try {
+            const p = JSON.parse(r.message_text);
+            return p.id === booking.id;
+          } catch {
+            return false;
+          }
+        });
+
+        if (found) {
+          await supabase
+            .from('messages')
+            .update({
+              message_text: JSON.stringify(booking),
+              reaction,
+              is_read: true
+            })
+            .eq('id', found.id);
+        }
+      }
+    }
+
+    // Broadcast across realtime channel 'whatsapp-room'
+    const channel = supabase.channel('whatsapp-room');
+    await channel.send({
+      type: 'broadcast',
+      event: 'whatsapp.visit_booking_updated',
+      payload: booking
+    });
+  } catch (err) {
+    console.warn('⚠️ [Supabase] syncBookingStatusToSupabase warning:', err.message);
+  }
+}
+
 export async function fetchAllDataFromSupabase() {
   console.log('🔄 [Supabase] Mengambil seluruh kategori data dari Supabase...');
 
@@ -614,7 +705,8 @@ export async function fetchAllDataFromSupabase() {
     supabase.from('rekam_medis').select('*').order('created_at', { ascending: false }).limit(50),
     supabase.from('rfid_transactions').select('*').order('created_at', { ascending: false }).limit(50),
     supabase.from('evaluasi_harian').select('*').order('tanggal', { ascending: false }).limit(50),
-    supabase.from('messages').select('*').order('created_at', { ascending: true }).limit(100)
+    supabase.from('messages').select('*').neq('room_id', 'visit_bookings_log').order('created_at', { ascending: true }).limit(100),
+    fetchVisitBookingsFromSupabase()
   ]);
 
   const output = {};
@@ -645,6 +737,9 @@ export async function fetchAllDataFromSupabase() {
   }
   if (results[8].status === 'fulfilled' && !results[8].value.error && results[8].value.data?.length > 0) {
     output.messages = results[8].value.data.map(dbToMessage);
+  }
+  if (results[9].status === 'fulfilled' && Array.isArray(results[9].value) && results[9].value.length > 0) {
+    output.visitBookings = results[9].value;
   }
 
   console.log('✅ [Supabase] Selesai sinkronisasi awal data:', Object.keys(output));

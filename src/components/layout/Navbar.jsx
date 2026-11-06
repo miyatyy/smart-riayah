@@ -114,6 +114,7 @@ export default function Navbar({ onOpenFlutterModal }) {
     disconnectSerial,
     setIsSerialMonitorOpen,
     setIsAiAgentOpen,
+    visitBookings
   } = useApp();
 
   const [time, setTime] = useState('');
@@ -147,6 +148,9 @@ export default function Navbar({ onOpenFlutterModal }) {
 
   const santriDiLuar = santriList.filter(s => s.statusAsrama === 'DI_LUAR' || s.statusAsrama === 'TERLAMBAT').length;
   const santriDiPondok = santriList.length - santriDiLuar;
+  const pendingVisitsCount = Array.isArray(visitBookings) 
+    ? visitBookings.filter(b => b.status_kunjungan === 'Menunggu Approval').length 
+    : 0;
 
   return (
     <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-sm border-b border-slate-100 shadow-sm">
@@ -236,6 +240,31 @@ export default function Navbar({ onOpenFlutterModal }) {
           />
 
           <div className="w-px h-5 bg-slate-200 mx-1 hidden sm:block" />
+
+          {/* Notifikasi Bell Approval Kunjungan Santri (Khusus Hari Senin–Kamis) */}
+          {(role === 'admin_riayah' || role === 'superadmin' || role === 'security') && (
+            <Tip label={pendingVisitsCount > 0 ? `🔔 ${pendingVisitsCount} Permohonan Kunjungan Hari Kerja Menunggu Persetujuan` : 'Jadwal & Kunjungan Tamu'} side="bottom">
+              <button
+                onClick={() => {
+                  if (role !== 'admin_riayah' && role !== 'security') setRole('admin_riayah');
+                  setActiveRoleTab(role === 'security' ? 'pos_kunjungan' : 'visit_bookings');
+                  sound.playBeep?.();
+                }}
+                className={`relative flex items-center justify-center w-9 h-9 rounded-xl transition ${
+                  pendingVisitsCount > 0
+                    ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 ring-2 ring-amber-400 ring-offset-1 animate-pulse'
+                    : 'text-slate-500 hover:bg-slate-100'
+                }`}
+              >
+                <Bell className="w-4 h-4" />
+                {pendingVisitsCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-rose-600 text-white rounded-full text-[10px] font-black flex items-center justify-center shadow-md animate-bounce">
+                    {pendingVisitsCount}
+                  </span>
+                )}
+              </button>
+            </Tip>
+          )}
 
           {/* AI Inbox (Percakapan Realtime WhatsApp & Telegram) - HANYA UNTUK ADMIN RI'AYAH */}
           {role === 'admin_riayah' && (
