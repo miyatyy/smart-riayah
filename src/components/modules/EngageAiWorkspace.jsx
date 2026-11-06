@@ -656,7 +656,7 @@ function TabDashboard({ onSwitchTab, onCopy, copiedText, deviceData, onRefreshSt
       <div className="space-y-3">
         <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-3 text-emerald-900 text-xs flex items-center gap-2">
           <HelpCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>Kalau wali santri bertanya akun mana yang aktif, admin bisa langsung copy nama akun atau nomor resmi dari kartu ini.</span>
+          <span>Nomor resmi di kartu ini adalah <strong>Device Pengirim (Gateway)</strong>. Setiap notifikasi perizinan, approval, gate pass, kedisiplinan, dan laporan santri akan otomatis dikirimkan ke <strong>nomor WhatsApp masing-masing wali santri</strong> yang terdaftar.</span>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -674,6 +674,9 @@ function TabDashboard({ onSwitchTab, onCopy, copiedText, deviceData, onRefreshSt
                 }`}>
                   <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
                   {isConnected ? 'Connected' : 'Disconnected'}
+                </span>
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                  Device Pengirim (Gateway)
                 </span>
               </div>
               <p className="text-xs font-mono font-extrabold text-slate-700 mt-0.5">

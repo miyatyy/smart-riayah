@@ -1043,12 +1043,31 @@ export const AppProvider = ({ children }) => {
 
   const getIsoNow = () => new Date().toISOString();
 
+  // Helper: Ambil nomor HP wali santri secara konsisten & normalisasi ke format 628...
+  const resolveWaliPhone = (santri, fallbackNumber = null) => {
+    if (!santri) return fallbackNumber || fonnteTargetNumber || '6285960213654';
+    const raw = santri.wali?.telepon || santri.no_wali || santri.waliTelepon || santri.noWali || fallbackNumber || '';
+    if (!raw) return fonnteTargetNumber || '6285960213654';
+    let clean = String(raw).replace(/[^0-9]/g, '');
+    if (clean.startsWith('08')) {
+      clean = '628' + clean.slice(2);
+    } else if (clean.startsWith('8')) {
+      clean = '628' + clean.slice(1);
+    }
+    return clean || fonnteTargetNumber || '6285960213654';
+  };
+
   // 3. FUNGSI PENGIRIMAN OTOMATIS KE API FONNTE (https://api.fonnte.com/send)
   const sendFonnteWhatsApp = async (targetNumber, messageText, eventType = 'GENERAL') => {
     const token = (fonnteToken || '8UN12iqFjKNBYdds8FCG').trim();
-    // Gunakan nomor tujuan testing/wali santri (default 6285960213654)
-    const rawTarget = fonnteTargetNumber || targetNumber || '6285960213654';
-    const cleanTarget = rawTarget.replace(/[^0-9]/g, '');
+    // Prioritaskan nomor tujuan wali santri aktual, fallback hanya jika nomor kosong
+    const rawTarget = targetNumber || fonnteTargetNumber || '6285960213654';
+    let cleanTarget = String(rawTarget).replace(/[^0-9]/g, '');
+    if (cleanTarget.startsWith('08')) {
+      cleanTarget = '628' + cleanTarget.slice(2);
+    } else if (cleanTarget.startsWith('8')) {
+      cleanTarget = '628' + cleanTarget.slice(1);
+    }
 
     let latencyMs = 0;
     let latencySec = '0.00';
@@ -1137,11 +1156,21 @@ export const AppProvider = ({ children }) => {
   const sendWhatsAppNotification = async (penerima, nomor, tipe, pesan) => {
     sound.playWhatsApp();
     const id = `WA-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+    // Prioritaskan nomor telepon wali santri penerima pesan aktual
+    const rawTarget = nomor || fonnteTargetNumber || '6285960213654';
+    let cleanTarget = String(rawTarget).replace(/[^0-9]/g, '');
+    if (cleanTarget.startsWith('08')) {
+      cleanTarget = '628' + cleanTarget.slice(2);
+    } else if (cleanTarget.startsWith('8')) {
+      cleanTarget = '628' + cleanTarget.slice(1);
+    }
+
     const newMsg = {
       id,
       waktu: getNowWIB(),
       penerima,
-      nomor: fonnteTargetNumber || nomor || '6285960213654',
+      nomor: cleanTarget, // ✅ Ditujukan tepat ke nomor HP wali santri
       tipe,
       pesan,
       latencyMs: null,
@@ -1156,9 +1185,9 @@ export const AppProvider = ({ children }) => {
     // Broadcast ke Supabase Realtime channel 'whatsapp-room'
     sendWhatsAppBroadcast('whatsapp.notification', newMsg);
 
-    // Call Fonnte API asynchronously in background
+    // Call Fonnte API asynchronously in background langsung ke nomor wali santri
     try {
-      const res = await sendFonnteWhatsApp(nomor, pesan, tipe);
+      const res = await sendFonnteWhatsApp(cleanTarget, pesan, tipe);
       setWhatsappLogs(prev => prev.map(m => {
         if (m.id === id) {
           return {
@@ -1212,10 +1241,10 @@ export const AppProvider = ({ children }) => {
 
     // Push notification to WhatsApp
     sendWhatsAppNotification(
-      `${santri.wali.nama} (Wali ${santri.nama})`,
-      santri.wali.telepon,
+      `${santri.wali?.nama || 'Wali Santri'} (Wali ${santri.nama})`,
+      resolveWaliPhone(santri),
       'PERMIT_SUBMITTED',
-      `Assalamu'alaikum ${santri.wali.nama}, pengajuan izin ${data.kategori} ananda ${santri.nama} (${santri.kelas}) telah terkirim ke antrean pengasuh asrama. Status: MENUNGGU PERSETUJUAN (PENDING).`
+      `Assalamu'alaikum ${santri.wali?.nama || 'Bapak/Ibu Wali'}, pengajuan izin ${data.kategori} ananda ${santri.nama} (${santri.kelas}) telah terkirim ke antrean pengasuh asrama. Status: MENUNGGU PERSETUJUAN (PENDING).`
     );
   };
 
@@ -1259,7 +1288,7 @@ export const AppProvider = ({ children }) => {
         : `🕌 *[SMART PERMIT DARUL ULUM - IZIN DISETUJUI]*\nAssalamu'alaikum Wali dari *${santri.nama}* (${santri.kelas || 'Santri'} / ${santri.kamar || 'Asrama'}), permohonan izin *${permit.kategori || permit.reason}* untuk keperluan *${permit.keperluan || permit.reason}* telah *DISETUJUI* oleh Musyrif. Santri sudah dapat melakukan Tap Kartu RFID di Smart Gate.`;
       sendWhatsAppNotification(
         `${santri.wali?.nama || 'Wali Santri'} (Wali ${santri.nama})`,
-        santri.wali?.telepon || fonnteTargetNumber,
+        resolveWaliPhone(santri),
         'PERMIT_APPROVED',
         notifPesan
       );
@@ -1291,10 +1320,10 @@ export const AppProvider = ({ children }) => {
 
     if (santri) {
       sendWhatsAppNotification(
-        `${santri.wali.nama} (Wali ${santri.nama})`,
-        santri.wali.telepon,
+        `${santri.wali?.nama || 'Wali Santri'} (Wali ${santri.nama})`,
+        resolveWaliPhone(santri),
         'PERMIT_REJECTED',
-        `Assalamu'alaikum ${santri.wali.nama}, mohon maaf pengajuan izin ${permit.kategori} ananda ${santri.nama} TIDAK DISETUJUI oleh Pengasuh Asrama. Alasan: "${alasan}".`
+        `Assalamu'alaikum ${santri.wali?.nama || 'Bapak/Ibu Wali'}, mohon maaf pengajuan izin ${permit.kategori} ananda ${santri.nama} TIDAK DISETUJUI oleh Pengasuh Asrama. Alasan: "${alasan}".`
       );
     }
   };
@@ -1375,10 +1404,10 @@ export const AppProvider = ({ children }) => {
       syncGateLogToSupabase(newLog);
 
       sendWhatsAppNotification(
-        `${santri.wali.nama} (Wali ${santri.nama})`,
-        santri.wali.telepon,
+        `${santri.wali?.nama || 'Wali Santri'} (Wali ${santri.nama})`,
+        resolveWaliPhone(santri),
         'GATE_EXIT',
-        `Assalamu'alaikum ${santri.wali.nama}. PEMBERITAHUAN RESMI: Ananda ${santri.nama} (${santri.kelas}) telah mendapatkan IZIN CEPAT [${newPermit.kategori}] (${newPermit.keperluan}) dan telah melewati Gerbang Utama pada pukul ${jamKeluar}. Batas kembali: ${batasJam}. Terima kasih.`
+        `Assalamu'alaikum ${santri.wali?.nama || 'Bapak/Ibu Wali'}. PEMBERITAHUAN RESMI: Ananda ${santri.nama} (${santri.kelas}) telah mendapatkan IZIN CEPAT [${newPermit.kategori}] (${newPermit.keperluan}) dan telah melewati Gerbang Utama pada pukul ${jamKeluar}. Batas kembali: ${batasJam}. Terima kasih.`
       );
 
       setTimeout(() => {
@@ -1395,10 +1424,10 @@ export const AppProvider = ({ children }) => {
 
     } else {
       sendWhatsAppNotification(
-        `${santri.wali.nama} (Wali ${santri.nama})`,
-        santri.wali.telepon,
+        `${santri.wali?.nama || 'Wali Santri'} (Wali ${santri.nama})`,
+        resolveWaliPhone(santri),
         'PERMIT_APPROVED',
-        `Assalamu'alaikum ${santri.wali.nama}. Pengajuan Izin Cepat [${newPermit.kategori}] (${newPermit.keperluan}) ananda ${santri.nama} telah DISETUJUI (APPROVED) dengan Token [${tokenIzin}]. Kartu RFID ananda kini AKTIF dan siap di-tap di Gerbang Utama.`
+        `Assalamu'alaikum ${santri.wali?.nama || 'Bapak/Ibu Wali'}. Pengajuan Izin Cepat [${newPermit.kategori}] (${newPermit.keperluan}) ananda ${santri.nama} telah DISETUJUI (APPROVED) dengan Token [${tokenIzin}]. Kartu RFID ananda kini AKTIF dan siap di-tap di Gerbang Utama.`
       );
     }
 
@@ -1516,7 +1545,7 @@ export const AppProvider = ({ children }) => {
           const cardUid = santri.rfidUid || '04:A1:2B:9C';
           sendWhatsAppNotification(
             `${santri.wali?.nama || 'Wali Santri'} (Wali ${santri.nama})`,
-            santri.wali?.telepon || fonnteTargetNumber,
+            resolveWaliPhone(santri),
             'GATE_EXIT',
             `✅ *[LAPORAN SMART GATE - SANTRI KELUAR]*\nAssalamu'alaikum, ananda *${santri.nama}* (UID Kartu: \`${cardUid}\`) telah melakukan Tap keluar di Smart Gate pada pukul *${jamKeluar}*.\n• Keperluan: ${validPermit.keperluan}\n• Batas Kembali: *${batasJam}*\nTerima kasih.`
           );
@@ -1589,7 +1618,7 @@ export const AppProvider = ({ children }) => {
           const cardUid = santri.rfidUid || 'UID-UNKNOWN';
           sendWhatsAppNotification(
             `${santri.wali?.nama || 'Wali Santri'} (Wali ${santri.nama})`,
-            santri.wali?.telepon || fonnteTargetNumber,
+            resolveWaliPhone(santri),
             'SECURITY_ALERT',
             `🚨 *[PERINGATAN KEAMANAN SMART GATE]*\nTerdeteksi percobaan Tap Kartu RFID tanpa izin aktif oleh *${santri.nama}* (UID: \`${cardUid}\`) pada pukul *${jamRealTime}*. Palang gerbang otomatis dikunci (Anti-Bypass).`
           );
@@ -1688,7 +1717,7 @@ export const AppProvider = ({ children }) => {
         const cardUid = santri.rfidUid || '04:A1:2B:9C';
         sendWhatsAppNotification(
           `${santri.wali?.nama || 'Wali Santri'} (Wali ${santri.nama})`,
-          santri.wali?.telepon || fonnteTargetNumber,
+          resolveWaliPhone(santri),
           'GATE_ENTRY',
           `🏡 *[LAPORAN SMART GATE - TIBA DI ASRAMA]*\nAlhamdulillah, ananda *${santri.nama}* (UID Kartu: \`${cardUid}\`) telah tiba kembali dengan selamat dan melakukan Check-In di Smart Gate pada pukul *${jamMasuk}*. Status izin dinyatakan selesai (*COMPLETED*).`
         );
@@ -1803,8 +1832,8 @@ export const AppProvider = ({ children }) => {
       // Security Alert to Admin / Wali for Blocked Card
       const santriNama = santri ? santri.nama : `Kartu UID ${cleanUid}`;
       sendWhatsAppNotification(
-        santri ? `${santri.wali?.nama || 'Wali'} (Wali ${santri.nama})` : 'Keamanan Pesantren',
-        santri?.wali?.telepon || fonnteTargetNumber,
+        santri ? `${santri.wali?.nama || 'Wali Santri'} (Wali ${santri.nama})` : 'Keamanan Pesantren',
+        resolveWaliPhone(santri),
         'SECURITY_ALERT',
         `🚨 *[PERINGATAN KEAMANAN SMART GATE]*\nTerdeteksi percobaan Tap Kartu RFID DIBLOKIR / RUSAK (${revokedInfo.reason}) oleh *${santriNama}* (UID: \`${cleanUid}\`) pada pukul *${getNowWIB()}*. Palang gerbang otomatis dikunci (Anti-Bypass).`
       );
@@ -2090,7 +2119,7 @@ export const AppProvider = ({ children }) => {
 
     sendWhatsAppNotification(
       `${santri.wali?.nama || 'Wali Santri'} (Wali ${santri.nama})`,
-      santri.wali?.telepon || fonnteTargetNumber,
+      resolveWaliPhone(santri),
       'WARNING_30M',
       `⏳ *[PENGINGAT SMART GATE - SISA WAKTU PERIZINAN]*\nAssalamu'alaikum Wr. Wb. Bpk/Ibu Wali dari *${santri.nama}* (${santri.kelas}).\nWaktu perizinan ananda (*${permit.kategori}*) tersisa *${sisaMenit} menit* lagi (Batas kembali: *${batasJam}*).\nMohon ananda segera bersiap kembali ke pesantren tepat waktu untuk menghindari catatan pelanggaran kedisiplinan. Syukron. — Musyrif Asrama Darul Ulum`
     );
@@ -2237,7 +2266,7 @@ export const AppProvider = ({ children }) => {
     const batasJamOverdue = new Date(permit.batasKembali).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
     sendWhatsAppNotification(
       `${santri.wali?.nama || 'Wali Santri'} (Wali ${santri.nama})`,
-      santri.wali?.telepon || fonnteTargetNumber,
+      resolveWaliPhone(santri),
       'OVERDUE_ALARM',
       `🚨 *[PERINGATAN SISTEM - SANTRI TERLAMBAT / OVERDUE]*\nAssalamu'alaikum Wr. Wb. Wali dari *${santri.nama}* (${santri.kelas}).\nAnanda terdeteksi *BELUM KEMBALI* ke pondok melewati batas waktu yang ditentukan (*${batasJamOverdue}*).\nSesuai regulasi Smart Ri'ayah, poin kedisiplinan otomatis dipotong *-15 poin*. Mohon segera hubungi Pos Keamanan Pondok: 0811-2233-4455.`
     );
@@ -2303,8 +2332,8 @@ export const AppProvider = ({ children }) => {
 
     if (santri) {
       sendWhatsAppNotification(
-        `${santri.wali.nama} (Wali ${santri.nama})`,
-        santri.wali.telepon,
+        `${santri.wali?.nama || 'Wali Santri'} (Wali ${santri.nama})`,
+        resolveWaliPhone(santri),
         jenis === 'REWARD' ? 'REWARD_NOTIF' : 'DISCIPLINE_NOTIF',
         `Catatan Pengasuhan Smart Ri'ayah: Ananda ${santri.nama} mendapatkan catatan ${jenis} (${poin > 0 ? '+' : ''}${poin} poin) - Kategori: ${kategori}. "${deskripsi}". Total Poin Sekarang: ${Math.max(0, santri.poinDisiplin + parseInt(poin))}/100.`
       );
@@ -2326,8 +2355,8 @@ export const AppProvider = ({ children }) => {
     const santri = santriList.find(s => s.id === recordData.santriId);
     if (santri) {
       sendWhatsAppNotification(
-        `${santri.wali.nama} (Wali ${santri.nama})`,
-        santri.wali.telepon,
+        `${santri.wali?.nama || 'Wali Santri'} (Wali ${santri.nama})`,
+        resolveWaliPhone(santri),
         'HEALTH_NOTIF',
         `Pemberitahuan Poskestren: Ananda ${santri.nama} telah diperiksa di Klinik Asrama dengan keluhan: "${recordData.keluhan}". Diagnosa: ${recordData.diagnosa}. Tindakan: ${recordData.tindakan}. Status: ${recordData.statusIstirahat}.`
       );
@@ -2361,8 +2390,8 @@ export const AppProvider = ({ children }) => {
     syncPermitToSupabase(newPermit);
 
     sendWhatsAppNotification(
-      `${santri.wali.nama} (Wali ${santri.nama})`,
-      santri.wali.telepon,
+      `${santri.wali?.nama || 'Wali Santri'} (Wali ${santri.nama})`,
+      resolveWaliPhone(santri),
       'HOSPITAL_REFERRAL',
       `PEMBERITAHUAN RUJUKAN MEDIS DARURAT: Ananda ${santri.nama} membutuhkan penanganan lebih lanjut dan dirujuk ke ${rsName}. Izin Smart Gate kategori "Berobat" telah otomatis diterbitkan oleh Poskestren.`
     );
@@ -2413,8 +2442,8 @@ export const AppProvider = ({ children }) => {
 
     // Send cashless notification to Wali
     sendWhatsAppNotification(
-      `${santri.wali.nama} (Wali ${santri.nama})`,
-      santri.wali.telepon,
+      `${santri.wali?.nama || 'Wali Santri'} (Wali ${santri.nama})`,
+      resolveWaliPhone(santri),
       'CASHLESS_NOTIF',
       `Laporan Transaksi Smart Card: Ananda ${santri.nama} baru saja bertransaksi di ${merchant} sebesar Rp ${parseInt(nominal).toLocaleString('id-ID')} (${keterangan}). Sisa Saldo RFID: Rp ${newSaldo.toLocaleString('id-ID')}.`
     );
@@ -2760,8 +2789,8 @@ export const AppProvider = ({ children }) => {
 
     // Send Welcome WhatsApp Notification to Wali Santri
     sendWhatsAppNotification(
-      `${newSantri.wali.nama} (Wali ${newSantri.nama})`,
-      newSantri.wali.telepon,
+      `${newSantri.wali?.nama || 'Wali Santri'} (Wali ${newSantri.nama})`,
+      resolveWaliPhone(newSantri),
       'SANTRI_REGISTERED',
       `Ahlan wa Sahlan! Pendaftaran santri baru ananda ${newSantri.nama} (NIS: ${newSantri.nis}) di Pesantren Modern Darul Ulum telah BERHASIL. Kartu pintar RFID Smart Permit [${formattedUid}] telah aktif dan siap digunakan di seluruh fasilitas pondok.`
     );
@@ -2807,8 +2836,8 @@ export const AppProvider = ({ children }) => {
 
     // 3. Send WhatsApp Alert to Wali Santri
     sendWhatsAppNotification(
-      `${santri.wali.nama} (Wali ${santri.nama})`,
-      santri.wali.telepon,
+      `${santri.wali?.nama || 'Wali Santri'} (Wali ${santri.nama})`,
+      resolveWaliPhone(santri),
       'CARD_REPLACED',
       `Pemberitahuan Admin Ri'ayah: Kartu lama RFID ananda ${santri.nama} (UID: ${oldUid}) telah RESMI DINONAKTIFKAN (STATUS BLOKIR) karena ${reason}. Kartu baru (UID: ${cleanNewUid}) telah aktif dengan seluruh saldo dan riwayat tetap aman.`
     );

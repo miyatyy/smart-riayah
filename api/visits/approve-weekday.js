@@ -42,7 +42,12 @@ export default async function handler(req, res) {
       `Silakan tunjukkan Barcode ini kepada Satpam di Pos Gerbang untuk verifikasi check-in masuk pondok.`;
 
     let fonnteResult = null;
-    const targetWa = booking.no_wa_penjenguk;
+    let targetWa = String(booking.no_wa_penjenguk || '').replace(/[^0-9]/g, '');
+    if (targetWa.startsWith('08')) {
+      targetWa = '628' + targetWa.slice(2);
+    } else if (targetWa.startsWith('8')) {
+      targetWa = '628' + targetWa.slice(1);
+    }
     if (targetWa && fonnteToken) {
       try {
         const fRes = await fetch('https://api.fonnte.com/send', {

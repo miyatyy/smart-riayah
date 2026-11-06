@@ -119,7 +119,12 @@ export default async function handler(req, res) {
 
     // 3. Kirim WhatsApp Auto-Reply via Fonnte jika nomor tujuan tersedia
     let waSendResult = null;
-    const targetWa = bookingRecord.no_wa_penjenguk;
+    let targetWa = String(bookingRecord.no_wa_penjenguk || '').replace(/[^0-9]/g, '');
+    if (targetWa.startsWith('08')) {
+      targetWa = '628' + targetWa.slice(2);
+    } else if (targetWa.startsWith('8')) {
+      targetWa = '628' + targetWa.slice(1);
+    }
     if (targetWa && fonnteToken) {
       try {
         const fonnteRes = await fetch('https://api.fonnte.com/send', {
