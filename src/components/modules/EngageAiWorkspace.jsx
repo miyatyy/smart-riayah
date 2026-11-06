@@ -1417,7 +1417,7 @@ function TabChannels({
         </div>
       </div>
 
-      {/* 5. Operasional Device Fonnte · SmartRIAYAH (Accordion Panel) */}
+      {/* 5. Operasional Device WhatsApp · SmartRIAYAH (Accordion Panel) */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-0">
         {/* Header Aksi Cepat Device */}
         <div className="p-4 bg-emerald-50/60 border-b border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1427,7 +1427,7 @@ function TabChannels({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h4 className="font-extrabold text-xs text-emerald-950">Operasional Device Fonnte · SmartRIAYAH</h4>
+                <h4 className="font-extrabold text-xs text-emerald-950">Operasional Device WhatsApp · SmartRIAYAH</h4>
                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${isConnected ? 'bg-emerald-200/70 text-emerald-900' : 'bg-rose-100 text-rose-800'}`}>
                   {isConnected ? 'Campaign & Bot ON' : 'Offline / Standby'}
                 </span>
@@ -1496,13 +1496,13 @@ function TabChannels({
                 </div>
               </div>
 
-              {/* Form Pengaturan Kredensial Fonnte · SmartRIAYAH */}
+              {/* Form Pengaturan Perangkat WhatsApp Gateway */}
               <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs space-y-3">
                 <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                   <div className="flex items-center gap-2">
-                    <Key className="w-4 h-4 text-emerald-600" />
+                    <Radio className="w-4 h-4 text-emerald-600" />
                     <h5 className="font-extrabold text-xs text-slate-800">
-                      Pengaturan Kredensial WhatsApp Gateway (Fonnte API)
+                      Pengaturan Perangkat WhatsApp Gateway
                     </h5>
                   </div>
                   <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-bold">
@@ -1510,11 +1510,11 @@ function TabChannels({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {/* 1. Nama Label */}
                   <div>
                     <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                      Nama Label
+                      Nama Label / Device
                     </label>
                     <input
                       type="text"
@@ -1528,7 +1528,7 @@ function TabChannels({
                   {/* 2. Nomor Device */}
                   <div>
                     <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                      Nomor Device
+                      Nomor Device WhatsApp
                     </label>
                     <input
                       type="text"
@@ -1538,35 +1538,17 @@ function TabChannels({
                       className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-mono font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                     />
                   </div>
+                </div>
 
-                  {/* 3. Token Privat Fonnte dengan Show/Hide */}
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                      Token Privat Fonnte
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showToken ? 'text' : 'password'}
-                        value={tokenInput}
-                        onChange={(e) => setTokenInput(e.target.value)}
-                        placeholder="8UN12iqFjKNBYdds8FCG"
-                        className="w-full px-3 py-2 pr-9 text-xs rounded-xl border border-slate-300 font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowToken(!showToken)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition"
-                        title={showToken ? 'Sembunyikan token' : 'Tampilkan token'}
-                      >
-                        {showToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
-                  </div>
+                {/* Banner Status Token Terenkripsi & Disembunyikan demi Privasi */}
+                <div className="p-2.5 bg-emerald-50/70 rounded-xl border border-emerald-200/80 flex items-center gap-2 text-[11px] text-emerald-900">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span><strong>Token Privat Gateway:</strong> Tersimpan aman di backend &amp; terenkripsi (Disembunyikan sepenuhnya demi privasi akun).</span>
                 </div>
 
                 <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-100">
                   <p className="text-[11px] text-slate-500">
-                    💡 Klik tombol di samping untuk menyimpan kredensial dan langsung memeriksa koneksi live ke <code className="text-emerald-700 font-mono">https://api.fonnte.com/device</code>.
+                    💡 Klik tombol di samping untuk menyimpan pengaturan dan langsung memeriksa koneksi live ke server gateway.
                   </p>
                   <div className="flex items-center gap-2 w-full sm:w-auto">
                     <button
@@ -1582,7 +1564,7 @@ function TabChannels({
                     <button
                       type="button"
                       onClick={async () => {
-                        const cleanToken = (tokenInput || '8UN12iqFjKNBYdds8FCG').trim();
+                        const cleanToken = (tokenInput || fonnteToken || '8UN12iqFjKNBYdds8FCG').trim();
                         const cleanDevice = (deviceInput || '6285960213654').trim();
                         const cleanLabel = (labelInput || 'SmartRIAYAH').trim();
 
@@ -1592,7 +1574,7 @@ function TabChannels({
                         if (onSaveToken) onSaveToken(cleanToken);
 
                         sound.playBeep?.();
-                        showToast('Menyimpan kredensial & mengecek status live Fonnte...', 'info');
+                        showToast('Menyimpan pengaturan & mengecek status live gateway...', 'info');
 
                         try {
                           const check = await fetchDeviceStatus(cleanToken);
@@ -1611,11 +1593,11 @@ function TabChannels({
                           showToast(
                             check.isConnected
                               ? `✓ Berhasil terhubung ke ${check.name} (${check.device})! Kuota: ${check.quota}`
-                              : `Kredensial tersimpan. Status: ${check.status} (Siap Scan QR).`,
+                              : `Pengaturan tersimpan. Status: ${check.status} (Siap Scan QR).`,
                             check.isConnected ? 'success' : 'info'
                           );
                         } catch (err) {
-                          showToast(`Status Fonnte: ${err.message}`, 'error');
+                          showToast(`Status Gateway: ${err.message}`, 'error');
                         }
                       }}
                       className="w-full sm:w-auto px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
