@@ -164,7 +164,7 @@ Output HANYA berupa JSON object murni.`;
             no_wa_penjenguk: sender || '081234567890',
             barcode_token: barcodeToken,
             approval_type: isWeekday ? 'MANUAL_WEEKDAY' : 'AUTO_WEEKEND',
-            status_kunjungan: isWeekday ? 'Menunggu Approval' : 'Disetujui (Auto-Approved Weekend)',
+            status_kunjungan: isWeekday ? 'Menunggu Approval' : 'Disetujui (Siap Datang)',
             is_weekday: isWeekday,
             waktu_chat_masuk: waktuSekarangStr,
             waktu_disetujui: isWeekday ? null : waktuSekarangStr,

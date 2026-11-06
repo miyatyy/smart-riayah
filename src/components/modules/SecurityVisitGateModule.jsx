@@ -197,6 +197,16 @@ export default function SecurityVisitGateModule() {
 
   const bookings = Array.isArray(visitBookings) ? visitBookings : [];
 
+  // Dapatkan data live booking yang selalu tersinkronisasi reaktif dengan state utama
+  const liveBooking = verificationResult?.booking
+    ? (bookings.find(b => b.id === verificationResult.booking.id || (b.barcode_token && b.barcode_token === verificationResult.booking.barcode_token)) || verificationResult.booking)
+    : null;
+
+  const isLiveOngoing = liveBooking?.status_kunjungan === 'Sedang Berkunjung';
+  const isLiveApproved = liveBooking?.status_kunjungan === 'Disetujui (Siap Datang)' || liveBooking?.status_kunjungan?.includes('Disetujui');
+  const isLiveDone = liveBooking?.status_kunjungan === 'Selesai';
+  const isLivePending = liveBooking?.status_kunjungan === 'Menunggu Approval';
+
   const filteredList = bookings.filter(b => {
     if (activeTabSub === 'ACTIVE' && b.status_kunjungan !== 'Sedang Berkunjung') return false;
     if (activeTabSub === 'PENDING' && b.status_kunjungan !== 'Menunggu Approval') return false;
@@ -346,40 +356,81 @@ export default function SecurityVisitGateModule() {
           </div>
         </div>
 
-        {/* Kotak Hasil Validasi Ketat (Instant Visual Alert) */}
+        {/* Kotak Hasil Validasi Ketat (Instant Visual Alert & Real-time Live State Sync) */}
         {verificationResult && (
           <div className={`p-4 rounded-2xl border transition animate-fade-in ${
             verificationResult.success
-              ? 'bg-emerald-950/80 border-emerald-500 text-emerald-100'
-              : 'bg-rose-950/80 border-rose-500 text-rose-100'
+              ? isLiveOngoing
+                ? 'bg-blue-950/85 border-blue-500 text-blue-100 shadow-lg shadow-blue-950/40'
+                : isLiveDone
+                ? 'bg-slate-900/90 border-slate-600 text-slate-200'
+                : 'bg-emerald-950/85 border-emerald-500 text-emerald-100 shadow-lg shadow-emerald-950/40'
+              : 'bg-rose-950/85 border-rose-500 text-rose-100'
           }`}>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-start gap-3">
                 {verificationResult.success ? (
-                  <CheckCircle className="w-6 h-6 text-emerald-400 shrink-0 mt-0.5" />
+                  isLiveOngoing ? (
+                    <Clock className="w-6 h-6 text-blue-400 shrink-0 mt-0.5 animate-pulse" />
+                  ) : isLiveDone ? (
+                    <CheckCircle className="w-6 h-6 text-slate-400 shrink-0 mt-0.5" />
+                  ) : (
+                    <CheckCircle className="w-6 h-6 text-emerald-400 shrink-0 mt-0.5" />
+                  )
                 ) : (
                   <XCircle className="w-6 h-6 text-rose-400 shrink-0 mt-0.5" />
                 )}
                 <div>
-                  <h4 className="font-black text-sm tracking-tight text-white">
-                    {verificationResult.message}
-                  </h4>
-                  {verificationResult.booking && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="font-black text-sm tracking-tight text-white">
+                      {isLiveOngoing
+                        ? '✅ STATUS: SEDANG BERKUNJUNG (CHECK-IN BERHASIL)'
+                        : isLiveDone
+                        ? '✓ STATUS: KUNJUNGAN TELAH SELESAI'
+                        : isLiveApproved
+                        ? '✅ VERIFIKASI BERHASIL: Wali Santri Terdaftar & Disetujui'
+                        : isLivePending
+                        ? '⏳ STATUS: MENUNGGU APPROVAL ADMIN RI\'AYAH (Hari Kerja)'
+                        : verificationResult.message}
+                    </h4>
+                    {liveBooking && (
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold inline-flex items-center gap-1 ${
+                        liveBooking.booking_source?.includes('WHATSAPP')
+                          ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/40'
+                          : 'bg-blue-500/25 text-blue-300 border border-blue-400/40'
+                      }`}>
+                        <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                        {liveBooking.booking_source?.includes('WHATSAPP') ? 'Via WhatsApp' : 'Manual Satpam'}
+                      </span>
+                    )}
+                    {isLiveOngoing && (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-400/40">
+                        Masuk: {liveBooking?.jam_masuk_aktual || liveBooking?.jam_checkin_aktual || 'WITA'}
+                      </span>
+                    )}
+                    {isLiveDone && (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-700 text-slate-300 border border-slate-600">
+                        Keluar: {liveBooking?.jam_keluar_aktual || liveBooking?.jam_checkout_aktual || 'WITA'}
+                      </span>
+                    )}
+                  </div>
+
+                  {liveBooking && (
                     <div className="text-xs text-slate-200 mt-2 space-y-1">
                       <p>
-                        Santri: <strong className="text-white">{verificationResult.booking.nama_santri}</strong> ({verificationResult.booking.kelas}) • Asal: <strong className="text-white">{verificationResult.booking.asal}</strong>
+                        Santri: <strong className="text-white">{liveBooking.nama_santri}</strong> ({liveBooking.kelas}) • Asal: <strong className="text-white">{liveBooking.asal}</strong>
                       </p>
                       <p>
-                        Penjenguk: <strong className="text-white">{verificationResult.booking.nama_penjenguk}</strong> ({verificationResult.booking.status_penjenguk}) • No WA: <strong className="font-mono text-emerald-300">{verificationResult.booking.no_wa_penjenguk}</strong>
+                        Penjenguk: <strong className="text-white">{liveBooking.nama_penjenguk}</strong> ({liveBooking.status_penjenguk}) • No WA: <strong className="font-mono text-emerald-300">{liveBooking.no_wa_penjenguk}</strong>
                       </p>
                       <p>
-                        📦 Titipan Barang: <strong>{verificationResult.booking.titipan_barang || '-'}</strong> (Berat: <strong className="text-cyan-300">{verificationResult.booking.berat_barang_kg || 0} Kg</strong>)
+                        📦 Titipan Barang: <strong>{liveBooking.titipan_barang || '-'}</strong> (Berat: <strong className="text-cyan-300">{liveBooking.berat_barang_kg || 0} Kg</strong>)
                       </p>
 
                       {/* Visual Scannable Barcode & QR Code Image for Satpam Verification */}
                       <div className="mt-3 flex items-center gap-3 bg-black/40 p-2.5 rounded-xl border border-emerald-500/40">
                         <img
-                          src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(verificationResult.booking.barcode_token || verificationResult.booking.id)}&format=png`}
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(liveBooking.barcode_token || liveBooking.id)}&format=png`}
                           alt="QR Code Gate Pass"
                           className="w-14 h-14 bg-white p-1 rounded-lg shrink-0 object-contain shadow-xs"
                         />
@@ -388,7 +439,7 @@ export default function SecurityVisitGateModule() {
                             E-BARCODE GATE PASS RESMI (VALID)
                           </span>
                           <span className="text-sm font-black font-mono text-white tracking-wider">
-                            {verificationResult.booking.barcode_token || verificationResult.booking.id}
+                            {liveBooking.barcode_token || liveBooking.id}
                           </span>
                           <span className="text-[10px] text-slate-300 block mt-0.5">
                             Format: QR Code 2D &amp; Code 128 Standar Scanner Satpam
@@ -400,26 +451,33 @@ export default function SecurityVisitGateModule() {
                 </div>
               </div>
 
-              {/* Action Tombol di Banner Hasil */}
-              <div className="flex items-center gap-2 self-start sm:self-center">
-                {verificationResult.success && verificationResult.booking && verificationResult.booking.status_kunjungan !== 'Sedang Berkunjung' && (
+              {/* Action Tombol di Banner Hasil (Sinkron Otomatis dengan Tabel) */}
+              <div className="flex items-center gap-2 self-start sm:self-center flex-wrap">
+                {verificationResult.success && liveBooking && isLiveApproved && (
                   <button
                     onClick={() => {
-                      checkInVisitBooking(verificationResult.booking.id, 'BARCODE');
-                      setVerificationResult(prev => ({
-                        ...prev,
-                        booking: { ...prev.booking, status_kunjungan: 'Sedang Berkunjung' },
-                        message: '✅ TAMU BERHASIL CHECK-IN: Silakan Memasuki Area Kunjungan Asrama'
-                      }));
+                      checkInVisitBooking(liveBooking.id, 'BARCODE');
                     }}
-                    className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-md transition"
+                    className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-md transition flex items-center gap-1.5"
                   >
-                    Check-In Masuk (Buka Gerbang)
+                    <CheckCircle className="w-4 h-4" />
+                    <span>Check-In Masuk (Buka Gerbang)</span>
+                  </button>
+                )}
+                {verificationResult.success && liveBooking && isLiveOngoing && (
+                  <button
+                    onClick={() => {
+                      checkOutVisitBooking(liveBooking.id);
+                    }}
+                    className="px-4 py-2 bg-blue-500 hover:bg-blue-400 text-white font-black text-xs rounded-xl shadow-md transition flex items-center gap-1.5"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>Selesai / Pulang (Check-Out)</span>
                   </button>
                 )}
                 <button
                   onClick={() => setVerificationResult(null)}
-                  className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs rounded-lg font-bold"
+                  className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs rounded-lg font-bold transition"
                 >
                   Tutup Notifikasi
                 </button>
@@ -716,23 +774,24 @@ export default function SecurityVisitGateModule() {
               ) : (
                 filteredList.map((item, index) => {
                   const isOngoing = item.status_kunjungan === 'Sedang Berkunjung';
-                  const isApproved = item.status_kunjungan === 'Disetujui (Siap Datang)';
+                  const isApproved = item.status_kunjungan === 'Disetujui (Siap Datang)' || item.status_kunjungan?.includes('Disetujui');
                   const isPending = item.status_kunjungan === 'Menunggu Approval';
                   const isDone = item.status_kunjungan === 'Selesai';
 
                   return (
                     <tr key={item.id} className="hover:bg-slate-50/50 transition">
                       <td className="py-3 px-3 font-mono text-[11px] font-bold text-slate-500">
-                        {index + 1}. {item.id.slice(-7)}
+                        {index + 1}. {item.id.replace('VST-', '#')}
                       </td>
                       <td className="py-3 px-3">
                         <div className="space-y-1">
-                          <span className={`px-2 py-0.5 rounded text-[9px] font-bold inline-block ${
-                            item.booking_source === 'WHATSAPP'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-blue-100 text-blue-800'
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-bold inline-flex items-center gap-1 ${
+                            item.booking_source?.includes('WHATSAPP')
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              : 'bg-blue-100 text-blue-800 border border-blue-200'
                           }`}>
-                            {item.booking_source === 'WHATSAPP' ? 'WA Booking' : 'Manual Satpam'}
+                            <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                            {item.booking_source?.includes('WHATSAPP') ? 'Via WhatsApp' : 'Manual Satpam'}
                           </span>
                           {(item.created_at || item.waktu_chat_masuk) && (() => {
                             const ts = new Date(item.created_at || item.waktu_chat_masuk).getTime();
@@ -819,9 +878,10 @@ export default function SecurityVisitGateModule() {
                         {isApproved && (
                           <button
                             onClick={() => checkInVisitBooking(item.id, 'MANUAL_SATPAM')}
-                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold transition shadow-xs"
+                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold transition shadow-xs flex items-center gap-1 mx-auto"
                           >
-                            Check-In Datang
+                            <CheckCircle className="w-3 h-3" />
+                            <span>Check-In Datang</span>
                           </button>
                         )}
                         {isOngoing && (
@@ -834,12 +894,12 @@ export default function SecurityVisitGateModule() {
                           </button>
                         )}
                         {isPending && (
-                          <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                          <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded inline-block">
                             Menunggu Approval
                           </span>
                         )}
                         {isDone && (
-                          <span className="text-[10px] font-bold text-slate-400">
+                          <span className="text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded inline-flex items-center gap-1">
                             ✓ Selesai
                           </span>
                         )}

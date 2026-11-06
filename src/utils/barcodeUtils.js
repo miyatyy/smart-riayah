@@ -56,3 +56,4 @@ export async function downloadBarcodeImage(imageUrl, filename = 'Barcode_Gate_Pa
     return false;
   }
 }
+

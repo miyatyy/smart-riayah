@@ -564,7 +564,7 @@ export default function VisitBookingManager({ isCompact = false }) {
                   const isWeekend = b.approval_type === 'AUTO_WEEKEND' || ['Jumat', 'Sabtu', 'Minggu'].includes(b.hari_kunjungan);
                   const isOngoing = b.status_kunjungan === 'Sedang Berkunjung';
                   const isCompleted = b.status_kunjungan === 'Selesai';
-                  const isApproved = b.status_kunjungan === 'Disetujui (Siap Datang)';
+                  const isApproved = b.status_kunjungan === 'Disetujui (Siap Datang)' || b.status_kunjungan?.includes('Disetujui');
 
                   return (
                     <tr key={b.id} className="hover:bg-slate-50/60 transition">

@@ -3450,11 +3450,20 @@ export const AppProvider = ({ children }) => {
       created_at: clock.timestamp_iso
     };
 
-    setVisitBookings(prev => [newBooking, ...prev]);
+    setVisitBookings(prev => {
+      const next = [newBooking, ...prev];
+      try {
+        localStorage.setItem('sr_visit_bookings', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+
+    // Simpan ke Supabase agar tersinkron lintas perangkat/peran
+    syncBookingStatusToSupabase(newBooking, statusKunjungan === 'Disetujui (Siap Datang)' ? 'VISIT_APPROVED' : 'VISIT_CREATED');
 
     // Kirim notifikasi WhatsApp via Fonnte Gateway
     const targetPhone = newBooking.no_wa_penjenguk;
-    if (newBooking.booking_source === 'WHATSAPP') {
+    if (newBooking.booking_source?.includes('WHATSAPP')) {
       if (statusKunjungan === 'Disetujui (Siap Datang)') {
         const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(barcodeToken)}&format=png`;
         const barcode128Url = `https://quickchart.io/barcode?type=code128&text=${encodeURIComponent(barcodeToken)}&includeText=true&height=75`;
@@ -3556,35 +3565,87 @@ export const AppProvider = ({ children }) => {
 
   const checkInVisitBooking = (bookingId, method = 'BARCODE') => {
     const clock = getRealtimePondokClock();
-    setVisitBookings(prev => prev.map(b => {
-      if (b.id === bookingId) {
-        return {
-          ...b,
-          status_kunjungan: 'Sedang Berkunjung',
-          jam_masuk_aktual: clock.jam_menit_detik,
-          jam_checkin_aktual: clock.jam_menit,
-          metode_verifikasi: method
-        };
+    let updatedBooking = null;
+
+    setVisitBookings(prev => {
+      const next = prev.map(b => {
+        if (b.id === bookingId) {
+          updatedBooking = {
+            ...b,
+            status_kunjungan: 'Sedang Berkunjung',
+            jam_masuk_aktual: clock.jam_menit_detik,
+            jam_checkin_aktual: clock.jam_menit,
+            metode_verifikasi: method
+          };
+          return updatedBooking;
+        }
+        return b;
+      });
+      try {
+        localStorage.setItem('sr_visit_bookings', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+
+    if (updatedBooking) {
+      // 1. Simpan ke database Supabase agar tersinkron lintas device/browser
+      syncBookingStatusToSupabase(updatedBooking, 'VISIT_CHECKIN');
+
+      // 2. Kirim notifikasi WA ke nomor wali santri bahwa tamu telah check-in di pos gerbang
+      if (updatedBooking.no_wa_penjenguk) {
+        sendWhatsAppNotification(
+          `${updatedBooking.nama_penjenguk} (Wali ${updatedBooking.nama_santri})`,
+          updatedBooking.no_wa_penjenguk,
+          'VISIT_CHECKIN_GATE',
+          `🚪 *[CHECK-IN GERBANG PONDOK BERHASIL]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${updatedBooking.nama_penjenguk}*.\n\nSelamat datang di Pesantren Modern Darul Ulum. Verifikasi E-Barcode gate pass untuk ananda *${updatedBooking.nama_santri}* (${updatedBooking.kelas}) telah *BERHASIL DICATAT* di Pos Jaga Satpam pada pukul *${clock.jam_menit} WITA*.\n\n⏳ Batas waktu kunjungan hingga pukul *${updatedBooking.jam_selesai || 'selesai'} WITA*. Mohon menjaga ketertiban dan adab bertamu di lingkungan asrama.`
+        );
       }
-      return b;
-    }));
+    }
+
     sound.playSuccess?.();
+    return updatedBooking;
   };
 
   const checkOutVisitBooking = (bookingId) => {
     const clock = getRealtimePondokClock();
-    setVisitBookings(prev => prev.map(b => {
-      if (b.id === bookingId) {
-        return {
-          ...b,
-          status_kunjungan: 'Selesai',
-          jam_keluar_aktual: clock.jam_menit_detik,
-          jam_checkout_aktual: clock.jam_menit
-        };
+    let updatedBooking = null;
+
+    setVisitBookings(prev => {
+      const next = prev.map(b => {
+        if (b.id === bookingId) {
+          updatedBooking = {
+            ...b,
+            status_kunjungan: 'Selesai',
+            jam_keluar_aktual: clock.jam_menit_detik,
+            jam_checkout_aktual: clock.jam_menit
+          };
+          return updatedBooking;
+        }
+        return b;
+      });
+      try {
+        localStorage.setItem('sr_visit_bookings', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+
+    if (updatedBooking) {
+      // 1. Simpan ke database Supabase
+      syncBookingStatusToSupabase(updatedBooking, 'VISIT_CHECKOUT');
+
+      // 2. Kirim pesan terima kasih via WhatsApp ke wali santri
+      if (updatedBooking.no_wa_penjenguk) {
+        sendWhatsAppNotification(
+          `${updatedBooking.nama_penjenguk} (Wali ${updatedBooking.nama_santri})`,
+          updatedBooking.no_wa_penjenguk,
+          'VISIT_CHECKOUT_GATE',
+          `✅ *[KUNJUNGAN SELESAI / CHECK-OUT]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${updatedBooking.nama_penjenguk}*.\n\nTerima kasih telah mengunjungi ananda *${updatedBooking.nama_santri}* di Pesantren Modern Darul Ulum. Data kepulangan/check-out telah dicatat sistem pada pukul *${clock.jam_menit} WITA*.\nSemoga ananda semakin betah dan bersemangat menuntut ilmu. Hati-hati di perjalanan pulang. Barakallahu fiikum.`
+        );
       }
-      return b;
-    }));
+    }
+
     sound.playBeep?.();
+    return updatedBooking;
   };
 
   const verifyVisitBarcode = (tokenOrInput) => {
@@ -3631,6 +3692,16 @@ export const AppProvider = ({ children }) => {
         message: '⚠️ KUNJUNGAN TELAH SELESAI: Tamu sudah check-out sebelumnya',
         isApproved: true,
         alreadyCompleted: true
+      };
+    }
+
+    if (booking.status_kunjungan === 'Sedang Berkunjung') {
+      return {
+        success: true,
+        booking,
+        message: `✅ STATUS: SEDANG BERKUNJUNG (Check-In Masuk Pukul ${booking.jam_masuk_aktual || booking.jam_checkin_aktual || 'WITA'})`,
+        isApproved: true,
+        isOngoing: true
       };
     }
 
