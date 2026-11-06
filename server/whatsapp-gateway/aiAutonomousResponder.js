@@ -350,52 +350,45 @@ export async function generateAutonomousReply(senderPhone, incomingText, senderN
     return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nBaik Bapak/Ibu, percakapan ini sekarang kami alihkan langsung ke *Admin Ri'ayah / Ustadz Musyrif Asrama*.\n\nUstadz akan segera membaca dan membalas pesan Bapak/Ibu secara langsung di sini. Mohon ditunggu sebentar ya Bapak/Ibu. 🙏\n\n_— Smart Ri'ayah Handoff System_`;
   }
 
-  // 1. Coba gunakan Gemini / DeepSeek API jika token tersedia di environment
-  const geminiKey = process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-  if (geminiKey && geminiKey !== 'your_gemini_api_key_here') {
+  // 1. Coba gunakan DeepSeek / Gemini AI jika token tersedia
+  const deepseekKey = process.env.DEEPSEEK_API_KEY || 'sk-5b97e9e1d00846818565250d944cc047';
+  if (deepseekKey) {
     try {
-      const prompt = `Anda adalah "Smart Riayah AI Bot" - Asisten Cerdas Resmi Pesantren Modern Darul Ulum.
-Tugas Anda adalah membalas pesan WhatsApp dari Wali Santri secara ramah, santun, bernafaskan Islam, ringkas, dan solutif.
-
-KONTEKS DATA WALI & SANTRI LIVE SAAT INI:
-- Nama Wali: ${waliData.namaWali}
-- Nama Santri: ${waliData.santriNama} (NIS: ${waliData.nis}, Kelas: ${waliData.kelas})
-- Kamar Asrama: ${waliData.kamar}
-- Status Saat Ini: ${waliData.statusAsrama}
-- Saldo Dompet RFID: ${waliData.saldoRfid} (Limit harian: ${waliData.limitHarian})
-- Poin Kedisiplinan: ${waliData.poinDisiplin}
-- Catatan Izin: ${waliData.izinTerakhir}
-
-SOP PESANTREN:
-- Izin keluar/pulang diajukan via aplikasi Smart Ri'ayah minimal H-1.
-- Jam malam asrama pukul 21.30 WIB.
-- Jam sambangan (kunjungan) hari Ahad pukul 08.00 - 17.00 WIB.
-- Klinik Poskestren 24 jam dengan perawat siaga.
-
-Pesan dari Wali Santri:
-"${incomingText}"
-
-Tuliskan balasan WhatsApp yang hangat (awali salam, gunakan format WhatsApp seperti *tebal* jika perlu, jangan terlalu panjang, akhiri dengan doa/salam):`;
-
-      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
-      const res = await fetch(geminiUrl, {
+      const dsRes = await fetch('https://api.deepseek.com/v1/chat/completions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${deepseekKey}`
+        },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: 500, temperature: 0.7 }
+          model: 'deepseek-chat',
+          messages: [
+            {
+              role: 'system',
+              content: `Anda adalah pengasuh/ustadz ramah dari Pesantren Modern Darul Ulum yang membalas pesan WhatsApp wali santri.
+Konteks: Wali ${waliData.namaWali}, Santri ${waliData.santriNama} (${waliData.kelas}, ${waliData.kamar}). Status: ${waliData.statusAsrama}, Saldo: ${waliData.saldoRfid}.
+ATURAN PENTING:
+- Balas pesan senatural mungkin, santun, hangat, dan bersahabat layaknya percakapan nyata.
+- JANGAN PERNAH membuat daftar/list menu berupa angka (1, 2, 3...) atau poin-poin kaku penanganan masalah.
+- Jawab langsung secara wajar, lalu tanyakan keperluannya apa atau apa yang bisa dibantu.`
+            },
+            {
+              role: 'user',
+              content: incomingText
+            }
+          ],
+          temperature: 0.3,
+          max_tokens: 250
         })
       });
 
-      if (res.ok) {
-        const json = await res.json();
-        const candidate = json?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (candidate && candidate.trim()) {
-          return candidate.trim();
-        }
+      if (dsRes.ok) {
+        const dsJson = await dsRes.json();
+        const reply = dsJson.choices?.[0]?.message?.content?.trim();
+        if (reply) return reply;
       }
     } catch (llmErr) {
-      console.warn('⚠️ [AI Otonom] Gemini API offline/limit, beralih ke Smart Local Reasoning Engine:', llmErr.message);
+      console.warn('⚠️ [AI Otonom] DeepSeek AI offline/fallback ke Smart Local Reasoning:', llmErr.message);
     }
   }
 
@@ -404,36 +397,36 @@ Tuliskan balasan WhatsApp yang hangat (awali salam, gunakan format WhatsApp sepe
 
   // TOPIK 1: SALDO RFID / DOMPET PINTAR / UANG SAKU
   if (textLower.includes('saldo') || textLower.includes('uang') || textLower.includes('dompet') || textLower.includes('jajan') || textLower.includes('rfid') || textLower.includes('topup') || textLower.includes('top up')) {
-    return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nBerikut informasi dompet pintar cashless ananda *${waliData.santriNama}*:\n\n💳 *Sisa Saldo RFID:* *${waliData.saldoRfid}*\n📊 *Limit Jajan Harian:* ${waliData.limitHarian}/hari\n🏢 *Lokasi Transaksi:* Kantin Asrama & Koperasi Ma'had\n\nUntuk pengisian saldo (Top Up), Bapak/Ibu dapat melakukan transfer Virtual Account atau melalui aplikasi Smart Ri'ayah.\n\n_— Smart Ri'ayah Cashless Gateway_`;
+    return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nAlhamdulillah, sisa saldo kartu RFID ananda *${waliData.santriNama}* saat ini *${waliData.saldoRfid}* dengan batas jajan ${waliData.limitHarian} per hari.\n\nAda keperluan isi saldo (Top Up) atau hal lain yang bisa kami bantu untuk ananda? Silakan disampaikan ya Bapak/Ibu. 🙏`;
   }
 
   // TOPIK 2: PERIZINAN & PERPANJANGAN LIBURAN
   if (textLower.includes('izin') || textLower.includes('pulang') || textLower.includes('libur') || textLower.includes('perpanjang') || textLower.includes('pesiar') || textLower.includes('keluar')) {
-    return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nUntuk perizinan ananda *${waliData.santriNama}*:\n\n📋 *SOP Perizinan Santri:*\n1. Izin kepulangan/pesiar diajukan minimal H-1 oleh wali melalui menu *Perizinan* di aplikasi Smart Ri'ayah.\n2. Jika ananda sakit dan membutuhkan *Perpanjangan Liburan*, silakan klik tombol *Ajukan Perpanjangan Liburan* pada riwayat izin serta lampirkan foto surat dokter/keterangan medis.\n3. Musyrif & Mudir akan memverifikasi permohonan dalam waktu 1x24 jam.\n\nStatus izin ananda saat ini: *${waliData.izinTerakhir}*.\n\n_— Layanan Perizinan Digital DU-PERMIT_`;
+    return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nUntuk perizinan ananda *${waliData.santriNama}*, permohonan izin pulang maupun pesiar dapat diajukan via aplikasi Smart Ri'ayah minimal H-1 ya Bapak/Ibu. Saat ini status izin ananda: *${waliData.izinTerakhir}*.\n\nAda keperluan izin apa yang ingin diajukan untuk ananda? Silakan disampaikan ya Bapak/Ibu. 🙏`;
   }
 
   // TOPIK 3: KESEHATAN / SAKIT / UKS / POSKESTREN
   if (textLower.includes('sakit') || textLower.includes('demam') || textLower.includes('obat') || textLower.includes('uks') || textLower.includes('poskestren') || textLower.includes('klinik') || textLower.includes('dokter')) {
-    return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nLayanan Kesehatan Pesantren Modern Darul Ulum (Poskestren) siap siaga *24 jam* dengan tenaga medis asrama.\n\n🏥 Apabila ananda *${waliData.santriNama}* mengeluhkan sakit, ananda segera diperiksa di ruang rawat UKS dan diberikan istirahat serta pengobatan dokter. Jika memerlukan tindakan lanjutan, tim Poskestren akan merujuk ke RS dan menghubungi Bapak/Ibu seketika.\n\nKondisi medis ananda saat ini: *Sehat & Terpantau Baik*.\n\n_— Poskestren Darul Ulum Care_`;
+    return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nAlhamdulillah kondisi medis ananda *${waliData.santriNama}* saat ini terpantau baik di pondok. Petugas kesehatan Poskestren asrama juga siaga 24 jam mendampingi para santri.\n\nAda keluhan atau keperluan khusus terkait kesehatan ananda yang ingin disampaikan Bapak/Ibu? Silakan ya. 🙏`;
   }
 
   // TOPIK 4: JAM KUNJUNGAN / SAMBANGAN WALI
   if (textLower.includes('sambang') || textLower.includes('kunjung') || textLower.includes('besuk') || textLower.includes('tengok')) {
-    return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\n📅 *Jadwal Kunjungan (Sambangan) Wali Santri:*\n• *Hari:* Setiap Ahad (Minggu)\n• *Waktu:* Pukul 08.00 s/d 17.00 WIB\n• *Tempat:* Area Gazebo & Aula Kunjungan Ma'had Darul Ulum\n\nSaat berkunjung, mohon memarkir kendaraan di area parkir utama dan melapor singkat ke Pos Satpam. Santri tidak diperkenankan diajak keluar area pondok tanpa izin tertulis Musyrif.\n\n_— Tata Tertib Kunjungan Pesantren_`;
+    return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nUntuk jadwal sambangan santri dibuka setiap hari Ahad (Minggu) pukul 08.00 s/d 17.00 WIB di aula ma'had, atau melalui permohonan booking kunjungan hari kerja yang disetujui.\n\nAda rencana berkunjung hari apa dan jam berapa untuk ananda *${waliData.santriNama}*? Silakan disampaikan ya Bapak/Ibu. 🙏`;
   }
 
   // TOPIK 5: KABAR & KONDISI SANTRI / AKTIVITAS HARIAN
   if (textLower.includes('kabar') || textLower.includes('sehat') || textLower.includes('kondisi') || textLower.includes('kegiatan') || textLower.includes('sholat') || textLower.includes('shalat') || textLower.includes('fauzi') || textLower.includes('anak saya')) {
-    return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nAlhamdulillah, ananda *${waliData.santriNama}* saat ini dalam kondisi *sehat wal'afiat* di ${waliData.kamar}.\n\n📌 *Catatan Aktivitas Hari Ini:*\n• Status: *${waliData.statusAsrama}*\n• Poin Kedisiplinan: *${waliData.poinDisiplin}*\n• Sholat Berjamaah: Hadir tertib di Masjid Jami'\n\nSemoga ananda senantiasa diberikan kemudahan dan keberkahan dalam menuntut ilmu. Aamiin.\n\n_— Salam hangat, Smart Ri'ayah AI Bot Pesantren_`;
+    return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nAlhamdulillah ananda *${waliData.santriNama}* saat ini dalam kondisi sehat dan aktif beraktivitas di asrama (${waliData.kamar}). Sholat berjamaah dan halaqah santri berjalan tertib.\n\nAda yang ingin dititipkan atau ditanyakan untuk ananda hari ini Bapak/Ibu? 🙏`;
   }
 
   // TOPIK 6: SALAM ATAU SAPAAN UMUM
   if (textLower.includes('assalamu') || textLower.includes('halo') || textLower.includes('selamat') || textLower.includes('pagi') || textLower.includes('siang') || textLower.includes('sore') || textLower.includes('malam') || textLower.includes('ping') || textLower.includes('tes')) {
-    return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nTerima kasih telah menghubungi layanan WhatsApp Resmi Pesantren Modern Darul Ulum.\n\nSaya adalah *Smart Ri'ayah AI Bot* yang siap melayani Bapak/Ibu 24 jam mengenai:\n1. 📈 *Kondisi & Disiplin Santri* (${waliData.santriNama})\n2. 💳 *Cek Saldo Dompet RFID & Limit Jajan*\n3. 📋 *Prosedur Izin Pulang & Perpanjangan Liburan*\n4. 🏥 *Layanan Kesehatan Poskestren*\n5. 📅 *Jadwal Sambangan & Kunjungan Wali*\n\nSilakan ketik hal yang ingin Bapak/Ibu tanyakan. Semoga keluarga senantiasa dalam lindungan Allah SWT. Aamiin.\n\n_— Smart Ri'ayah 168Fix Engage AI_`;
+    return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nTerima kasih sudah menghubungi kami di Pesantren Modern Darul Ulum. Ada yang bisa kami bantu? Silakan sampaikan keperluannya ya Bapak/Ibu. 🙏`;
   }
 
   // TOPIK DEFAULT / PERTANYAAN LAINNYA
-  return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nPesan Bapak/Ibu telah diterima oleh sistem cerdas Pesantren Modern Darul Ulum.\n\nInformasi terkait ananda *${waliData.santriNama}* (${waliData.kamar}) saat ini tercatat dalam kondisi *${waliData.statusAsrama}* dengan poin adab *${waliData.poinDisiplin}*.\n\nJika Bapak/Ibu memerlukan bantuan khusus dari Ustadz Musyrif Asrama atau Pengasuh Pondok, pesan ini juga telah kami teruskan ke *AI Inbox Petugas Asrama* untuk pendampingan lebih lanjut.\n\n_— Smart Ri'ayah AI Autonomous Assistant_`;
+  return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nTerima kasih atas pesannya. Ada yang bisa kami bantu untuk ananda *${waliData.santriNama}*? Silakan sampaikan keperluannya ya Bapak/Ibu. 🙏`;
 }
 
 /**

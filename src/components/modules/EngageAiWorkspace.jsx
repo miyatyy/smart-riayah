@@ -512,7 +512,7 @@ function EngageAiWorkspaceContent() {
       {activeTab === 'services' && <TabServices />}
 
       {/* ─── J. TAB 9: GREETING ─── */}
-      {activeTab === 'greeting' && <TabGreeting />}
+      {activeTab === 'greeting' && <TabGreeting showToast={showToast} />}
 
       {/* ─── K. TAB 10: CAMPAIGNS ─── */}
       {activeTab === 'campaigns' && <TabCampaigns />}
@@ -3788,19 +3788,109 @@ function TabServices() {
   );
 }
 
-function TabGreeting() {
+function TabGreeting({ showToast }) {
+  const DEFAULT_GREETING = "Assalamu'alaikum Warahmatullahi Wabarakatuh, Bapak/Ibu.\n\nTerima kasih telah menghubungi WhatsApp Layanan Pesantren Modern Darul Ulum. Ada yang bisa kami bantu? Silakan sampaikan keperluannya ya Bapak/Ibu. 🙏";
+
+  const [greetingText, setGreetingText] = useState(() => localStorage.getItem('sr_greeting_template') || DEFAULT_GREETING);
+
+  const handleSave = () => {
+    localStorage.setItem('sr_greeting_template', greetingText);
+    sound.playSuccess?.();
+    showToast?.('Template greeting alami berhasil disimpan!', 'success');
+  };
+
+  const setPreset = (text) => {
+    setGreetingText(text);
+    sound.playBeep?.();
+  };
+
   return (
-    <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4 text-xs">
-      <h3 className="font-extrabold text-sm text-slate-900">Template Auto-Greeting WhatsApp</h3>
-      <p className="text-slate-500">Pesan otomatis yang dikirimkan saat wali santri pertama kali menghubungi WhatsApp resmi.</p>
-      <div className="p-4 rounded-xl bg-slate-900 text-emerald-200 font-mono space-y-2">
-        <p>Assalamu'alaikum Warahmatullahi Wabarakatuh.</p>
-        <p>Selamat datang di Layanan Informasi Resmi Pesantren Modern Darul Ulum.</p>
-        <p>Ketik "INFO" untuk mengecek kegiatan santri, atau "IZIN" untuk prosedur perizinan.</p>
+    <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-5 text-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+        <div>
+          <div className="flex items-center gap-2">
+            <h3 className="font-extrabold text-sm text-slate-900">Template Auto-Greeting WhatsApp (Alami &amp; Ramah)</h3>
+            <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-[10px]">
+              Percakapan Natural
+            </span>
+          </div>
+          <p className="text-slate-500 text-[11px] mt-0.5">
+            Pesan pembuka otomatis yang menjawab ramah dan menanyakan keperluan wali santri secara natural, tanpa daftar list/menu kaku.
+          </p>
+        </div>
+
+        <button
+          onClick={handleSave}
+          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+        >
+          <Check className="w-3.5 h-3.5" />
+          <span>Simpan Template Greeting</span>
+        </button>
       </div>
-      <button onClick={() => alert('Template salam berhasil diperbarui!')} className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold">
-        Simpan Template Greeting
-      </button>
+
+      {/* Editor & Live Preview */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {/* Kolom Kiri: Form Textarea */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="font-bold text-slate-700 block">Teks Pesan Greeting</label>
+            <span className="text-[10px] text-slate-400 font-mono">{greetingText.length} karakter</span>
+          </div>
+          <textarea
+            rows={5}
+            value={greetingText}
+            onChange={(e) => setGreetingText(e.target.value)}
+            placeholder="Tulis pesan salam alami di sini..."
+            className="w-full p-3.5 text-xs rounded-2xl border border-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 leading-relaxed font-sans"
+          />
+
+          {/* Quick Presets */}
+          <div className="space-y-1.5 pt-1">
+            <span className="text-[11px] font-bold text-slate-500 block">Pilihan Contoh Sapaan Alami:</span>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setPreset("Assalamu'alaikum Warahmatullahi Wabarakatuh, Bapak/Ibu.\n\nTerima kasih telah menghubungi WhatsApp Layanan Pesantren Modern Darul Ulum. Ada yang bisa kami bantu? Silakan sampaikan keperluannya ya Bapak/Ibu. 🙏")}
+                className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] font-medium transition"
+              >
+                1. Ramah &amp; Tanya Keperluan (Default)
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreset("Assalamu'alaikum Warahmatullahi Wabarakatuh, Bapak/Ibu.\n\nSelamat datang di layanan WhatsApp Pesantren Modern Darul Ulum. Ada keperluan apa yang bisa kami bantu hari ini? Silakan disampaikan ya. 🙏")}
+                className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[11px] font-medium transition"
+              >
+                2. Santun &amp; Langsung
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreset("Assalamu'alaikum Warahmatullahi Wabarakatuh.\n\nAlhamdulillah, terima kasih sudah menghubungi pengasuhan pondok. Ada hal yang ingin ditanyakan atau keperluan apa yang bisa kami bantu Bapak/Ibu? 🙏")}
+                className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[11px] font-medium transition"
+              >
+                3. Bahasa Pengasuhan
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Kolom Kanan: Preview Chat Bubble WhatsApp */}
+        <div className="space-y-2">
+          <span className="font-bold text-slate-700 block">Preview Tampilan di WhatsApp Wali Santri:</span>
+          <div className="bg-[#EFEAE2] p-4 rounded-2xl border border-slate-300 min-h-[170px] flex flex-col justify-end shadow-inner relative overflow-hidden">
+            {/* WhatsApp message bubble */}
+            <div className="max-w-[85%] bg-white rounded-2xl rounded-tl-xs p-3.5 shadow-sm text-slate-800 space-y-1.5 self-start border border-slate-200/80">
+              <p className="text-xs whitespace-pre-line leading-relaxed font-sans">{greetingText}</p>
+              <div className="flex items-center justify-end gap-1 text-[9px] text-slate-400 font-mono pt-1">
+                <span>11.45</span>
+                <span className="text-sky-500 font-bold">✓✓</span>
+              </div>
+            </div>
+          </div>
+          <span className="text-[10px] text-slate-400 block italic text-center">
+            *Pesan dibalas senatural mungkin tanpa daftar nomor atau menu kaku.
+          </span>
+        </div>
+      </div>
     </div>
   );
 }

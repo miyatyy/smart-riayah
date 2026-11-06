@@ -90,7 +90,7 @@ export default async function handler(req, res) {
       try {
         await setManualTakeover(String(chatId), false);
       } catch (e) {}
-      aiReply = `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${senderName}.\n\nSelamat datang di Layanan AI Resmi Pesantren Modern Darul Ulum.\n\nSaya adalah *Smart Ri'ayah AI Bot* yang siap membantu Bapak/Ibu 24 jam untuk:\n1. 💳 *Cek Saldo Dompet RFID & Limit Jajan*\n2. 📈 *Kondisi & Poin Kedisiplinan Santri*\n3. 📋 *Prosedur Perizinan & Liburan*\n4. 🏥 *Layanan Kesehatan Poskestren*\n5. 📅 *Jadwal Sambangan & Kunjungan Wali*\n\nSilakan ketik pertanyaan Bapak/Ibu secara langsung di sini.`;
+      aiReply = `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${senderName}.\n\nTerima kasih telah menghubungi layanan Pesantren Modern Darul Ulum. Ada yang bisa kami bantu? Silakan sampaikan keperluannya ya Bapak/Ibu. 🙏`;
     } else {
       // 3. Cek apakah percakapan sedang diambil alih manual oleh Admin
       let inTakeover = false;
