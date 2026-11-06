@@ -257,21 +257,38 @@ export default function AdminRiayahDashboard() {
     }
 
     // Payload insert disesuaikan dengan skema kolom tabel santri di Supabase:
+    // - id (string, misal 'S-123')
     // - nama_lengkap (string)
     // - nis (string/number)
     // - gender (string)
-    // - kamar_id (foreign key / id kamar)
+    // - kelas (string)
+    // - kamar (string nama kamar asrama)
     // - rfid_uid (string)
-    // - saldo_awal (number)
     // - nama_wali (string)
+    // - no_wali (string)
+    // - saldo_rfid (number)
+    // - limit_jajan_harian (number)
+    // - poin_disiplin (number)
+    // - status_asrama (string)
+    const generatedId = `S-${Date.now().toString().slice(-4)}`;
+    const selectedRoom = availableRoomsForOnboarding.find(r => String(r.id) === String(onboardingForm.kamarId));
+    const roomLabel = onboardingForm.kamar || (selectedRoom ? `${selectedRoom.namaGedung} - ${selectedRoom.nomorKamar}` : 'Kamar Santri');
+    const cleanNoWali = (onboardingForm.waliTelepon || '').replace(/[^0-9]/g, '');
+
     const payload = {
+      id: generatedId,
       nama_lengkap: onboardingForm.nama.trim(),
       nis: onboardingForm.nis ? String(onboardingForm.nis).trim() : `${Math.floor(125500 + Math.random() * 900)}`,
       gender: onboardingForm.gender || 'L',
-      kamar_id: onboardingForm.kamarId || onboardingForm.kamar,
+      kelas: onboardingForm.gender === 'P' ? '10-B (Putri)' : '10-A (Putra)',
+      kamar: roomLabel,
       rfid_uid: onboardingForm.rfidUid.trim().toUpperCase(),
-      saldo_awal: Number(onboardingForm.saldoAwal) || 0,
-      nama_wali: onboardingForm.waliNama.trim()
+      nama_wali: onboardingForm.waliNama.trim(),
+      no_wali: cleanNoWali,
+      saldo_rfid: Number(onboardingForm.saldoAwal) || 0,
+      limit_jajan_harian: 25000,
+      poin_disiplin: 100,
+      status_asrama: 'DI_ASRAMA'
     };
 
     setIsSubmittingOnboarding(true);
@@ -295,10 +312,15 @@ export default function AdminRiayahDashboard() {
       // Sinkronkan ke context lokal (update state list santri, kamar terisi, confetti, notifikasi WA)
       addNewSantri({
         ...onboardingForm,
+        id: payload.id,
         nis: payload.nis,
+        kelas: payload.kelas,
+        kamar: payload.kamar,
+        kamarId: onboardingForm.kamarId,
         rfidUid: payload.rfid_uid,
-        saldoAwal: payload.saldo_awal,
-        kamarId: payload.kamar_id
+        saldoAwal: payload.saldo_rfid,
+        saldoRfid: payload.saldo_rfid,
+        waliTelepon: payload.no_wali
       });
 
       alert(`✅ Pendaftaran santri baru "${payload.nama_lengkap}" BERHASIL!\nData telah tersimpan di Supabase, kartu RFID aktif, dan kamar asrama telah tersinkron.`);

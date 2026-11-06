@@ -4,26 +4,40 @@ import { supabase } from './supabaseClient';
  * Menyimpan data santri baru ke tabel 'santri' di database Supabase.
  *
  * Kolom tabel santri:
+ * - id (string)
  * - nama_lengkap (string)
  * - nis (string/number)
  * - gender (string)
- * - kamar_id (foreign key / id kamar)
+ * - kelas (string)
+ * - kamar (string)
  * - rfid_uid (string)
- * - saldo_awal (number)
  * - nama_wali (string)
+ * - no_wali (string)
+ * - saldo_rfid (number)
+ * - limit_jajan_harian (number)
+ * - poin_disiplin (number)
+ * - status_asrama (string)
  *
  * @param {Object} santriData
  * @returns {Promise<{success: boolean, data?: any, error?: any}>}
  */
 export async function insertSantriToSupabase(santriData) {
+  const generatedId = santriData.id || `S-${Date.now().toString().slice(-4)}`;
+  const gender = santriData.gender || 'L';
   const payload = {
+    id: generatedId,
     nama_lengkap: (santriData.nama_lengkap || santriData.nama || '').trim(),
     nis: santriData.nis ? String(santriData.nis).trim() : `${Math.floor(125500 + Math.random() * 900)}`,
-    gender: santriData.gender || 'L',
-    kamar_id: santriData.kamar_id || santriData.kamarId || null,
+    gender: gender,
+    kelas: santriData.kelas || (gender === 'P' ? '10-B (Putri)' : '10-A (Putra)'),
+    kamar: santriData.kamar || santriData.kamar_id || santriData.kamarId || '',
     rfid_uid: (santriData.rfid_uid || santriData.rfidUid || '').trim().toUpperCase(),
-    saldo_awal: Number(santriData.saldo_awal ?? santriData.saldoAwal) || 0,
-    nama_wali: (santriData.nama_wali || santriData.waliNama || '').trim()
+    saldo_rfid: Number(santriData.saldo_rfid ?? santriData.saldoRfid ?? santriData.saldo_awal ?? santriData.saldoAwal) || 0,
+    nama_wali: (santriData.nama_wali || santriData.waliNama || santriData.wali?.nama || '').trim(),
+    no_wali: (santriData.no_wali || santriData.waliTelepon || santriData.wali?.telepon || '').replace(/[^0-9]/g, ''),
+    limit_jajan_harian: Number(santriData.limit_jajan_harian || 25000),
+    poin_disiplin: Number(santriData.poin_disiplin || 100),
+    status_asrama: santriData.status_asrama || 'DI_ASRAMA'
   };
 
   try {

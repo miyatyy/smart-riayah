@@ -2700,7 +2700,7 @@ export const AppProvider = ({ children }) => {
   // 12. Admin Ri'ayah: Onboarding Santri Baru & Live Hardware RFID Tap Integration
   const addNewSantri = (santriData) => {
     const formattedUid = santriData.rfidUid ? santriData.rfidUid.trim().toUpperCase() : `04:${Math.floor(10 + Math.random() * 89)}:${Math.floor(10 + Math.random() * 89)}:${Math.floor(10 + Math.random() * 89)}`;
-    const newId = `S-${Date.now().toString().slice(-4)}`;
+    const newId = santriData.id || `S-${Date.now().toString().slice(-4)}`;
     const gender = santriData.gender || 'L';
     const defaultAvatar = gender === 'P' ? '/images/avatar_santri_putri.jpg' : '/images/avatar_santri_putra.jpg';
 
@@ -2720,7 +2720,7 @@ export const AppProvider = ({ children }) => {
         telepon: santriData.waliTelepon || '0812-3456-7890',
         alamat: santriData.alamat || 'Surabaya'
       },
-      saldoRfid: parseInt(santriData.saldoAwal || 100000),
+      saldoRfid: parseInt(santriData.saldoRfid ?? santriData.saldoAwal ?? 100000),
       limitJajanHarian: 25000,
       poinDisiplin: 100,
       tahfidzJuz: parseInt(santriData.tahfidzAwal || 1),
