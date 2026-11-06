@@ -35,7 +35,9 @@ import {
   Printer,
   Smartphone,
   Pencil,
-  Calendar
+  Calendar,
+  Download,
+  UploadCloud
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
 import RfidCardManager from '../modules/RfidCardManager';
@@ -46,6 +48,8 @@ import SantriActivityAnalytics from '../modules/SantriActivityAnalytics';
 import VisitBookingManager from '../modules/VisitBookingManager';
 import EditRoomModal from '../modules/EditRoomModal';
 import DeleteConfirmModal from '../common/DeleteConfirmModal';
+import BulkCsvImportModal from '../common/BulkCsvImportModal';
+import { downloadCsvFile, getTemplateCsv } from '../../utils/csvUtils';
 import { supabase } from '../../utils/supabaseClient';
 import { insertSantriToSupabase } from '../../utils/santriService';
 
@@ -75,8 +79,11 @@ export default function AdminRiayahDashboard() {
     lastScannedTime,
     gateLogs,
     isFonnteEnabled,
-    visitBookings
+    visitBookings,
+    bulkImportSantri
   } = useApp();
+
+  const [isBulkImportSantriModalOpen, setIsBulkImportSantriModalOpen] = useState(false);
 
   const activeTab = (activeRoleTab === 'rooms' || activeRoleTab === 'onboarding' || activeRoleTab === 'lost_card' || activeRoleTab === 'blacklist' || activeRoleTab === 'rfid_cards' || activeRoleTab === 'rfid_pairing' || activeRoleTab === 'express_kiosk' || activeRoleTab === 'visit_bookings' || activeRoleTab === 'gate_logs' || activeRoleTab === 'whatsapp_manager' || activeRoleTab === 'ai_analytics') ? activeRoleTab : 'rooms';
   const setActiveTab = setActiveRoleTab;
@@ -744,16 +751,43 @@ export default function AdminRiayahDashboard() {
       {/* BUILDER 2: ONBOARDING SANTRI / SANTRIWATI BARU */}
       {activeTab === 'onboarding' && (
         <div className="bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-8 shadow-xs max-w-4xl mx-auto space-y-6">
-          <div className="border-b border-slate-100 pb-4">
-            <div className="flex items-center gap-2">
-              <UserPlus className="w-6 h-6 text-emerald-600" />
-              <h3 className="text-lg font-black text-slate-900">
-                Formulir Onboarding Santri / Santriwati Baru Masuk Pondok
-              </h3>
+          <div className="border-b border-slate-100 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <UserPlus className="w-6 h-6 text-emerald-600" />
+                <h3 className="text-lg font-black text-slate-900">
+                  Formulir Onboarding Santri / Santriwati Baru Masuk Pondok
+                </h3>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                Daftarkan santri baru ke database, tempatkan di kamar asrama berkuota, dan tautkan kartu fisik RFID dari alat ESP32-S3.
+              </p>
             </div>
-            <p className="text-xs text-slate-500 mt-1">
-              Daftarkan santri baru ke database, tempatkan di kamar asrama berkuota, dan tautkan kartu fisik RFID dari alat ESP32-S3.
-            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => {
+                  sound.playBeep?.();
+                  const csvContent = getTemplateCsv('santri');
+                  downloadCsvFile('template_import_santri_smart_riayah.csv', csvContent);
+                }}
+                className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition shadow-2xs"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>📄 Download Template CSV Santri</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  sound.playBeep?.();
+                  setIsBulkImportSantriModalOpen(true);
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-xs"
+              >
+                <UploadCloud className="w-3.5 h-3.5" />
+                <span>📥 Import CSV Ratusan Santri/Wati</span>
+              </button>
+            </div>
           </div>
 
           <form onSubmit={handleOnboardingSubmit} className="space-y-6 text-xs">
@@ -1097,6 +1131,22 @@ export default function AdminRiayahDashboard() {
             </div>
 
           </form>
+
+          {/* Modal Bulk Import CSV Santri (3-in-1 Sync) */}
+          <BulkCsvImportModal
+            isOpen={isBulkImportSantriModalOpen}
+            onClose={() => setIsBulkImportSantriModalOpen(false)}
+            title="Import CSV Ratusan Santri / Santriwati Baru (Sinkronisasi 3-in-1)"
+            description="Otomatis mendaftarkan santri ke asrama & mengupdate kuota kasur, mengaktifkan kartu RFID (ACTIVE), dan mendaftarkan wali ke WhatsApp Gateway (Consent Granted)."
+            type="santri"
+            existingData={santriList}
+            onSave={async (rows) => {
+              if (bulkImportSantri) {
+                const res = await bulkImportSantri(rows);
+                alert(`✅ Sinkronisasi 3-in-1 Berhasil!\n\n${res.count} Santri/Wati baru telah:\n1. Ditempatkan di asrama & kuota kamar diperbarui\n2. Kartu RFID diaktifkan (ACTIVE)\n3. Kontak wali santri didaftarkan di WhatsApp Gateway (Consent Granted).`);
+              }
+            }}
+          />
         </div>
       )}
 

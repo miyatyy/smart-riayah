@@ -24,10 +24,14 @@ import {
   DoorOpen,
   Wifi,
   CheckCircle2,
-  Trash2
+  Trash2,
+  Download,
+  UploadCloud
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
 import DeleteConfirmModal from '../common/DeleteConfirmModal';
+import BulkCsvImportModal from '../common/BulkCsvImportModal';
+import { downloadCsvFile, getTemplateCsv } from '../../utils/csvUtils';
 
 export default function RfidCardManager({ isModal = false, onClose = () => {}, defaultView = 'table' }) {
   const [activeSubTab, setActiveSubTab] = useState(defaultView);
@@ -53,9 +57,11 @@ export default function RfidCardManager({ isModal = false, onClose = () => {}, d
     processRfidTap,
     createExpressPermit,
     sendWhatsAppNotification,
-    isFonnteEnabled
+    isFonnteEnabled,
+    bulkImportRfid
   } = useApp();
 
+  const [isBulkImportRfidModalOpen, setIsBulkImportRfidModalOpen] = useState(false);
   const [isTestingWa, setIsTestingWa] = useState(false);
 
   const [quickPermitSantri, setQuickPermitSantri] = useState(null);
@@ -685,15 +691,40 @@ export default function RfidCardManager({ isModal = false, onClose = () => {}, d
             </p>
           </div>
 
-          <div className="relative w-full sm:w-64">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-            <input
-              type="text"
-              placeholder="Cari santri, UID, atau kamar..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-teal-500"
-            />
+          <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={() => {
+                sound.playBeep?.();
+                const csvContent = getTemplateCsv('rfid');
+                downloadCsvFile('template_import_rfid_smart_riayah.csv', csvContent);
+              }}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition shadow-2xs"
+            >
+              <Download className="w-3.5 h-3.5 text-slate-500" />
+              <span>📄 Download Template CSV Kartu</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                sound.playBeep?.();
+                setIsBulkImportRfidModalOpen(true);
+              }}
+              className="px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-xs"
+            >
+              <UploadCloud className="w-3.5 h-3.5" />
+              <span>📥 Import CSV Kartu RFID Baru</span>
+            </button>
+            <div className="relative w-full sm:w-60">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                placeholder="Cari santri, UID, atau kamar..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-teal-500"
+              />
+            </div>
           </div>
         </div>
 
@@ -863,6 +894,22 @@ export default function RfidCardManager({ isModal = false, onClose = () => {}, d
             </tbody>
           </table>
         </div>
+
+        {/* Modal Bulk Import CSV Kartu RFID */}
+        <BulkCsvImportModal
+          isOpen={isBulkImportRfidModalOpen}
+          onClose={() => setIsBulkImportRfidModalOpen(false)}
+          title="Import CSV Kartu RFID Baru & Pembaruan UID"
+          description="Impor ratusan kartu RFID sekaligus untuk memetakan UID fisik 13.56 MHz ke nomor induk santri (NIS)."
+          type="rfid"
+          existingData={santriList}
+          onSave={(rows) => {
+            if (bulkImportRfid) {
+              const res = bulkImportRfid(rows);
+              alert(`✅ Berhasil memperbarui / mengimpor ${res.count} kartu RFID santri!`);
+            }
+          }}
+        />
       </div>
       )}
 

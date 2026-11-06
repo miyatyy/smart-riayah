@@ -350,6 +350,56 @@ export async function generateAutonomousReply(senderPhone, incomingText, senderN
     return `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${waliData.namaWali}.\n\nBaik Bapak/Ibu, percakapan ini sekarang kami alihkan langsung ke *Admin Ri'ayah / Ustadz Musyrif Asrama*.\n\nUstadz akan segera membaca dan membalas pesan Bapak/Ibu secara langsung di sini. Mohon ditunggu sebentar ya Bapak/Ibu. 🙏\n\n_— Smart Ri'ayah Handoff System_`;
   }
 
+  // ─── INTENT KUNJUNGAN / JENGUK / JADWAL / BOOKING (TUGAS 3) ───
+  const isVisitingIntent =
+    textLower.includes('kunjungan') ||
+    textLower.includes('kunjung') ||
+    textLower.includes('jenguk') ||
+    textLower.includes('sambang') ||
+    textLower.includes('besuk') ||
+    textLower.includes('jadwal') ||
+    textLower.includes('booking');
+
+  if (isVisitingIntent) {
+    // Deteksi apakah ini form booking dengan parameter lengkap atau sekadar pertanyaan jadwal/aturan
+    const hasBookingDetails =
+      (textLower.includes('bawa') || textLower.includes('titip') || textLower.includes('kg') || textLower.includes('berat') || textLower.includes('penjenguk') || textLower.includes('booking')) &&
+      (textLower.includes('senin') || textLower.includes('selasa') || textLower.includes('rabu') || textLower.includes('kamis') || textLower.includes('jumat') || textLower.includes('sabtu') || textLower.includes('minggu') || textLower.includes('besok') || textLower.includes('lusa') || textLower.includes('hari ini') || /\d{1,2}[:.]\d{2}/.test(textLower));
+
+    if (!hasBookingDetails) {
+      // KONDISI 1: Hanya Bertanya / Permintaan Info Jadwal Kunjungan & Peraturan Pondok
+      const d = new Date();
+      const namaHariArr = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+      const namaHari = namaHariArr[d.getDay()];
+      const tglLengkap = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+      const jamStr = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WITA';
+      const waktuStr = `${namaHari}, ${tglLengkap} • ${jamStr}`;
+
+      return `🕌 *INFORMASI JADWAL KUNJUNGAN AKTIF & TATA TERTIB PONDOK*
+🕒 *Waktu Sistem Pondok Saat Ini:* ${waktuStr}
+
+📅 *1. JADWAL KUNJUNGAN AKTIF:*
+• *Jumat – Minggu (Weekend):*
+  - Sesi Pagi: *08.30 – 11.30 WITA*
+  - Sesi Sore: *13.30 – 16.30 WITA*
+  *(✅ Auto-Approval: Tiket E-Barcode WA langsung terbit otomatis)*
+• *Senin – Kamis (Hari Kerja):*
+  - Sesi Sore: *14.00 – 16.30 WITA* (Setelah jam KBM santri)
+  *(⏳ Wajib Approval Admin Ri'ayah sebelum E-Barcode dikirim ke WA)*
+
+⚖️ *2. PERATURAN PENTING KUNJUNGAN & TITIPAN BARANG:*
+• Durasi kunjungan maksimal *90 menit* per sesi.
+• Barang/makanan titipan wajib ditimbang di Pos Satpam (Maksimal *5 Kg*) dan bebas dari barang terlarang (HP/gadget, rokok/vape, alat masak listrik).
+• Penjenguk wajib berbusana muslim/muslimah sopan dan hanya bertemu di Aula/Gazebo Kunjungan (dilarang masuk asrama tidur).
+• Wajib menunjukkan *E-Barcode Kunjungan dari WhatsApp ini* atau *Tap Kartu RFID* di Pos Jaga Satpam saat tiba.
+
+---
+📝 *FORMAT BOOKING KUNJUNGAN CEPAT:*
+Silakan balas pesan ini dengan menyebutkan data berikut (bisa diketik bebas):
+_Nama Santri/Wati, Kelas, Asal, Hari & Jam Kunjungan, Jam Selesai, Titipan Barang, Berat Barang (Kg), Nama Penjenguk, dan Status Penjenguk (Wali/Keluarga)._`;
+    }
+  }
+
   // 1. Coba gunakan DeepSeek / Gemini AI jika token tersedia
   const deepseekKey = process.env.DEEPSEEK_API_KEY || 'sk-5b97e9e1d00846818565250d944cc047';
   if (deepseekKey) {

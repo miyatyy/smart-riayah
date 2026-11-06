@@ -162,3 +162,48 @@ export function calculateVisitCountdown(jamSelesaiStr, tanggalYmdStr) {
   }
 }
 
+/**
+ * Validasi apakah jam kunjungan sesuai dengan jadwal operasional pondok
+ * - Weekend (Jumat, Sabtu, Minggu): Sesi Pagi (08.30–11.30 WITA) & Sesi Sore (13.30–16.30 WITA)
+ * - Weekday (Senin–Kamis): Sesi Sore (14.00–16.30 WITA)
+ */
+export function checkVisitingHoursValidity(hariName, jamKunjunganStr) {
+  const isWeekend = ['Jumat', 'Sabtu', 'Minggu'].includes(hariName);
+  if (!jamKunjunganStr) {
+    return { isValid: true, sesi: isWeekend ? 'Sesi Bebas Weekend' : 'Sesi Sore Weekday' };
+  }
+
+  const [h, m] = jamKunjunganStr.split(':').map(v => parseInt(v, 10) || 0);
+  const timeMinutes = h * 60 + m;
+
+  if (isWeekend) {
+    // Sesi Pagi: 08:30 (510 min) - 11:30 (690 min)
+    // Sesi Sore: 13:30 (810 min) - 16:30 (990 min)
+    const inSesi1 = timeMinutes >= 510 && timeMinutes <= 690;
+    const inSesi2 = timeMinutes >= 810 && timeMinutes <= 990;
+    if (inSesi1 || inSesi2) {
+      return { 
+        isValid: true, 
+        sesi: inSesi1 ? 'Sesi Pagi (08.30–11.30 WITA)' : 'Sesi Sore (13.30–16.30 WITA)' 
+      };
+    }
+    return {
+      isValid: false,
+      reason: 'Waktu kunjungan di luar jam operasional akhir pekan (Weekend). Jadwal resmi kunjungan: Sesi Pagi (08.30–11.30 WITA) & Sesi Sore (13.30–16.30 WITA).'
+    };
+  } else {
+    // Weekday: Sesi Sore 14:00 (840 min) - 16:30 (990 min)
+    const inWeekdaySesi = timeMinutes >= 840 && timeMinutes <= 990;
+    if (inWeekdaySesi) {
+      return { 
+        isValid: true, 
+        sesi: 'Sesi Sore (14.00–16.30 WITA - Ba\'da KBM)' 
+      };
+    }
+    return {
+      isValid: false,
+      reason: 'Waktu kunjungan di luar jam operasional hari kerja (Senin–Kamis). Santri sedang mengikuti Kegiatan Belajar Mengajar (KBM). Jadwal kunjungan hari kerja yang diizinkan: Sesi Sore pukul 14.00–16.30 WITA.'
+    };
+  }
+}
+

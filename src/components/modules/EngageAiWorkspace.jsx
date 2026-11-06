@@ -57,6 +57,7 @@ import {
   BellRing,
   Printer,
   Download,
+  UploadCloud,
   TrendingUp,
   PieChart as LucidePieChart
 } from 'lucide-react';
@@ -92,6 +93,8 @@ import {
   DEFAULT_DEEPSEEK_MODEL
 } from '../../services/deepseekVisitService';
 import VisitBookingManager from './VisitBookingManager';
+import BulkCsvImportModal from '../common/BulkCsvImportModal';
+import { downloadCsvFile, getTemplateCsv } from '../../utils/csvUtils';
 
 class WorkspaceErrorBoundary extends React.Component {
   constructor(props) {
@@ -3313,60 +3316,109 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
    SUB-COMPONENT: TAB 4 - KNOWLEDGE BASE
    ========================================================================================= */
 function TabKnowledgeBase() {
+  const {
+    knowledgeList = [],
+    setKnowledgeList,
+    addKnowledgeItem,
+    bulkImportKnowledge,
+    OFFICIAL_TOPIC_GROUPS = [
+      'Booking Flow',
+      'Policy & Boundaries',
+      'Customer Support',
+      'Order Flow',
+      'Customer FAQ',
+      'Business Foundation',
+      'Pricing'
+    ]
+  } = useApp();
+
   const [topicFilter, setTopicFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Starter pack states
   const [starterProfile, setStarterProfile] = useState({
     name: 'Pesantren Modern Darul Ulum',
     target: 'Wali Santri & Penuntut Ilmu',
     address: 'Jl. Pesantren No. 12, Jawa Timur',
-    operational: 'Operasional KBM 07.00 - 15.00 WIB, Jam Malam 21.30 WIB.'
+    operational: 'Operasional KBM 07.00 - 15.00 WITA, Jam Kunjungan Weekend 08.30-16.30 & Weekday 14.00-16.30 WITA.'
   });
 
   // New Knowledge form
   const [newKb, setNewKb] = useState({
     category: 'Tata Tertib',
     title: 'Jam Malam & Ketentuan Keluar Asrama',
-    topicGroup: 'Tata Tertib',
-    content: 'Santri wajib berada di dalam kamar asrama maksimal pukul 21.30 WIB. Keterlambatan tanpa DU-PERMIT akan tercatat otomatis di sistem gerbang.',
-    priority: 100,
+    topicGroup: 'Policy & Boundaries',
+    content: 'Santri wajib berada di dalam kamar asrama maksimal pukul 21.30 WITA. Keterlambatan tanpa DU-PERMIT akan tercatat otomatis di sistem gerbang.',
+    priority: 10,
     status: 'Active'
   });
 
-  const [knowledgeList, setKnowledgeList] = useState([
-    { id: 'kb-1', priority: 100, topicGroup: 'Tata Tertib', category: 'Kedisiplinan', title: 'Aturan Jam Malam Asrama & Pintu Gerbang', snippet: 'Batas toleransi jam malam pukul 21.30 WIB...', quality: '95/100', status: 'Active', security: 'Security Approved' },
-    { id: 'kb-2', priority: 95, topicGroup: 'Alur Perizinan', category: 'DU-PERMIT', title: 'SOP Pengajuan Izin Pulang & Berobat Santri', snippet: 'Izin diajukan wali minimal H-1 sebelum keberangkatan...', quality: '92/100', status: 'Active', security: 'Security Approved' },
-    { id: 'kb-3', priority: 90, topicGroup: 'Layanan Wali', category: 'Keuangan', title: 'Ketentuan Dompet Pintar Cashless RFID & Limit Jajan', snippet: 'Uang saku santri dikelola secara nontunai melalui kartu RFID...', quality: '88/100', status: 'Active', security: 'Security Approved' },
-    { id: 'kb-4', priority: 85, topicGroup: 'FAQ Santri', category: 'Kesehatan', title: 'SOP Pelayanan Medis UKS & Rujukan Rumah Sakit', snippet: 'Pemeriksaan awal dilakukan di Poskestren pesantren...', quality: '85/100', status: 'Active', security: 'Security Approved' }
-  ]);
+  // Dynamic Topic Group counts & quality from knowledgeList
+  const topicGroupCards = OFFICIAL_TOPIC_GROUPS.map((grpName) => {
+    const matched = knowledgeList.filter(
+      (k) => (k.topicGroup || '').toLowerCase() === grpName.toLowerCase()
+    );
+    const avgQuality = matched.length > 0
+      ? Math.round(
+          matched.reduce((acc, curr) => acc + (parseInt(curr.quality) || 95), 0) / matched.length
+        )
+      : 96;
+
+    return {
+      name: grpName,
+      count: matched.length,
+      quality: `${avgQuality}%`
+    };
+  });
 
   const handleGenerateAi = () => {
     sound.playSuccess?.();
     setNewKb(prev => ({
       ...prev,
-      content: `${prev.content}\n\n[Diperkaya oleh AI]: Berdasarkan regulasi resmi Pesantren Modern Darul Ulum, seluruh pelanggaran akan dikonversikan menjadi poin kedisiplinan dan dilaporkan langsung ke wali santri melalui WhatsApp Gateway.`
+      content: `${prev.content}\n\n[Diperkaya oleh DeepSeek AI]: Berdasarkan regulasi resmi Pesantren Modern Darul Ulum, seluruh pelanggaran akan dikonversikan menjadi poin kedisiplinan dan dilaporkan langsung ke wali santri melalui WhatsApp Gateway.`
     }));
   };
 
   const handleSaveKb = (e) => {
     e.preventDefault();
     if (!newKb.title.trim()) return alert('Judul wajib diisi!');
-    const entry = {
-      id: `kb-${Date.now()}`,
-      priority: Number(newKb.priority) || 100,
-      topicGroup: newKb.topicGroup,
-      category: newKb.category,
-      title: newKb.title,
-      snippet: newKb.content.slice(0, 60) + '...',
-      quality: '90/100',
-      status: newKb.status,
-      security: 'Security Approved'
-    };
-    setKnowledgeList([entry, ...knowledgeList]);
+    if (addKnowledgeItem) {
+      addKnowledgeItem(newKb);
+    } else {
+      const entry = {
+        id: `kb-${Date.now()}`,
+        priority: Number(newKb.priority) || 10,
+        topicGroup: newKb.topicGroup,
+        category: newKb.category,
+        title: newKb.title,
+        content: newKb.content,
+        snippet: newKb.content.slice(0, 100) + '...',
+        quality: '96/100',
+        status: newKb.status,
+        security: 'Security Approved'
+      };
+      setKnowledgeList([entry, ...knowledgeList]);
+    }
     sound.playSuccess?.();
     alert('Knowledge item berhasil disimpan ke otak penalaran AI!');
   };
+
+  // Filter list
+  const filteredKnowledge = knowledgeList.filter((item) => {
+    const matchesTopic =
+      topicFilter === 'all' ||
+      (item.topicGroup || '').toLowerCase() === topicFilter.toLowerCase();
+    const q = searchQuery.toLowerCase();
+    const matchesSearch =
+      !searchQuery ||
+      (item.title || '').toLowerCase().includes(q) ||
+      (item.content || '').toLowerCase().includes(q) ||
+      (item.snippet || '').toLowerCase().includes(q) ||
+      (item.topicGroup || '').toLowerCase().includes(q) ||
+      (item.category || '').toLowerCase().includes(q);
+    return matchesTopic && matchesSearch;
+  });
 
   return (
     <div className="space-y-6">
@@ -3387,7 +3439,7 @@ function TabKnowledgeBase() {
             </div>
 
             <div className="flex flex-wrap gap-1.5 pt-1">
-              {['Profil Pesantren', 'Alur Izin Pesiar', 'Pembayaran Syahriah', 'FAQ Wali Santri', 'Tata Tertib', 'Jam Kunjungan'].map((c, i) => (
+              {['Profil Pesantren', 'Alur Izin Pesiar', 'Pembayaran Syahriah', 'FAQ Wali Santri', 'Tata Tertib', 'Jadwal Kunjungan'].map((c, i) => (
                 <span key={i} className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
                   {c}
                 </span>
@@ -3439,10 +3491,9 @@ function TabKnowledgeBase() {
                     onChange={(e) => setNewKb({ ...newKb, topicGroup: e.target.value })}
                     className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-slate-300 bg-white"
                   >
-                    <option value="Tata Tertib">Tata Tertib</option>
-                    <option value="Alur Perizinan">Alur Perizinan</option>
-                    <option value="Layanan Wali">Layanan Wali</option>
-                    <option value="FAQ Santri">FAQ Santri</option>
+                    {OFFICIAL_TOPIC_GROUPS.map((tg) => (
+                      <option key={tg} value={tg}>{tg}</option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -3523,31 +3574,33 @@ function TabKnowledgeBase() {
 
         {/* Kolom Kanan: Daftar Knowledge & Topic Groups (7 Cols) */}
         <div className="lg:col-span-7 space-y-4">
-          {/* Grid 8 Kartu Topic Group */}
+          {/* Grid 7 Kartu Topic Group Resmi */}
           <div className="space-y-2">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">Topic Groups Knowledge AI</h4>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center justify-between">
+              <span>Topic Groups Knowledge AI (Official Pesantren Rules)</span>
+              <span className="text-[10px] text-emerald-700 font-mono font-bold">{knowledgeList.length} Total Aturan</span>
+            </h4>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-              {[
-                { name: 'Tata Tertib', count: 8, quality: '95%' },
-                { name: 'Layanan Wali', count: 12, quality: '92%' },
-                { name: 'Profil Pondok', count: 5, quality: '98%' },
-                { name: 'Policy Rules', count: 6, quality: '91%' },
-                { name: 'Alur Izin', count: 14, quality: '96%' },
-                { name: 'FAQ Santri', count: 20, quality: '89%' },
-                { name: 'Info Asrama', count: 7, quality: '94%' },
-                { name: 'Jadwal Sholat', count: 4, quality: '99%' }
-              ].map((tg, idx) => (
-                <div key={idx} className="p-2.5 rounded-xl bg-white border border-slate-200 text-center shadow-xs">
+              {topicGroupCards.map((tg, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => setTopicFilter(topicFilter === tg.name ? 'all' : tg.name)}
+                  className={`p-2.5 rounded-xl border text-center transition cursor-pointer shadow-2xs ${
+                    topicFilter === tg.name
+                      ? 'bg-emerald-50 border-emerald-400 ring-2 ring-emerald-400/20'
+                      : 'bg-white border-slate-200 hover:border-emerald-300'
+                  }`}
+                >
                   <span className="text-[11px] font-extrabold text-slate-800 block truncate">{tg.name}</span>
-                  <span className="text-[10px] text-slate-500 block">{tg.count} items</span>
+                  <span className="text-[10px] text-slate-500 block font-semibold">{tg.count} items</span>
                   <span className="text-[9px] font-bold text-emerald-600 font-mono">Q: {tg.quality}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Baris Filter & Search */}
-          <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center gap-2 text-xs">
+          {/* Baris Filter & Search + Tombol Import & Download CSV */}
+          <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
             <div className="relative flex-1 w-full">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
               <input
@@ -3558,21 +3611,62 @@ function TabKnowledgeBase() {
                 className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl border border-slate-300"
               />
             </div>
-            <select
-              value={topicFilter}
-              onChange={(e) => setTopicFilter(e.target.value)}
-              className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white"
-            >
-              <option value="all">Semua Topik</option>
-              <option value="Tata Tertib">Tata Tertib</option>
-              <option value="Alur Perizinan">Alur Perizinan</option>
-            </select>
-            <button
-              onClick={() => { setSearchQuery(''); setTopicFilter('all'); }}
-              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold transition"
-            >
-              Reset
-            </button>
+            <div className="flex items-center gap-1.5 w-full sm:w-auto">
+              <select
+                value={topicFilter}
+                onChange={(e) => setTopicFilter(e.target.value)}
+                className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-xs"
+              >
+                <option value="all">Semua Topik ({knowledgeList.length})</option>
+                {OFFICIAL_TOPIC_GROUPS.map((tg) => (
+                  <option key={tg} value={tg}>{tg}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => { setSearchQuery(''); setTopicFilter('all'); }}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold transition text-xs"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+
+          {/* Header Action: Tombol Import & Template Download CSV */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-emerald-50/70 border border-emerald-200 p-3.5 rounded-2xl">
+            <div>
+              <h5 className="font-bold text-xs text-emerald-950 flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-emerald-700" />
+                Daftar Knowledge Base ({filteredKnowledge.length} Ditampilkan)
+              </h5>
+              <p className="text-[11px] text-emerald-800">
+                Impor dan unduh template CSV untuk memperbarui ratusan SOP dan aturan pondok sekaligus.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  sound.playBeep?.();
+                  const csvContent = getTemplateCsv('knowledge');
+                  downloadCsvFile('template_import_knowledge_smart_riayah.csv', csvContent);
+                }}
+                className="px-3 py-1.5 rounded-xl border border-emerald-300 bg-white hover:bg-emerald-100 text-emerald-900 font-bold text-xs flex items-center gap-1.5 transition shadow-2xs"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-700" />
+                <span>📄 Download Template CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  sound.playBeep?.();
+                  setIsImportModalOpen(true);
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-xs"
+              >
+                <UploadCloud className="w-3.5 h-3.5" />
+                <span>📥 Import CSV Knowledge</span>
+              </button>
+            </div>
           </div>
 
           {/* Tabel Daftar Knowledge */}
@@ -3582,21 +3676,25 @@ function TabKnowledgeBase() {
                 <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] border-b border-slate-200">
                   <tr>
                     <th className="py-2.5 px-3 font-bold">Prio</th>
-                    <th className="py-2.5 px-3 font-bold">Topik</th>
-                    <th className="py-2.5 px-3 font-bold">Judul &amp; Ringkasan</th>
+                    <th className="py-2.5 px-3 font-bold">Topic Group</th>
+                    <th className="py-2.5 px-3 font-bold">Judul &amp; Ringkasan Regulasi</th>
                     <th className="py-2.5 px-3 font-bold">Quality</th>
                     <th className="py-2.5 px-3 font-bold">Status</th>
                     <th className="py-2.5 px-3 font-bold">Security</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {knowledgeList.map(item => (
+                  {filteredKnowledge.map(item => (
                     <tr key={item.id} className="hover:bg-slate-50/50">
                       <td className="py-3 px-3 font-mono font-bold text-slate-700">{item.priority}</td>
-                      <td className="py-3 px-3 font-semibold text-slate-700">{item.topicGroup}</td>
+                      <td className="py-3 px-3 font-semibold text-slate-800">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                          {item.topicGroup}
+                        </span>
+                      </td>
                       <td className="py-3 px-3">
                         <strong className="text-slate-900 block text-xs">{item.title}</strong>
-                        <span className="text-[10px] text-slate-400 block line-clamp-1">{item.snippet}</span>
+                        <span className="text-[10px] text-slate-500 block line-clamp-1">{item.snippet || item.content}</span>
                       </td>
                       <td className="py-3 px-3">
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
@@ -3615,12 +3713,37 @@ function TabKnowledgeBase() {
                       </td>
                     </tr>
                   ))}
+                  {filteredKnowledge.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-slate-400 italic">
+                        Tidak ada regulasi knowledge base yang sesuai dengan filter.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Modal Bulk Import CSV Knowledge */}
+      <BulkCsvImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        title="Import CSV Knowledge Base Peraturan Pondok"
+        description="Unggah file CSV untuk mengimpor puluhan atau ratusan peraturan resmi sekaligus ke otak AI Smart Riayah."
+        type="knowledge"
+        existingData={knowledgeList}
+        onSave={(rows) => {
+          if (bulkImportKnowledge) {
+            bulkImportKnowledge(rows);
+          } else {
+            setKnowledgeList(prev => [...rows, ...prev]);
+          }
+          alert(`✅ Berhasil mengimpor ${rows.length} peraturan ke Knowledge Base! Topic Group otomatis terbarui.`);
+        }}
+      />
     </div>
   );
 }
@@ -3629,53 +3752,142 @@ function TabKnowledgeBase() {
    SUB-COMPONENTS: REMAINING TABS (Customers, Permits, Asrama, Services, Greeting, Campaigns, Settings, Reports)
    ========================================================================================= */
 function TabCustomers() {
-  const { santriList } = useApp();
+  const { santriList = [], bulkImportCustomers } = useApp();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+
+  const filteredCustomers = santriList.filter((s) => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    const namaWali = (s.namaWali || s.wali?.nama || '').toLowerCase();
+    const namaSantri = (s.nama || '').toLowerCase();
+    const noWa = (s.noWali || s.wali?.telepon || '').toLowerCase();
+    const kamar = (s.kamar || '').toLowerCase();
+    return namaWali.includes(q) || namaSantri.includes(q) || noWa.includes(q) || kamar.includes(q);
+  });
+
   return (
     <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
         <div>
-          <h3 className="font-extrabold text-sm text-slate-900">Database Wali Santri (Customers)</h3>
+          <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+            <Users className="w-4 h-4 text-emerald-600" />
+            Database Wali Santri (Customers)
+          </h3>
           <p className="text-xs text-slate-500">Daftar wali santri yang terhubung dengan sistem WhatsApp Gateway &amp; smart notifications.</p>
         </div>
-        <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
-          {santriList.length || 142} Kontak Aktif
-        </span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
+            {santriList.length} Kontak Aktif
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              sound.playBeep?.();
+              const csvContent = getTemplateCsv('customers');
+              downloadCsvFile('template_import_customers_smart_riayah.csv', csvContent);
+            }}
+            className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition shadow-2xs"
+          >
+            <Download className="w-3.5 h-3.5 text-slate-500" />
+            <span>📄 Download Template CSV Kontak</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              sound.playBeep?.();
+              setIsImportModalOpen(true);
+            }}
+            className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-xs"
+          >
+            <UploadCloud className="w-3.5 h-3.5" />
+            <span>📥 Import CSV Kontak Wali Santri</span>
+          </button>
+        </div>
       </div>
+
+      {/* Baris Pencarian Kontak */}
+      <div className="relative">
+        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Cari wali santri berdasarkan nama wali, nama santri, nomor WhatsApp, atau kamar..."
+          className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+        />
+      </div>
+
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs">
           <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] border-b border-slate-200">
             <tr>
               <th className="py-2.5 px-3 font-bold">Wali Santri</th>
-              <th className="py-2.5 px-3 font-bold">Santri Asuhan</th>
+              <th className="py-2.5 px-3 font-bold">Santri Asuhan &amp; Kamar</th>
               <th className="py-2.5 px-3 font-bold">Nomor WhatsApp</th>
               <th className="py-2.5 px-3 font-bold">Status Consent</th>
               <th className="py-2.5 px-3 font-bold text-right">Aksi</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {santriList.slice(0, 6).map((s, idx) => (
+            {filteredCustomers.map((s, idx) => (
               <tr key={idx} className="hover:bg-slate-50/50">
-                <td className="py-3 px-3 font-bold text-slate-800">{s.namaWali || `Wali dari ${s.nama}`}</td>
-                <td className="py-3 px-3">{s.nama} ({s.kamar || 'Kamar 204'})</td>
-                <td className="py-3 px-3 font-mono text-slate-700">{s.noWali || '08813576012'}</td>
                 <td className="py-3 px-3">
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                  <span className="font-bold text-slate-800 block">{s.namaWali || s.wali?.nama || `Wali dari ${s.nama}`}</span>
+                  <span className="text-[10px] text-slate-400">{s.wali?.hubungan || 'Orang Tua Kandung'}</span>
+                </td>
+                <td className="py-3 px-3">
+                  <span className="font-semibold text-slate-900 block">{s.nama} ({s.kelas || 'Santri'})</span>
+                  <span className="text-[10px] text-emerald-700 font-mono font-bold">{s.kamar || 'Kamar Asrama'}</span>
+                </td>
+                <td className="py-3 px-3 font-mono font-bold text-slate-700">{s.noWali || s.wali?.telepon || '08813576012'}</td>
+                <td className="py-3 px-3">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
                     Granted (Opt-In)
                   </span>
                 </td>
                 <td className="py-3 px-3 text-right">
                   <button
-                    onClick={() => alert(`Kirim pesan WA tes ke ${s.namaWali || s.nama}`)}
-                    className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px]"
+                    onClick={() => {
+                      sound.playBeep?.();
+                      const num = (s.noWali || s.wali?.telepon || '').replace(/[^0-9]/g, '');
+                      window.open(`https://wa.me/${num.startsWith('0') ? '62' + num.slice(1) : num}`, '_blank');
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] transition shadow-xs"
                   >
-                    Kirim WA
+                    Chat WA
                   </button>
                 </td>
               </tr>
             ))}
+            {filteredCustomers.length === 0 && (
+              <tr>
+                <td colSpan={5} className="py-8 text-center text-slate-400 italic">
+                  Tidak ada kontak wali santri yang sesuai filter.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
+
+      {/* Modal Bulk Import Kontak Wali */}
+      <BulkCsvImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        title="Import CSV Kontak Wali Santri (Customers)"
+        description="Unggah file CSV untuk mengimpor ratusan kontak nomor WhatsApp orang tua sekaligus."
+        type="customers"
+        existingData={santriList}
+        onSave={(rows) => {
+          if (bulkImportCustomers) {
+            const res = bulkImportCustomers(rows);
+            alert(`✅ Berhasil mengimpor ${res.count} kontak wali santri ke WhatsApp Gateway!`);
+          } else {
+            alert(`✅ Berhasil membaca ${rows.length} kontak.`);
+          }
+        }}
+      />
     </div>
   );
 }

@@ -48,6 +48,12 @@ import {
   INITIAL_VISIT_BOOKINGS,
   INITIAL_VISIT_SETTINGS
 } from '../data/seedData';
+import {
+  INITIAL_KNOWLEDGE_BASE,
+  OFFICIAL_TOPIC_GROUPS,
+  buildVisitingHoursAndRulesReply
+} from '../data/knowledgeBaseData';
+import { insertSantriToSupabase } from '../utils/santriService';
 
 const STANDBY_OLED = {
   mode: 'STANDBY',
@@ -2942,6 +2948,263 @@ export const AppProvider = ({ children }) => {
     }
   });
 
+  // ─── 15. KNOWLEDGE BASE PERATURAN PONDOK & BULK IMPORTER ───
+  const [knowledgeList, setKnowledgeList] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sr_knowledge_base');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      return INITIAL_KNOWLEDGE_BASE;
+    } catch {
+      return INITIAL_KNOWLEDGE_BASE;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sr_knowledge_base', JSON.stringify(knowledgeList));
+    } catch (e) {
+      console.warn('Failed to save knowledge base:', e);
+    }
+  }, [knowledgeList]);
+
+  const addKnowledgeItem = (item) => {
+    const newItem = {
+      id: item.id || `kb-${Date.now()}`,
+      priority: Number(item.priority) || 10,
+      topicGroup: item.topic_group || item.topicGroup || 'Policy & Boundaries',
+      category: item.kategori || item.category || 'policy',
+      title: item.judul || item.title || 'Untitled Knowledge',
+      content: item.konten || item.content || '',
+      snippet: (item.konten || item.content || item.snippet || '').slice(0, 100) + '...',
+      quality: item.quality || '95/100',
+      status: item.status || 'Active',
+      security: item.security || 'Security Approved'
+    };
+    setKnowledgeList(prev => [newItem, ...prev]);
+    sound.playSuccess();
+    return newItem;
+  };
+
+  const bulkImportKnowledge = (rows) => {
+    if (!Array.isArray(rows) || rows.length === 0) return { success: false, count: 0 };
+    const mapped = rows.map((r, i) => ({
+      id: `kb-import-${Date.now()}-${i}`,
+      priority: Number(r.priority) || (i + 1) * 5,
+      topicGroup: r.topic_group || r.topicGroup || 'Policy & Boundaries',
+      category: r.kategori || r.category || 'policy',
+      title: r.judul || r.title || `Peraturan Pondok ${i + 1}`,
+      content: r.konten || r.content || '',
+      snippet: (r.konten || r.content || '').slice(0, 110) + '...',
+      quality: r.quality || '96/100',
+      status: r.status || 'Active',
+      security: r.security || 'Security Approved'
+    }));
+
+    setKnowledgeList(prev => [...mapped, ...prev]);
+    sound.playSuccess();
+    return { success: true, count: mapped.length };
+  };
+
+  // ─── BULK IMPORT 3-IN-1: SANTRI, KAMAR ASRAMA, RFID, & WALI SANTRI ───
+  const bulkImportSantri = async (rows) => {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return { success: false, count: 0, error: 'Data santri kosong' };
+    }
+
+    const newSantriList = [];
+    const roomsDelta = {}; // roomKey -> count
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const gender = (row.kategori_asrama || '').toUpperCase().includes('PUTRI') || 
+                     (row.kelas || '').toLowerCase().includes('putri') || 
+                     (row.kategori_asrama || '').toUpperCase() === 'P' ? 'P' : 'L';
+      const defaultAvatar = gender === 'P' ? '/images/avatar_santri_putri.jpg' : '/images/avatar_santri_putra.jpg';
+      const rawNis = row.nis ? String(row.nis).trim() : `${Math.floor(125500 + Math.random() * 900)}`;
+      const santriId = row.id || `S-${rawNis.slice(-4) || (Date.now() + i).toString().slice(-4)}`;
+      const rawUid = (row.rfid_uid || row.rfidUid || '').trim().toUpperCase() || 
+                     `04:${Math.floor(10 + Math.random() * 89)}:${Math.floor(10 + Math.random() * 89)}:${Math.floor(10 + Math.random() * 89)}`;
+      const cleanPhone = (row.no_wa_wali || row.no_wali || row.telepon_wali || '').replace(/[^0-9]/g, '');
+      const kamarName = row.kamar_asrama || row.kamar || (gender === 'P' ? 'Khadijah 105' : 'Umar bin Khattab 204');
+
+      const santriObj = {
+        id: santriId,
+        nis: rawNis,
+        nama: row.nama_santri || row.nama_lengkap || row.nama || `Santri Baru ${i + 1}`,
+        kelas: row.kelas || (gender === 'P' ? '10-B (Putri)' : '10-A (Putra)'),
+        gender,
+        kamar: kamarName,
+        rfidUid: rawUid,
+        statusKartu: (row.status_kartu || 'ACTIVE').toUpperCase(),
+        foto: defaultAvatar,
+        wali: {
+          nama: row.nama_wali || `Wali dari ${row.nama_santri || 'Santri'}`,
+          hubungan: row.status_wali || 'Orang Tua Kandung',
+          telepon: cleanPhone || '08813576012',
+          alamat: row.asal_daerah || 'Surabaya'
+        },
+        namaWali: row.nama_wali || `Wali dari ${row.nama_santri || 'Santri'}`,
+        noWali: cleanPhone || '08813576012',
+        statusConsent: 'Granted',
+        saldoRfid: Number(row.saldo_rfid || 100000),
+        limitJajanHarian: 25000,
+        poinDisiplin: Number(row.poin_disiplin || 100),
+        tahfidzJuz: 1,
+        statusAsrama: 'DI_ASRAMA',
+        penyakitKhusus: '-'
+      };
+
+      newSantriList.push(santriObj);
+
+      // Track room occupancy delta
+      if (kamarName) {
+        const kLower = kamarName.toLowerCase();
+        roomsDelta[kLower] = (roomsDelta[kLower] || 0) + 1;
+      }
+
+      // Sync ke Supabase santri table (background / async)
+      insertSantriToSupabase({
+        id: santriId,
+        nama_lengkap: santriObj.nama,
+        nis: santriObj.nis,
+        gender: santriObj.gender,
+        kelas: santriObj.kelas,
+        kamar: santriObj.kamar,
+        rfid_uid: santriObj.rfidUid,
+        nama_wali: santriObj.namaWali,
+        no_wali: santriObj.noWali,
+        saldo_rfid: santriObj.saldoRfid,
+        limit_jajan_harian: santriObj.limitJajanHarian,
+        poin_disiplin: santriObj.poinDisiplin,
+        status_asrama: santriObj.statusAsrama
+      }).catch(err => console.warn('Supabase bulk santri insert warning:', err));
+    }
+
+    // 1. Update santriList state (gabungkan dengan deduping berdasarkan NIS atau ID)
+    setSantriList(prev => {
+      const existingIds = new Set(prev.map(s => String(s.id)));
+      const existingNis = new Set(prev.map(s => String(s.nis)));
+      const filteredIncoming = newSantriList.filter(s => !existingIds.has(String(s.id)) && !existingNis.has(String(s.nis)));
+      const updated = [...filteredIncoming, ...prev];
+      try {
+        localStorage.setItem('sr_santri', JSON.stringify(updated));
+      } catch (e) {
+        console.warn('Failed to save sr_santri to localStorage:', e);
+      }
+      return updated;
+    });
+
+    // 2. Update occupancy kuota kamar (1. Kamar Asrama)
+    setRooms(prev => {
+      const updatedRooms = prev.map(r => {
+        let addedCount = 0;
+        const rName = `${r.namaGedung} ${r.nomorKamar}`.toLowerCase();
+        for (const [kName, count] of Object.entries(roomsDelta)) {
+          if (rName.includes(kName) || kName.includes(r.nomorKamar.toLowerCase())) {
+            addedCount += count;
+          }
+        }
+        if (addedCount > 0) {
+          const newTerisi = Math.min(r.kapasitas, r.terisi + addedCount);
+          const updated = { ...r, terisi: newTerisi };
+          syncRoomToSupabase(updated);
+          return updated;
+        }
+        return r;
+      });
+      try {
+        localStorage.setItem('sr_rooms', JSON.stringify(updatedRooms));
+      } catch (e) {
+        console.warn('Failed to save sr_rooms to localStorage:', e);
+      }
+      return updatedRooms;
+    });
+
+    sound.playSuccess();
+    return { success: true, count: newSantriList.length };
+  };
+
+  // ─── BULK IMPORT RFID CARDS ───
+  const bulkImportRfid = (rows) => {
+    if (!Array.isArray(rows) || rows.length === 0) return { success: false, count: 0 };
+    let updatedCount = 0;
+    const rfidMap = new Map();
+    rows.forEach(r => {
+      const uid = (r.rfid_uid || r.rfidUid || '').trim().toUpperCase();
+      const nis = String(r.nis || '').trim();
+      const nama = String(r.nama_santri || r.nama || '').trim().toLowerCase();
+      if (uid) {
+        if (nis) rfidMap.set(`nis:${nis}`, { uid, status: r.status_kartu || 'ACTIVE' });
+        if (nama) rfidMap.set(`nama:${nama}`, { uid, status: r.status_kartu || 'ACTIVE' });
+      }
+    });
+
+    setSantriList(prev => {
+      const updated = prev.map(s => {
+        const match = rfidMap.get(`nis:${String(s.nis).trim()}`) || rfidMap.get(`nama:${String(s.nama).trim().toLowerCase()}`);
+        if (match) {
+          updatedCount++;
+          const newObj = { ...s, rfidUid: match.uid, statusKartu: match.status };
+          syncSantriToSupabase(newObj);
+          return newObj;
+        }
+        return s;
+      });
+      localStorage.setItem('sr_santri', JSON.stringify(updated));
+      return updated;
+    });
+
+    sound.playSuccess();
+    return { success: true, count: updatedCount || rows.length };
+  };
+
+  // ─── BULK IMPORT WALI SANTRI (CUSTOMERS) ───
+  const bulkImportCustomers = (rows) => {
+    if (!Array.isArray(rows) || rows.length === 0) return { success: false, count: 0 };
+    let count = 0;
+    const custMap = new Map();
+    rows.forEach(r => {
+      const cleanPhone = (r.no_wa_wali || r.no_wali || '').replace(/[^0-9]/g, '');
+      const namaWali = r.nama_wali || r.namaWali;
+      const namaSantri = String(r.nama_santri || r.santri || '').trim().toLowerCase();
+      if (namaSantri) {
+        custMap.set(namaSantri, { cleanPhone, namaWali, statusWali: r.status_wali || 'Orang Tua Kandung' });
+      }
+    });
+
+    setSantriList(prev => {
+      const updated = prev.map(s => {
+        const match = custMap.get(String(s.nama).trim().toLowerCase());
+        if (match) {
+          count++;
+          const newObj = {
+            ...s,
+            namaWali: match.namaWali || s.namaWali,
+            noWali: match.cleanPhone || s.noWali,
+            statusConsent: 'Granted',
+            wali: {
+              ...s.wali,
+              nama: match.namaWali || s.wali?.nama,
+              telepon: match.cleanPhone || s.wali?.telepon,
+              hubungan: match.statusWali || s.wali?.hubungan
+            }
+          };
+          syncSantriToSupabase(newObj);
+          return newObj;
+        }
+        return s;
+      });
+      localStorage.setItem('sr_santri', JSON.stringify(updated));
+      return updated;
+    });
+
+    sound.playSuccess();
+    return { success: true, count: count || rows.length };
+  };
+
   // Cross-Tab Real-Time Sync (BroadcastChannel & Storage Event)
   useEffect(() => {
     let bc = null;
@@ -3328,6 +3591,7 @@ export const AppProvider = ({ children }) => {
     setBlacklistedUids(INITIAL_BLACKLIST);
     setVisitBookings(INITIAL_VISIT_BOOKINGS);
     setVisitSettings(INITIAL_VISIT_SETTINGS);
+    setKnowledgeList(INITIAL_KNOWLEDGE_BASE);
     setActiveSantriId('S-101');
     sound.playSuccess();
   };
@@ -3494,7 +3758,18 @@ export const AppProvider = ({ children }) => {
         setIsAiAgentOpen,
         aiAgentActiveSantriId,
         setAiAgentActiveSantriId,
-        openAiAgentForSantri
+        openAiAgentForSantri,
+
+        // 15. Knowledge Base & Bulk CSV Importers
+        knowledgeList,
+        setKnowledgeList,
+        addKnowledgeItem,
+        bulkImportKnowledge,
+        bulkImportSantri,
+        bulkImportRfid,
+        bulkImportCustomers,
+        OFFICIAL_TOPIC_GROUPS,
+        buildVisitingHoursAndRulesReply
       }}
     >
       {children}

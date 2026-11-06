@@ -64,8 +64,17 @@ export default async function handler(req, res) {
 
     const waktuSekarangStr = `${rtc.namaHari}, ${rtc.tanggalLengkap} • ${rtc.jamMenitDetik} WITA`;
 
+    // Validasi Jam Operasional Kunjungan
+    let hoursWarning = '';
+    const [h, m] = (extracted.jam_kunjungan || '14:00').split(':').map(v => parseInt(v, 10) || 0);
+    const timeMinutes = h * 60 + m;
+
     if (isWeekday) {
-      // SENIN - KAMIS (WEEKDAY): MENUNGGU APPROVAL ADMIN RI'AYAH (TIDAK ADA BARCODE AWAL)
+      // Weekday (Senin-Kamis): Sesi Sore 14.00 - 16.30 WITA (840 - 990 min)
+      if (timeMinutes < 840 || timeMinutes > 990) {
+        hoursWarning = `\n\n⚠️ *Catatan Jadwal:* Jam kunjungan yang diajukan (${extracted.jam_kunjungan}) di luar jam sambang hari kerja (14.00–16.30 WITA ba'da KBM). Permohonan diteruskan ke Admin untuk pertimbangan izin khusus.`;
+      }
+
       approvalType = 'MANUAL_WEEKDAY';
       statusKunjungan = 'Menunggu Approval';
       barcodeToken = null;
@@ -73,22 +82,28 @@ export default async function handler(req, res) {
       replyWaText = `⏳ *[PERMOHONAN KUNJUNGAN TERCATAT - HARI KERJA]*\n` +
         `Assalamu'alaikum Wr. Wb. Bapak/Ibu *${extracted.nama_penjenguk}*.\n\n` +
         `Permohonan kunjungan Anda pada hari kerja (*${hariKunjunganNormalized}, ${extracted.tanggal_kunjungan}*) telah dicatat oleh sistem Smart Riayah dan sedang *MENUNGGU PERSETUJUAN* Admin Ri'ayah.\n\n` +
-        `Santri: *${extracted.nama_santri}* (${extracted.kelas})\n` +
-        `Jadwal: *${extracted.jam_kunjungan} - ${extracted.jam_selesai} WIB*\n` +
-        `Titipan: *${extracted.titipan_barang || '-'}* (${extracted.berat_barang_kg || 0} Kg)\n\n` +
-        `Barcode kunjungan resmi akan dikirimkan ke nomor WhatsApp ini setelah disetujui.`;
+        `• Santri: *${extracted.nama_santri}* (${extracted.kelas})\n` +
+        `• Jadwal: *${extracted.jam_kunjungan} - ${extracted.jam_selesai} WITA*\n` +
+        `• Titipan: *${extracted.titipan_barang || '-'}* (${extracted.berat_barang_kg || 0} Kg)\n\n` +
+        `⚖️ *Tata Tertib:* Batas titipan maksimal *5 Kg* (wajib ditimbang di Pos Satpam). E-Barcode resmi akan dikirimkan otomatis ke WhatsApp ini segera setelah disetujui Admin Ri'ayah.` + hoursWarning;
     } else {
-      // JUMAT - MINGGU (WEEKEND): AUTO-APPROVED + BARCODE GATE PASS INSTAN
+      // Weekend (Jumat-Minggu): Sesi 1 (08.30 - 11.30 WITA) & Sesi 2 (13.30 - 16.30 WITA)
+      const inSesi1 = timeMinutes >= 510 && timeMinutes <= 690;
+      const inSesi2 = timeMinutes >= 810 && timeMinutes <= 990;
+      if (!inSesi1 && !inSesi2) {
+        hoursWarning = `\n\n⚠️ *Catatan Jadwal:* Jam kunjungan (${extracted.jam_kunjungan}) di luar sesi resmi akhir pekan (Sesi 1: 08.30–11.30 WITA & Sesi 2: 13.30–16.30 WITA). Mohon sesuaikan ketibaan di gerbang.`;
+      }
+
       approvalType = 'AUTO_WEEKEND';
       statusKunjungan = 'Disetujui (Auto-Approved Weekend)';
       barcodeToken = `GP-DU-${cleanSantriName}-${Math.floor(1000 + Math.random() * 9000)}`;
 
       replyWaText = `✅ *[BOOKING KUNJUNGAN DISETUJUI OTOMATIS - WEEKEND]*\n` +
         `Assalamu'alaikum Wr. Wb. Bapak/Ibu *${extracted.nama_penjenguk}*.\n\n` +
-        `Permohonan sambangan santri *${extracted.nama_santri}* (${extracted.kelas}) pada hari *${hariKunjunganNormalized}, ${extracted.tanggal_kunjungan}* pukul *${extracted.jam_kunjungan} - ${extracted.jam_selesai} WIB* telah *DISETUJUI OTOMATIS*.\n\n` +
-        `📦 *Titipan Barang:* ${extracted.titipan_barang || '-'} (${extracted.berat_barang_kg || 0} Kg)\n` +
+        `Permohonan sambangan santri *${extracted.nama_santri}* (${extracted.kelas}) pada hari *${hariKunjunganNormalized}, ${extracted.tanggal_kunjungan}* pukul *${extracted.jam_kunjungan} - ${extracted.jam_selesai} WITA* telah *DISETUJUI OTOMATIS*.\n\n` +
+        `📦 *Titipan Barang:* ${extracted.titipan_barang || '-'} (${extracted.berat_barang_kg || 0} Kg - Batas Max 5 Kg)\n` +
         `🎫 *Barcode Gate Pass:* *${barcodeToken}*\n\n` +
-        `Silakan tunjukkan barcode/pesan ini ke Satpam saat tiba di Gerbang Utama Pesantren Modern Darul Ulum.`;
+        `⚖️ *Tata Tertib:* Wajib menunjukkan Barcode ini atau *Tap Kartu RFID* di Pos Jaga Satpam saat tiba di Gerbang Utama. Durasi maksimal kunjungan 90 menit.` + hoursWarning;
     }
 
     const bookingRecord = {
