@@ -418,17 +418,29 @@ export async function syncRoomToSupabase(room) {
   try {
     const payload = roomToDb(room);
     if (!payload) return;
-    const { error } = await supabase.from('rooms').upsert([payload], { onConflict: 'id' });
-    if (error) console.warn('⚠️ [Supabase Sync Room (rooms)]:', error.message);
 
-    // Sync juga ke tabel 'kamar' di Supabase (kompatibilitas dual-table)
-    await supabase.from('kamar').upsert([{
+    // 1. Coba upsert ke tabel 'rooms'
+    const { error: upsertErr } = await supabase.from('rooms').upsert([payload], { onConflict: 'id' });
+    if (upsertErr) {
+      console.warn('⚠️ [Supabase Upsert rooms failed, retrying update]:', upsertErr.message);
+      // Fallback coba update
+      await supabase.from('rooms').update(payload).eq('id', payload.id).catch(() => {});
+    }
+
+    // 2. Sync ke tabel 'kamar' di Supabase (kompatibilitas dual-table)
+    const kamarPayload = {
       nama_kamar: `${payload.nomor_kamar} - Lt. ${payload.lantai}`,
       asrama: payload.nama_gedung,
+      lantai: payload.lantai,
       kapasitas: payload.kapasitas,
+      terisi: payload.terisi,
       ketua: payload.ketua_kamar,
-      catatan: `Keterisian: ${payload.terisi} / ${payload.kapasitas} Kasur. ${payload.catatan_inspeksi}`
-    }]).catch(() => {});
+      catatan: `Keterisian: ${payload.terisi} / ${payload.kapasitas} Kasur (${Math.round((payload.terisi / Math.max(1, payload.kapasitas)) * 100)}%). ${payload.catatan_inspeksi}`,
+      updated_at: new Date().toISOString()
+    };
+
+    // Coba update berdasarkan nama_kamar atau kamar_id
+    await supabase.from('kamar').update(kamarPayload).ilike('nama_kamar', `%${payload.nomor_kamar}%`).catch(() => {});
   } catch (err) {
     console.warn('⚠️ [Supabase Sync Room Error]:', err);
   }

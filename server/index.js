@@ -168,6 +168,94 @@ app.get('/api/santri', async (req, res) => {
 });
 
 // -------------------------------------------------------------------------------------
+// 1B. DATA MASTER: ROOMS & KAMAR (Sinkronisasi Otomatis PostgreSQL / pgAdmin)
+// -------------------------------------------------------------------------------------
+app.get('/api/rooms', async (req, res) => {
+  try {
+    const result = await query(
+      'SELECT id, nama_gedung, kategori_gedung, nomor_kamar, lantai, kapasitas, terisi, ketua_kamar, skor_kerapian_terakhir, jadwal_piket_hari_ini, catatan_inspeksi, created_at, updated_at FROM rooms ORDER BY id ASC'
+    );
+    res.json({
+      success: true,
+      total: result.rowCount,
+      data: result.rows
+    });
+  } catch (err) {
+    console.error('❌ [GET /api/rooms Error]:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/rooms', async (req, res) => {
+  try {
+    const r = req.body;
+    if (!r || !r.id) {
+      return res.status(400).json({ success: false, message: 'ID Kamar wajib disertakan' });
+    }
+
+    const id = String(r.id);
+    const namaGedung = r.namaGedung || r.nama_gedung || 'Asrama Santri';
+    const kategoriGedung = r.kategoriGedung || r.kategori_gedung || 'PUTRA';
+    const nomorKamar = r.nomorKamar || r.nomor_kamar || id;
+    const lantai = parseInt(r.lantai || 1, 10);
+    const kapasitas = parseInt(r.kapasitas || 8, 10);
+    const terisi = parseInt(r.terisi !== undefined ? r.terisi : 0, 10);
+    const ketuaKamar = r.ketuaKamar || r.ketua_kamar || 'Belum Ditentukan';
+    const catatanInspeksi = r.catatanInspeksi || r.catatan_inspeksi || 'Kamar siap huni.';
+    const skorKerapian = parseInt(r.skorKerapianTerakhir ?? r.skor_kerapian_terakhir ?? 90, 10);
+    const jadwalPiket = r.jadwalPiketHariIni || r.jadwal_piket_hari_ini || 'Jadwal Reguler';
+
+    // 1. Upsert tabel rooms di PostgreSQL
+    const sqlRooms = `
+      INSERT INTO rooms (
+        id, nama_gedung, kategori_gedung, nomor_kamar, lantai, kapasitas, terisi, ketua_kamar, skor_kerapian_terakhir, jadwal_piket_hari_ini, catatan_inspeksi, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
+      ON CONFLICT (id) DO UPDATE SET
+        nama_gedung = EXCLUDED.nama_gedung,
+        kategori_gedung = EXCLUDED.kategori_gedung,
+        nomor_kamar = EXCLUDED.nomor_kamar,
+        lantai = EXCLUDED.lantai,
+        kapasitas = EXCLUDED.kapasitas,
+        terisi = EXCLUDED.terisi,
+        ketua_kamar = EXCLUDED.ketua_kamar,
+        catatan_inspeksi = EXCLUDED.catatan_inspeksi,
+        updated_at = CURRENT_TIMESTAMP
+      RETURNING *;
+    `;
+    const resRooms = await query(sqlRooms, [
+      id, namaGedung, kategoriGedung, nomorKamar, lantai, kapasitas, terisi, ketuaKamar, skorKerapian, jadwalPiket, catatanInspeksi
+    ]);
+
+    // 2. Sync juga ke tabel kamar di PostgreSQL
+    const sqlKamar = `
+      UPDATE kamar SET
+        nama_kamar = $1,
+        asrama = $2,
+        lantai = $3,
+        kapasitas = $4,
+        terisi = $5,
+        ketua = $6,
+        catatan = $7,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE kamar_id = $8 OR id::text = $8;
+    `;
+    await query(sqlKamar, [
+      nomorKamar, namaGedung, lantai, kapasitas, terisi, ketuaKamar, catatanInspeksi, id
+    ]).catch(e => console.warn('Sync kamar table warning:', e.message));
+
+    console.log(`✅ [PostgreSQL] Kamar ${id} (${nomorKamar}) berhasil disimpan otomatis ke pgAdmin & database.`);
+    return res.json({
+      success: true,
+      message: `Kamar ${id} berhasil diperbarui di database PostgreSQL`,
+      data: resRooms.rows[0]
+    });
+  } catch (err) {
+    console.error('❌ [POST /api/rooms Error]:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// -------------------------------------------------------------------------------------
 // 2. DATA MASTER: USERS (PENGGUNA / EVALUATOR)
 // -------------------------------------------------------------------------------------
 app.get('/api/users', async (req, res) => {

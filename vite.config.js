@@ -95,6 +95,10 @@ export default defineConfig({
     port: 3000,
     open: false,
     proxy: {
+      '/api/rooms': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      },
       '/api/evaluasi': {
         target: 'http://localhost:5000',
         changeOrigin: true

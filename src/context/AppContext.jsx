@@ -619,7 +619,49 @@ export const AppProvider = ({ children }) => {
       .then((remoteData) => {
         if (!isMounted || !remoteData) return;
         if (remoteData.santriList?.length) setSantriList(remoteData.santriList);
-        if (remoteData.rooms?.length) setRooms(remoteData.rooms);
+        if (remoteData.rooms?.length) {
+          setRooms(prev => {
+            const saved = localStorage.getItem('sr_rooms');
+            if (!saved) return remoteData.rooms;
+            try {
+              const localRooms = JSON.parse(saved);
+              if (!Array.isArray(localRooms) || localRooms.length === 0) return remoteData.rooms;
+              return remoteData.rooms.map(remote => {
+                const local = localRooms.find(l => String(l.id) === String(remote.id));
+                if (!local) return remote;
+                if (local.updated_at && (!remote.updated_at || new Date(local.updated_at) >= new Date(remote.updated_at))) {
+                  return { ...remote, ...local };
+                }
+                return remote;
+              });
+            } catch {
+              return remoteData.rooms;
+            }
+          });
+        }
+        // Ambil data kamar dari backend lokal (PostgreSQL / pgAdmin) jika server aktif
+        fetch('/api/rooms')
+          .then(res => res.json())
+          .then(resData => {
+            if (resData?.success && Array.isArray(resData?.data) && resData.data.length > 0) {
+              console.log('📦 [AppContext] Data kamar berhasil disinkronkan dari PostgreSQL pgAdmin:', resData.data.length);
+              setRooms(resData.data.map(r => ({
+                id: r.id,
+                namaGedung: r.nama_gedung,
+                kategoriGedung: r.kategori_gedung,
+                nomorKamar: r.nomor_kamar,
+                lantai: r.lantai,
+                kapasitas: r.kapasitas,
+                terisi: r.terisi,
+                ketuaKamar: r.ketua_kamar,
+                skorKerapianTerakhir: r.skor_kerapian_terakhir,
+                jadwalPiketHariIni: r.jadwal_piket_hari_ini,
+                catatanInspeksi: r.catatan_inspeksi,
+                updated_at: r.updated_at
+              })));
+            }
+          })
+          .catch(() => {});
         if (remoteData.permits?.length) setPermits(remoteData.permits);
         if (remoteData.gateLogs?.length) setGateLogs(remoteData.gateLogs);
         if (remoteData.disciplineRecords?.length) setDisciplineRecords(remoteData.disciplineRecords);
@@ -2531,14 +2573,31 @@ export const AppProvider = ({ children }) => {
     const cap = parseInt(newCapacity);
     if (isNaN(cap) || cap < 1) return;
     const existing = rooms.find(r => r.id === roomId) || {};
-    const fullRoom = { ...existing, id: roomId, kapasitas: cap };
+    const fullRoom = { 
+      ...existing, 
+      id: roomId, 
+      kapasitas: cap,
+      updated_at: new Date().toISOString()
+    };
+    
+    // 1. Simpan ke Supabase & Firebase
     syncRoomToSupabase(fullRoom);
+
+    // 2. Simpan ke database PostgreSQL / pgAdmin lokal
     fetch('/api/rooms', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(fullRoom)
-    }).catch(() => {});
-    setRooms(prev => prev.map(r => (r.id === roomId ? fullRoom : r)));
+    }).then(res => res.json()).then(data => {
+      console.log('✅ [AppContext] Kapasitas kamar tersimpan ke PostgreSQL:', roomId, data);
+    }).catch(err => console.warn('⚠️ Gagal simpan ke PostgreSQL:', err.message));
+
+    // 3. Update state lokal & localStorage
+    setRooms(prev => {
+      const next = prev.map(r => (r.id === roomId ? fullRoom : r));
+      try { localStorage.setItem('sr_rooms', JSON.stringify(next)); } catch {}
+      return next;
+    });
     sound.playSuccess();
   };
 
@@ -2553,15 +2612,28 @@ export const AppProvider = ({ children }) => {
       kapasitas: updatedData.kapasitas !== undefined ? Math.max(1, parseInt(updatedData.kapasitas) || 1) : existing.kapasitas,
       ketuaKamar: updatedData.ketuaKamar !== undefined ? updatedData.ketuaKamar : existing.ketuaKamar,
       catatanInspeksi: updatedData.catatanInspeksi !== undefined ? updatedData.catatanInspeksi : existing.catatanInspeksi,
-      terisi: updatedData.terisi !== undefined ? parseInt(updatedData.terisi, 10) : (existing.terisi || 0)
+      terisi: updatedData.terisi !== undefined ? parseInt(updatedData.terisi, 10) : (existing.terisi || 0),
+      updated_at: new Date().toISOString()
     };
+
+    // 1. Simpan ke Supabase & Firebase
     syncRoomToSupabase(fullRoom);
+
+    // 2. Simpan ke database PostgreSQL / pgAdmin lokal
     fetch('/api/rooms', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(fullRoom)
-    }).catch(() => {});
-    setRooms(prev => prev.map(r => r.id === roomId ? fullRoom : r));
+    }).then(res => res.json()).then(data => {
+      console.log('✅ [AppContext] Data kamar berhasil tersimpan otomatis ke PostgreSQL:', roomId, data);
+    }).catch(err => console.warn('⚠️ Gagal simpan ke PostgreSQL:', err.message));
+
+    // 3. Update state lokal & localStorage
+    setRooms(prev => {
+      const next = prev.map(r => r.id === roomId ? fullRoom : r);
+      try { localStorage.setItem('sr_rooms', JSON.stringify(next)); } catch {}
+      return next;
+    });
     sound.playSuccess();
   };
 
