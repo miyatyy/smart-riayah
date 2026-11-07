@@ -4,6 +4,12 @@ import { sound } from '../utils/audio';
 import { webSerial } from '../utils/webSerial';
 import { DEFAULT_DEEPSEEK_TOKEN, testDeepSeekConnection } from '../utils/deepseekApi';
 import { getRealtimePondokClock } from '../utils/pondokTimeUtils';
+import {
+  generateBarcodeToken,
+  getGatePassDirectUrl,
+  getVisitGatePassUrls,
+  getGatePassTokenFromUrl
+} from '../utils/barcodeUtils';
 import { deleteRoomData } from '../utils/roomService';
 import { deleteSantriData } from '../utils/santriService';
 import { supabase } from '../utils/supabaseClient';
@@ -180,6 +186,39 @@ export const AppProvider = ({ children }) => {
   });
 
   const [loginRoleTarget, setLoginRoleTarget] = useState(null);
+
+  // Direct Gate Pass Token Handler (?gatepass=SR-... / /gate-pass/SR-...)
+  const [activeGatePassToken, setActiveGatePassToken] = useState(() => {
+    return getGatePassTokenFromUrl();
+  });
+
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const token = getGatePassTokenFromUrl();
+      if (token) {
+        setActiveGatePassToken(token);
+      }
+    };
+    window.addEventListener('popstate', handleUrlChange);
+    return () => window.removeEventListener('popstate', handleUrlChange);
+  }, []);
+
+  const openGatePass = (token) => {
+    if (!token) return;
+    setActiveGatePassToken(token);
+    try {
+      const newUrl = `${window.location.origin}/?gatepass=${encodeURIComponent(token)}`;
+      window.history.pushState({ gatepass: token }, '', newUrl);
+    } catch (e) {}
+  };
+
+  const clearGatePassToken = () => {
+    setActiveGatePassToken(null);
+    try {
+      const cleanUrl = window.location.origin + window.location.pathname;
+      window.history.replaceState({}, '', cleanUrl);
+    } catch (e) {}
+  };
 
   // 2. Role State: 'superadmin' | 'admin_riayah' | 'parent' | 'musyrif' | 'security' | 'poskestren' | 'kyai'
   const [role, setRole] = useState(() => {
@@ -3408,18 +3447,22 @@ export const AppProvider = ({ children }) => {
     if (bookingData.booking_source === 'MANUAL_SATPAM') {
       approvalType = isWeekend ? 'AUTO_WEEKEND' : 'MANUAL_WEEKDAY';
       statusKunjungan = bookingData.status_kunjungan || (isWeekend ? 'Disetujui (Siap Datang)' : 'Sedang Berkunjung');
-      barcodeToken = `GP-DU-${cleanSantriName}-${Math.floor(1000 + Math.random() * 9000)}`;
+      barcodeToken = bookingData.barcode_token || generateBarcodeToken(cleanSantriName);
       waktuDisetujui = clock.timestamp_iso;
     } else if (isWeekend && visitSettings.auto_approve_weekend) {
       approvalType = 'AUTO_WEEKEND';
       statusKunjungan = 'Disetujui (Siap Datang)';
-      barcodeToken = `GP-DU-${cleanSantriName}-${Math.floor(1000 + Math.random() * 9000)}`;
+      barcodeToken = bookingData.barcode_token || generateBarcodeToken(cleanSantriName);
       waktuDisetujui = clock.timestamp_iso;
     } else {
       approvalType = 'MANUAL_WEEKDAY';
       statusKunjungan = 'Menunggu Approval';
       barcodeToken = null;
     }
+
+    const { qrCodeUrl: initialQrUrl, linearBarcodeUrl: initialBarcodeUrl, gatePassUrl: initialGatePassUrl } = barcodeToken
+      ? getVisitGatePassUrls(barcodeToken)
+      : {};
 
     const newBooking = {
       id: bookingId,
@@ -3439,6 +3482,9 @@ export const AppProvider = ({ children }) => {
       no_wa_penjenguk: bookingData.no_wa_penjenguk || fonnteTargetNumber || '081234567890',
       rfid_uid: bookingData.rfid_uid || null,
       barcode_token: barcodeToken,
+      barcode_image_url: initialQrUrl || null,
+      barcode_linear_url: initialBarcodeUrl || null,
+      gate_pass_url: initialGatePassUrl || null,
       approval_type: approvalType,
       status_kunjungan: statusKunjungan,
       waktu_chat_masuk: bookingData.waktu_chat_masuk || clock.timestamp_iso,
@@ -3465,17 +3511,17 @@ export const AppProvider = ({ children }) => {
     const targetPhone = newBooking.no_wa_penjenguk;
     if (newBooking.booking_source?.includes('WHATSAPP')) {
       if (statusKunjungan === 'Disetujui (Siap Datang)') {
-        const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(barcodeToken)}&format=png`;
-        const barcode128Url = `https://quickchart.io/barcode?type=code128&text=${encodeURIComponent(barcodeToken)}&includeText=true&height=75`;
-        newBooking.barcode_image_url = qrImageUrl;
-        newBooking.barcode_linear_url = barcode128Url;
+        const { qrCodeUrl, linearBarcodeUrl, gatePassUrl } = getVisitGatePassUrls(barcodeToken);
+        newBooking.barcode_image_url = qrCodeUrl;
+        newBooking.barcode_linear_url = linearBarcodeUrl;
+        newBooking.gate_pass_url = gatePassUrl;
 
         sendWhatsAppNotification(
           `${newBooking.nama_penjenguk} (Wali ${newBooking.nama_santri})`,
           targetPhone,
           'VISIT_AUTO_APPROVED',
-          `✅ *[BOOKING KUNJUNGAN DISETUJUI OTOMATIS - WEEKEND]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${newBooking.nama_penjenguk}*.\n\nPermohonan sambangan ananda *${newBooking.nama_santri}* (${newBooking.kelas}) pada hari *${hari}, ${tgl}* pukul *${newBooking.jam_kunjungan} - ${newBooking.jam_selesai} WIB* telah *DISETUJUI OTOMATIS*.\n\n📦 *Titipan Barang:* ${newBooking.titipan_barang} (${newBooking.berat_barang_kg} Kg)\n🎫 *Kode Pass Resmi:* *${barcodeToken}*\n\n📷 *Gambar Barcode Gate Pass (Bisa Di-scan):*\n${qrImageUrl}\n\nSilakan simpan gambar QR Code / Barcode yang kami lampirkan di pesan ini dan perlihatkan ke Satpam di Gerbang Utama Pesantren Modern Darul Ulum untuk di-scan saat tiba di pondok.`,
-          qrImageUrl
+          `✅ *[BOOKING KUNJUNGAN DISETUJUI OTOMATIS - WEEKEND]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${newBooking.nama_penjenguk}*.\n\nPermohonan sambangan ananda *${newBooking.nama_santri}* (${newBooking.kelas}) pada hari *${hari}, ${tgl}* pukul *${newBooking.jam_kunjungan} - ${newBooking.jam_selesai} WIB* telah *DISETUJUI OTOMATIS*.\n\n📦 *Titipan Barang:* ${newBooking.titipan_barang} (${newBooking.berat_barang_kg} Kg)\n🎫 *Nomor Kupon Resmi:* *${barcodeToken}*\n\n🔗 *Link Kupon & Status Scan (Bisa Diklik Langsung):*\n${gatePassUrl}\n\n📷 *Gambar Kupon QR Gate Pass (Bisa Di-scan Kamera HP):*\n${qrCodeUrl}\n\nSilakan klik link di atas atau perlihatkan kupon QR Code kepada Satpam di Gerbang Utama Pesantren Modern Darul Ulum untuk verifikasi scan saat tiba di pondok.`,
+          qrCodeUrl
         );
       } else {
         sendWhatsAppNotification(
@@ -3497,16 +3543,16 @@ export const AppProvider = ({ children }) => {
 
     const clock = getRealtimePondokClock();
     const cleanSantriName = (booking.nama_santri || 'Santri').replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase();
-    const barcodeToken = booking.barcode_token || `GP-DU-${cleanSantriName}-${Math.floor(1000 + Math.random() * 9000)}`;
-    const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(barcodeToken)}&format=png`;
-    const barcode128Url = `https://quickchart.io/barcode?type=code128&text=${encodeURIComponent(barcodeToken)}&includeText=true&height=75`;
+    const barcodeToken = booking.barcode_token || generateBarcodeToken(cleanSantriName);
+    const { qrCodeUrl, linearBarcodeUrl, gatePassUrl } = getVisitGatePassUrls(barcodeToken);
 
     const updatedBooking = {
       ...booking,
       status_kunjungan: 'Disetujui (Siap Datang)',
       barcode_token: barcodeToken,
-      barcode_image_url: qrImageUrl,
-      barcode_linear_url: barcode128Url,
+      barcode_image_url: qrCodeUrl,
+      barcode_linear_url: linearBarcodeUrl,
+      gate_pass_url: gatePassUrl,
       waktu_disetujui: clock.timestamp_iso
     };
 
@@ -3522,8 +3568,8 @@ export const AppProvider = ({ children }) => {
       `${booking.nama_penjenguk} (Wali ${booking.nama_santri})`,
       booking.no_wa_penjenguk,
       'VISIT_APPROVED_ADMIN',
-      `🎉 *[PERMOHONAN KUNJUNGAN DISETUJUI ADMIN RI'AYAH]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${booking.nama_penjenguk}*.\n\nPermohonan kunjungan ananda *${booking.nama_santri}* (${booking.kelas}) untuk hari *${booking.hari_kunjungan}, ${booking.tanggal_kunjungan}* pukul *${booking.jam_kunjungan} - ${booking.jam_selesai} WIB* telah *DISETUJUI* oleh Admin Ri'ayah Pondok.\n\n📦 *Titipan Barang:* ${booking.titipan_barang} (${booking.berat_barang_kg} Kg)\n🎫 *Kode Pass Resmi:* *${barcodeToken}*\n\n📷 *Gambar Barcode Gate Pass (Bisa Di-scan):*\n${qrImageUrl}\n\nSilakan simpan gambar QR Code / Barcode yang kami lampirkan di pesan ini dan tunjukkan kepada Satpam di Pos Gerbang untuk verifikasi check-in masuk pondok.`,
-      qrImageUrl
+      `🎉 *[PERMOHONAN KUNJUNGAN DISETUJUI ADMIN RI'AYAH]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${booking.nama_penjenguk}*.\n\nPermohonan kunjungan ananda *${booking.nama_santri}* (${booking.kelas}) untuk hari *${booking.hari_kunjungan}, ${booking.tanggal_kunjungan}* pukul *${booking.jam_kunjungan} - ${booking.jam_selesai} WIB* telah *DISETUJUI* oleh Admin Ri'ayah Pondok.\n\n📦 *Titipan Barang:* ${booking.titipan_barang} (${booking.berat_barang_kg} Kg)\n🎫 *Nomor Kupon Resmi:* *${barcodeToken}*\n\n🔗 *Link Kupon & Status Scan (Bisa Diklik Langsung):*\n${gatePassUrl}\n\n📷 *Gambar Kupon QR Gate Pass (Bisa Di-scan Kamera HP):*\n${qrCodeUrl}\n\nSilakan klik link di atas atau perlihatkan kupon QR Code kepada Satpam di Pos Gerbang untuk verifikasi check-in masuk pondok.`,
+      qrCodeUrl
     );
 
     // Sinkronkan ke Supabase & siarkan update
@@ -3739,6 +3785,105 @@ export const AppProvider = ({ children }) => {
     return { success: false, message: '⛔ KARTU RFID TIDAK TERDAFTAR DI DATABASE PONDOK' };
   };
 
+  const verifyAndScanTicket = (token) => {
+    if (!token) return { success: false, message: 'Kode kupon gate pass tidak valid' };
+    const clean = String(token).trim().toUpperCase();
+    const clock = getRealtimePondokClock();
+    const formattedScanTime = `${clock.nama_hari}, ${clock.tanggal_lengkap} • ${clock.jam_menit_detik} WITA`;
+
+    // Cari booking berdasarkan barcode_token, id, atau substring
+    let booking = visitBookings.find(b => 
+      (b.barcode_token && b.barcode_token.toUpperCase() === clean) ||
+      (b.id && b.id.toUpperCase() === clean) ||
+      (b.barcode_token && clean.includes(b.barcode_token.toUpperCase())) ||
+      (b.barcode_token && b.barcode_token.toUpperCase().includes(clean))
+    );
+
+    if (!booking) {
+      return {
+        success: false,
+        message: '⛔ TIKET TIDAK DITEMUKAN / KODE KUPON TIDAK TERDAFTAR',
+        booking: null,
+        isApproved: false
+      };
+    }
+
+    if (booking.status_kunjungan === 'Menunggu Approval') {
+      return {
+        success: false,
+        message: '⏳ MENUNGGU APPROVAL ADMIN RI\'AYAH (KUNJUNGAN HARI KERJA)',
+        booking,
+        isPending: true,
+        isApproved: false
+      };
+    }
+
+    if (booking.status_kunjungan === 'Ditolak') {
+      return {
+        success: false,
+        message: '⛔ PERMOHONAN KUNJUNGAN TELAH DITOLAK OLEH ADMIN RI\'AYAH',
+        booking,
+        isRejected: true,
+        isApproved: false
+      };
+    }
+
+    if (booking.status_kunjungan === 'Selesai') {
+      return {
+        success: true,
+        message: '🔒 KUNJUNGAN TELAH SELESAI / KUPON SUDAH DIGUNAKAN',
+        booking,
+        isDone: true,
+        isApproved: true
+      };
+    }
+
+    // Jika status saat ini adalah 'Disetujui (Siap Datang)' atau belum ada jam_masuk_aktual:
+    // Otomatis ubah status menjadi 'Sedang Berkunjung' dan catat waktu_scan_aktual real-time!
+    let updatedBooking = { ...booking };
+    const needsScanCheckIn = booking.status_kunjungan?.includes('Disetujui') || !booking.jam_masuk_aktual;
+
+    if (needsScanCheckIn) {
+      updatedBooking = {
+        ...booking,
+        status_kunjungan: 'Sedang Berkunjung',
+        waktu_scan_aktual: formattedScanTime,
+        jam_masuk_aktual: booking.jam_masuk_aktual || clock.jam_menit_detik,
+        jam_checkin_aktual: booking.jam_checkin_aktual || clock.jam_menit,
+        metode_verifikasi: 'SCAN_DIRECT_QR'
+      };
+
+      setVisitBookings(prev => {
+        const next = prev.map(b => b.id === booking.id ? updatedBooking : b);
+        try {
+          localStorage.setItem('sr_visit_bookings', JSON.stringify(next));
+        } catch (e) {}
+        return next;
+      });
+
+      syncBookingStatusToSupabase(updatedBooking, 'VISIT_CHECKIN');
+
+      if (updatedBooking.no_wa_penjenguk) {
+        sendWhatsAppNotification(
+          `${updatedBooking.nama_penjenguk} (Wali ${updatedBooking.nama_santri})`,
+          updatedBooking.no_wa_penjenguk,
+          'VISIT_CHECKIN_GATE',
+          `🚪 *[TIKET KUNJUNGAN BERHASIL DI-SCAN & CHECK-IN MASUK]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${updatedBooking.nama_penjenguk}*.\n\nE-Kupon Kunjungan untuk ananda *${updatedBooking.nama_santri}* (${updatedBooking.kelas}) telah *BERHASIL DI-SCAN* di sistem Smart Riayah pada pukul *${clock.jam_menit} WITA*.\n\n⏳ Batas durasi kunjungan hingga pukul *${updatedBooking.jam_selesai || '16:30'} WITA*. Silakan tunjukkan kupon digital kepada Satpam di Pos Jaga Gerbang.`
+        );
+      }
+      sound.playSuccess?.();
+    }
+
+    return {
+      success: true,
+      message: '✅ TIKET KUNJUNGAN SAH & TELAH DI-SCAN',
+      booking: updatedBooking,
+      isApproved: true,
+      isOngoing: true,
+      scannedNow: needsScanCheckIn
+    };
+  };
+
   const simulateWaBooking = (dayType = 'WEEKEND') => {
     const isWeekend = dayType === 'WEEKEND';
     const today = new Date();
@@ -3950,6 +4095,11 @@ export const AppProvider = ({ children }) => {
         checkOutVisitBooking,
         verifyVisitBarcode,
         verifyVisitRfid,
+        verifyAndScanTicket,
+        activeGatePassToken,
+        setActiveGatePassToken,
+        openGatePass,
+        clearGatePassToken,
         simulateWaBooking,
 
         // DeepSeek AI Character & Activity Engine

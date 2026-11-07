@@ -4,6 +4,7 @@
  */
 
 import { getRealtimePondokClock, formatCalendarPromptForDeepSeek } from '../utils/pondokTimeUtils';
+import { generateBarcodeToken, getVisitGatePassUrls } from '../utils/barcodeUtils';
 
 export const DEFAULT_DEEPSEEK_KEY = 'sk-5b97e9e1d00846818565250d944cc047';
 export const DEFAULT_DEEPSEEK_BASE_URL = 'https://api.deepseek.com/v1/chat/completions';
@@ -140,7 +141,8 @@ Output HANYA berupa JSON object murni.`;
         const dayNormalized = parsed.hari_kunjungan || clock.nama_hari;
         const isWeekday = ['Senin', 'Selasa', 'Rabu', 'Kamis'].includes(dayNormalized);
         const cleanSantri = (parsed.nama_santri || 'Santri').replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase();
-        const barcodeToken = isWeekday ? null : `GP-DU-${cleanSantri}-${Math.floor(1000 + Math.random() * 9000)}`;
+        const barcodeToken = isWeekday ? null : generateBarcodeToken(cleanSantri);
+        const { qrCodeUrl, gatePassUrl } = barcodeToken ? getVisitGatePassUrls(barcodeToken) : {};
         const waktuSekarangStr = `${clock.nama_hari}, ${clock.tanggal_lengkap} • ${clock.jam_menit_detik} WITA`;
 
         return {
@@ -228,12 +230,15 @@ export async function approveWeekdayBookingWithAi(booking, fonnteToken = DEFAULT
   }
 
   const cleanSantri = (booking.nama_santri || 'Santri').replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase();
-  const barcodeToken = booking.barcode_token || `GP-DU-${cleanSantri}-${Math.floor(1000 + Math.random() * 9000)}`;
+  const barcodeToken = booking.barcode_token || generateBarcodeToken(cleanSantri);
+  const { qrCodeUrl, gatePassUrl } = getVisitGatePassUrls(barcodeToken);
 
   return {
     success: true,
     bookingId: booking.id,
     barcode_token: barcodeToken,
+    barcode_image_url: qrCodeUrl,
+    gate_pass_url: gatePassUrl,
     status_kunjungan: 'Disetujui (Siap Datang)'
   };
 }

@@ -18,6 +18,7 @@ import SerialMonitorModal from './components/common/SerialMonitorModal';
 import SmartRiayahAiAgentModal from './components/common/SmartRiayahAiAgentModal';
 import MobileBottomNav from './components/layout/MobileBottomNav';
 import FlutterIntegrationModal from './components/modules/FlutterIntegrationModal';
+import GatePassVerificationPage from './components/modules/GatePassVerificationPage';
 import { Bot } from 'lucide-react';
 
 function MainContent() {
@@ -74,7 +75,12 @@ function AppShell() {
 }
 
 function AppRouter() {
-  const { currentView, isAuthenticated } = useApp();
+  const { currentView, isAuthenticated, activeGatePassToken, clearGatePassToken } = useApp();
+
+  // Jika URL membuka token Gate Pass (?gatepass=SR-... atau /gate-pass/SR-...), tampilkan halaman verifikasi mandiri
+  if (activeGatePassToken) {
+    return <GatePassVerificationPage token={activeGatePassToken} onBackToDashboard={clearGatePassToken} />;
+  }
 
   // If user is not authenticated or explicitly viewing landing page
   if (currentView === 'landing' || (!isAuthenticated && currentView !== 'login')) {

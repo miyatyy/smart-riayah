@@ -27,7 +27,8 @@ import {
   Check,
   ArrowRight,
   Bot,
-  Loader2
+  Loader2,
+  ExternalLink
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
 import { parseBookingWithDeepSeek } from '../../services/deepseekVisitService';
@@ -762,13 +763,29 @@ export default function VisitBookingManager({ isCompact = false }) {
                               </button>
                             </>
                           ) : (
-                            <button
-                              onClick={() => setSelectedBookingForPass(b)}
-                              className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition border border-slate-200 flex items-center gap-1"
-                            >
-                              <QrCode className="w-3 h-3 text-emerald-600" />
-                              <span>Lihat Tiket Barcode</span>
-                            </button>
+                            <div className="flex items-center gap-1.5 justify-center">
+                              <button
+                                onClick={() => setSelectedBookingForPass(b)}
+                                className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition border border-slate-200 flex items-center gap-1"
+                                title="Lihat detail tiket & QR code"
+                              >
+                                <QrCode className="w-3 h-3 text-emerald-600" />
+                                <span>Lihat Tiket</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const token = b.barcode_token || b.id;
+                                  const { gatePassUrl } = getVisitGatePassUrls(token);
+                                  window.open(gatePassUrl, '_blank');
+                                  sound.playSuccess?.();
+                                }}
+                                className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-[11px] transition border border-emerald-200 flex items-center gap-1 shadow-2xs"
+                                title="Buka simulasi scan E-Kupon langsung di tab baru"
+                              >
+                                <ExternalLink className="w-3 h-3 text-emerald-600" />
+                                <span className="hidden sm:inline">Kupon</span>
+                              </button>
+                            </div>
                           )}
                         </div>
                       </td>
@@ -888,40 +905,56 @@ export default function VisitBookingManager({ isCompact = false }) {
               {/* Action Buttons Tiket */}
               {(() => {
                 const token = selectedBookingForPass.barcode_token || selectedBookingForPass.id;
-                const { qrCodeUrl } = getVisitGatePassUrls(token);
+                const { qrCodeUrl, gatePassUrl } = getVisitGatePassUrls(token);
 
                 return (
-                  <div className="flex items-center gap-2 pt-1 flex-wrap">
+                  <div className="space-y-2.5 pt-1">
+                    {/* Tombol Utama: Buka Halaman Kupon (Simulasi Scan Link HP) */}
                     <button
-                      onClick={() => copyToClipboard(token)}
-                      className="flex-1 py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition flex items-center justify-center gap-1.5"
+                      onClick={() => {
+                        window.open(gatePassUrl, '_blank');
+                        sound.playSuccess?.();
+                      }}
+                      className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs transition shadow-md flex items-center justify-center gap-2"
+                      title="Membuka simulasi tampilan scan link kupon resmi di halaman baru"
                     >
-                      {copiedToken ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4 text-slate-500" />}
-                      <span>{copiedToken ? 'Disalin!' : 'Salin Token'}</span>
+                      <ExternalLink className="w-4 h-4" />
+                      <span>🔗 Buka Halaman Kupon (Simulasi Scan Link)</span>
                     </button>
-                    <button
-                      onClick={() => downloadBarcodeImage(qrCodeUrl, `Barcode_GatePass_${selectedBookingForPass.nama_santri}.png`)}
-                      className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-xs transition flex items-center justify-center gap-1.5"
-                      title="Unduh file gambar QR Code ke laptop/HP"
-                    >
-                      <Download className="w-4 h-4" />
-                      <span>Unduh Gambar</span>
-                    </button>
-                    <button
-                      onClick={() => window.open(qrCodeUrl, '_blank')}
-                      className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition flex items-center justify-center gap-1"
-                      title="Buka gambar penuh di tab baru"
-                    >
-                      <Eye className="w-4 h-4" />
-                      <span className="hidden sm:inline">Lihat Gambar</span>
-                    </button>
-                    <button
-                      onClick={() => { window.print(); sound.playBeep?.(); }}
-                      className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-sm flex items-center justify-center gap-1.5"
-                    >
-                      <Printer className="w-4 h-4" />
-                      <span>Cetak Tiket</span>
-                    </button>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={() => copyToClipboard(gatePassUrl)}
+                        className="flex-1 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition flex items-center justify-center gap-1.5 border border-slate-200"
+                        title="Salin link halaman kupon kunjungan WhatsApp"
+                      >
+                        {copiedToken ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-slate-500" />}
+                        <span>{copiedToken ? 'Disalin!' : 'Copy Link Kupon WA'}</span>
+                      </button>
+                      <button
+                        onClick={() => downloadBarcodeImage(qrCodeUrl, `Barcode_GatePass_${selectedBookingForPass.nama_santri}.png`)}
+                        className="flex-1 py-2 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-xs transition flex items-center justify-center gap-1.5"
+                        title="Unduh file gambar QR Code ke laptop/HP"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Unduh QR</span>
+                      </button>
+                      <button
+                        onClick={() => window.open(qrCodeUrl, '_blank')}
+                        className="py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition flex items-center justify-center gap-1"
+                        title="Buka gambar QR penuh"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Lihat QR</span>
+                      </button>
+                      <button
+                        onClick={() => { window.print(); sound.playBeep?.(); }}
+                        className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        <span>Cetak</span>
+                      </button>
+                    </div>
                   </div>
                 );
               })()}
