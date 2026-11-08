@@ -163,10 +163,28 @@ export const autoConsolidateSantriAndPermits = (rawSantriList = [], rawPermits =
 const AppContext = createContext();
 
 export const AppProvider = ({ children }) => {
-  // 1. Authentication & System Accounts State (7 Roles)
+  // 1. Authentication & System Accounts State (8 Roles Terpadu)
   const [accounts, setAccounts] = useState(() => {
-    const saved = localStorage.getItem('sr_accounts');
-    return saved ? JSON.parse(saved) : INITIAL_ACCOUNTS;
+    try {
+      const saved = localStorage.getItem('sr_accounts');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Selalu pastikan seluruh akun sistem (termasuk ACC-08 OSIS) terdaftar
+          const existingRoles = new Set(parsed.map(a => a.role));
+          const missingAccounts = INITIAL_ACCOUNTS.filter(a => !existingRoles.has(a.role));
+          if (missingAccounts.length > 0) {
+            const merged = [...parsed, ...missingAccounts];
+            try { localStorage.setItem('sr_accounts', JSON.stringify(merged)); } catch (_) {}
+            return merged;
+          }
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn('⚠️ Gagal membaca sr_accounts dari localStorage:', e);
+    }
+    return INITIAL_ACCOUNTS;
   });
 
   const [isAuthenticated, setIsAuthenticated] = useState(() => {

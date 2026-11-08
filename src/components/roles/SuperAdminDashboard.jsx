@@ -211,7 +211,7 @@ void loop() {
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Diagnostik Hardware Web Serial ESP32-S3, Manajemen Akun (7 Role), & State Manager Database
+              Diagnostik Hardware Web Serial ESP32-S3, Manajemen Akun (8 Role Terpadu), & State Manager Database
             </p>
           </div>
         </div>
@@ -270,7 +270,7 @@ void loop() {
           }`}
         >
           <Users className="w-4 h-4" />
-          <span>2. Manajemen Akun & 7 Role</span>
+          <span>2. Manajemen Akun & 8 Role Terpadu</span>
         </button>
 
         <button
@@ -478,17 +478,17 @@ void loop() {
         </div>
       )}
 
-      {/* TAB 2: USER MANAGEMENT (7 ROLES) */}
+      {/* TAB 2: USER MANAGEMENT (8 ROLES) */}
       {activeTab === 'users' && (
         <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
             <div>
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <Users className="w-5 h-5 text-cyan-400" />
-                <span>Daftar Seluruh Akun Login Pengguna (7 Role Sistem)</span>
+                <span>Daftar Seluruh Akun Login Pengguna (8 Role Sistem Terpadu)</span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Kredensial login aktif yang digunakan untuk mengakses dashboard masing-masing aktor pesantren.
+                Kredensial login aktif yang digunakan untuk mengakses dashboard masing-masing aktor pesantren (termasuk Pengurus OSIS).
               </p>
             </div>
 
@@ -581,9 +581,10 @@ void loop() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 pt-2">
               {[
                 { roleId: 'admin_riayah', label: 'Admin Ri\'ayah', color: 'bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border-emerald-700' },
+                { roleId: 'osis', label: 'Pengurus OSIS', color: 'bg-teal-950/90 hover:bg-teal-900 text-teal-200 border-teal-500 shadow-md ring-1 ring-teal-500/50' },
                 { roleId: 'parent', label: 'Wali Santri', color: 'bg-teal-950/80 hover:bg-teal-900 text-teal-300 border-teal-700' },
                 { roleId: 'musyrif', label: 'Musyrif Asrama', color: 'bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 border-cyan-700' },
                 { roleId: 'security', label: 'Pos Satpam Gate', color: 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-600' },
