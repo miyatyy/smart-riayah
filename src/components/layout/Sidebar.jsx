@@ -126,7 +126,21 @@ const ROLE_CONFIG = {
 /* ─────────────────────────────────────────────
    MENU ITEMS per role
 ───────────────────────────────────────────── */
-function getMenuItems(role, { permits, rooms, santriList, blacklistedUids, gateLogs, medicalRecords, pendingPermitsCount, warningPermitsCount, santriDiLuar, pendingVisitsCount = 0, manualReplyNeededCount = 0 }) {
+function getMenuItems(role, { 
+  permits = [], 
+  rooms = [], 
+  santriList = [], 
+  blacklistedUids = [], 
+  gateLogs = [], 
+  medicalRecords = [], 
+  pendingPermitsCount = 0, 
+  warningPermitsCount = 0, 
+  santriDiLuar = 0, 
+  pendingVisitsCount = 0, 
+  manualReplyNeededCount = 0,
+  pendingOsisCount = 0,
+  osisReportsCount = 0
+} = {}) {
   switch (role) {
     case 'superadmin':
       return [
