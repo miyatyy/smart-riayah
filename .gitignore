@@ -11,7 +11,6 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
-*.local
 
 # Editor directories and files
 .vscode/*
@@ -24,15 +23,32 @@ dist-ssr
 *.sln
 *.sw?
 
-# Environment variables
+# Environment & Secrets (JANGAN PERNAH PUSH KE GITHUB)
 .env
+.env.local
+.env.development
+.env.test
+.env.production
 .env.*
+!.env.example
 src/.env
 src/.env.*
-!.env.example
 
-# Generator artifacts
+# Key & Certificate files
+*.pem
+*.key
+*.cert
+secrets.json
+
+# Local artifacts & generator scratch
 graphify-out/
-
 .vercel
-.env*
+ideaschool_assets/
+*.pdf
+*.pptx
+*.docx
+build_*.py
+generate_*.py
+extract_*.py
+test_*.png
+workflow_preview.png

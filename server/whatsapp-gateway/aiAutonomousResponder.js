@@ -6,11 +6,13 @@
 import { createClient } from '@supabase/supabase-js';
 import { broadcastToSupabaseRealtime } from './supabaseBroadcaster.js';
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://htjnrpyuzkarigglgrxm.supabase.co';
-const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_WQ7Ix8DuKxlVdv_dnwBspw_cXbdkADI';
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
+const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '';
+const supabase = (supabaseUrl && supabaseKey)
+  ? createClient(supabaseUrl, supabaseKey)
+  : { from: () => ({ select: () => ({ maybeSingle: async () => ({ data: null }), eq: () => ({ like: async () => ({}) }) }), delete: () => ({ eq: () => ({ like: async () => ({}) }) }), insert: async () => ({}) }) };
 
-const DEFAULT_FONNTE_TOKEN = '8UN12iqFjKNBYdds8FCG';
+const DEFAULT_FONNTE_TOKEN = (process.env.FONNTE_TOKEN || process.env.VITE_FONNTE_TOKEN || '').trim();
 
 // In-memory set penyimpan nomor HP yang sedang diambil alih manual oleh Admin Ri'ayah
 export const manualTakeoverPhones = new Set();
@@ -495,7 +497,7 @@ export async function generateAutonomousReply(senderPhone, incomingText, senderN
   const recentHistory = await getRecentChatHistory(cleanPhone);
 
   // 1. Coba gunakan DeepSeek AI jika token tersedia
-  const deepseekKey = process.env.DEEPSEEK_API_KEY || 'sk-5b97e9e1d00846818565250d944cc047';
+  const deepseekKey = (process.env.DEEPSEEK_API_KEY || process.env.VITE_DEEPSEEK_API_KEY || '').trim();
   if (deepseekKey) {
     try {
       const systemPrompt = `Anda adalah pengasuh/ustadz ramah dan cerdas di Pesantren Modern Darul Ulum yang membalas pesan WhatsApp wali santri.

@@ -14,7 +14,7 @@ function resolveFonnteToken(req) {
   if (req.body?.token && typeof req.body.token === 'string') {
     return req.body.token.trim();
   }
-  return (process.env.FONNTE_TOKEN || '8UN12iqFjKNBYdds8FCG').trim();
+  return (process.env.FONNTE_TOKEN || process.env.VITE_FONNTE_TOKEN || '').trim();
 }
 
 function normalizeIndonesianPhone(phone) {

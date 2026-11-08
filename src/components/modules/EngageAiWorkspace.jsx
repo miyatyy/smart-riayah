@@ -1026,8 +1026,10 @@ function TabChannels({
   // Channel Role state
   const [channelRole, setChannelRole] = useState('Legacy Campaign + Chatbot');
 
+  const defaultEnvFonnteToken = (import.meta.env.VITE_FONNTE_TOKEN || '').trim();
+
   // Token privat form state
-  const [tokenInput, setTokenInput] = useState(() => fonnteToken || '8UN12iqFjKNBYdds8FCG');
+  const [tokenInput, setTokenInput] = useState(() => fonnteToken || defaultEnvFonnteToken);
   const [showToken, setShowToken] = useState(false);
   const [labelInput, setLabelInput] = useState(() => localStorage.getItem('sr_fonnte_label') || 'SmartRIAYAH');
   const [deviceInput, setDeviceInput] = useState(() => localStorage.getItem('sr_fonnte_target') || '6285960213654');
@@ -1071,7 +1073,7 @@ function TabChannels({
     showToast('Meminta QR Code resmi dari server WhatsApp...', 'info');
 
     try {
-      const activeToken = (fonnteToken || tokenInput || '8UN12iqFjKNBYdds8FCG').trim();
+      const activeToken = (fonnteToken || tokenInput || defaultEnvFonnteToken).trim();
       const res = await fetchQrCode('', activeToken);
       setQrLoading(false);
 
@@ -1113,7 +1115,7 @@ function TabChannels({
         // Auto-polling status koneksi Fonnte setiap 5 detik
         qrPollRef.current = setInterval(async () => {
           try {
-            const activeToken = (fonnteToken || tokenInput || '8UN12iqFjKNBYdds8FCG').trim();
+            const activeToken = (fonnteToken || tokenInput || defaultEnvFonnteToken).trim();
             const check = await fetchDeviceStatus(activeToken);
             if (check.isConnected) {
               if (qrPollRef.current) clearInterval(qrPollRef.current);
@@ -1181,7 +1183,7 @@ function TabChannels({
     setIsTestingToken(true);
     sound.playBeep?.();
     try {
-      const activeToken = (fonnteToken || tokenInput || '8UN12iqFjKNBYdds8FCG').trim();
+      const activeToken = (fonnteToken || tokenInput || defaultEnvFonnteToken).trim();
       const res = await fetchDeviceStatus(activeToken);
       setIsTestingToken(false);
       if (res.success || res.status) {
@@ -1401,7 +1403,7 @@ function TabChannels({
                     <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-emerald-100 text-emerald-800">Live Webhook</span>
                     <span className="text-[9px] text-slate-400 block mt-0.5 font-mono">Bgt: 5/5 • Rsk: 0</span>
                   </td>
-                  <td className="py-3 px-3 font-mono font-bold text-slate-700">ID: {telegramBotInfo?.id || '9079176204'}</td>
+                  <td className="py-3 px-3 font-mono font-bold text-slate-700">ID: {telegramBotInfo?.id || 'Bot Active'}</td>
                   <td className="py-3 px-3 font-mono text-emerald-700 text-[11px] font-bold">Unlimited</td>
                   <td className="py-3 px-3 text-right">
                     <a
@@ -1603,7 +1605,7 @@ function TabChannels({
                     <button
                       type="button"
                       onClick={async () => {
-                        const cleanToken = (tokenInput || fonnteToken || '8UN12iqFjKNBYdds8FCG').trim();
+                        const cleanToken = (tokenInput || fonnteToken || defaultEnvFonnteToken).trim();
                         const cleanDevice = (deviceInput || '6285960213654').trim();
                         const cleanLabel = (labelInput || 'SmartRIAYAH').trim();
 
@@ -2512,7 +2514,7 @@ function TabAiInbox({
       const isTelegramChat = selectedChat.channel === 'Telegram Bot' || String(targetPhone).startsWith('TG-');
       if (isTelegramChat) {
         const cleanChatId = String(targetPhone).replace(/[^0-9]/g, '');
-        const tgToken = localStorage.getItem('smart_riayah_telegram_token') || '9079176204:AAEBAzGX5ReS_Kykuk32ctWtIkmIhh-ElVQ';
+        const tgToken = localStorage.getItem('smart_riayah_telegram_token') || (import.meta.env.VITE_TELEGRAM_BOT_TOKEN || '').trim();
         const tgRes = await fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -4362,7 +4364,7 @@ function TabAiSettings({ showToast }) {
                 type={showKey ? 'text' : 'password'}
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-5b97e9e1d00846818565250d944cc047"
+                placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
                 className="w-full px-3 py-2 pr-9 text-xs rounded-xl border border-slate-300 font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
               />
               <button

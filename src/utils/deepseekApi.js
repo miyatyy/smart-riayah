@@ -2,7 +2,7 @@
 // Smart Riayah - AI Agent & Character Evaluation Engine for All Roles & Wali Santri
 // Official Endpoint: https://api.deepseek.com/chat/completions
 
-export const DEFAULT_DEEPSEEK_TOKEN = import.meta.env.VITE_DEEPSEEK_API_KEY || 'sk-5b97e9e1d00846818565250d944cc047';
+export const DEFAULT_DEEPSEEK_TOKEN = import.meta.env.VITE_DEEPSEEK_API_KEY || '';
 export const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions';
 export const DEFAULT_MODEL = 'deepseek-chat';
 export const REASONER_MODEL = 'deepseek-reasoner';

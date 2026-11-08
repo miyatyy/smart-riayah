@@ -16,7 +16,7 @@ const pool = new Pool({
     port: parseInt(process.env.DB_PORT || '5432', 10),
     database: process.env.DB_DATABASE || process.env.DB_NAME || 'smart_riayah_db',
     user: process.env.DB_USERNAME || process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || '140203',
+    password: process.env.DB_PASSWORD || '',
 });
 
 // Tes Koneksi Database

@@ -61,7 +61,7 @@ export default function FonnteDeviceManager() {
         botLimit: 50,
         deviceQuota: '1/1',
         type: 'Personal & Group',
-        token: fonnteToken || '8UN12iqFjKNBYdds8FCG'
+        token: fonnteToken || (import.meta.env.VITE_FONNTE_TOKEN || '').trim()
       }
     ];
   });

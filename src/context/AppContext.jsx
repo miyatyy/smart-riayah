@@ -576,11 +576,12 @@ export const AppProvider = ({ children }) => {
 
 
   // Real-Time WhatsApp Gateway Configuration (Fonnte API)
+  const defaultFonnteToken = (import.meta.env.VITE_FONNTE_TOKEN || '').trim();
   const [fonnteToken, setFonnteTokenState] = useState(() => {
     const saved = localStorage.getItem('sr_fonnte_token');
     if (!saved || saved === 'XvFjdLyyvBgNUbXBZYzZ') {
-      localStorage.setItem('sr_fonnte_token', '8UN12iqFjKNBYdds8FCG');
-      return '8UN12iqFjKNBYdds8FCG';
+      if (defaultFonnteToken) localStorage.setItem('sr_fonnte_token', defaultFonnteToken);
+      return defaultFonnteToken;
     }
     return saved;
   });
@@ -1473,7 +1474,7 @@ export const AppProvider = ({ children }) => {
 
   // 3. FUNGSI PENGIRIMAN OTOMATIS KE API FONNTE (https://api.fonnte.com/send)
   const sendFonnteWhatsApp = async (targetNumber, messageText, eventType = 'GENERAL', mediaUrl = null) => {
-    const token = (fonnteToken || '8UN12iqFjKNBYdds8FCG').trim();
+    const token = (fonnteToken || defaultFonnteToken || '').trim();
     // Prioritaskan nomor tujuan wali santri aktual, fallback hanya jika nomor kosong
     const rawTarget = targetNumber || fonnteTargetNumber || '6285960213654';
     let cleanTarget = String(rawTarget).replace(/[^0-9]/g, '');

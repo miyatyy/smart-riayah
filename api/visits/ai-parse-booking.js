@@ -7,8 +7,8 @@
  * - Jumat - Minggu (is_weekday = false) : 'Disetujui (Auto-Approved Weekend)' -> Barcode diterbitkan seketika + WA
  */
 
-const DEFAULT_DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY || 'sk-5b97e9e1d00846818565250d944cc047';
-const DEFAULT_FONNTE_TOKEN = process.env.FONNTE_TOKEN || '8UN12iqFjKNBYdds8FCG';
+const DEFAULT_DEEPSEEK_KEY = (process.env.DEEPSEEK_API_KEY || process.env.VITE_DEEPSEEK_API_KEY || '').trim();
+const DEFAULT_FONNTE_TOKEN = (process.env.FONNTE_TOKEN || process.env.VITE_FONNTE_TOKEN || '').trim();
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');

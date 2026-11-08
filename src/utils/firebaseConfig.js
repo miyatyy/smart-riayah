@@ -13,13 +13,13 @@ import { getAnalytics, isSupported } from 'firebase/analytics';
  */
 
 export const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyB2f_VF6eASARQmMTMqcr251oWKo70GREc",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "project-78a1c2b7-f463-45cb-8ca.firebaseapp.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "project-78a1c2b7-f463-45cb-8ca",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "project-78a1c2b7-f463-45cb-8ca.firebasestorage.app",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "24105619082",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:24105619082:web:d562dbc5525bbbe1806773",
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-7PX45CNFMB"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "",
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || ""
 };
 
 // Inisialisasi Firebase App secara aman

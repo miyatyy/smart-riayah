@@ -2,9 +2,11 @@ import { generateAutonomousReply, isPhoneInManualTakeover, setManualTakeover } f
 import { broadcastToSupabaseRealtime } from '../../server/whatsapp-gateway/supabaseBroadcaster.js';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://htjnrpyuzkarigglgrxm.supabase.co';
-const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_WQ7Ix8DuKxlVdv_dnwBspw_cXbdkADI';
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
+const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '';
+const supabase = (supabaseUrl && supabaseKey) 
+  ? createClient(supabaseUrl, supabaseKey) 
+  : { from: () => ({ insert: async () => ({}) }) };
 
 async function safeLog(senderName, senderRole, text, reaction) {
   try {
@@ -110,8 +112,11 @@ export default async function handler(req, res) {
     }
 
     // 4. Kirim balasan otomatis ke pengguna di Telegram
-    const FALLBACK_TELEGRAM_TOKEN = '9079176204:AAEBAzGX5ReS_Kykuk32ctWtIkmIhh-ElVQ';
-    const token = req.query?.token || process.env.TELEGRAM_BOT_TOKEN || FALLBACK_TELEGRAM_TOKEN;
+    const token = req.query?.token || process.env.TELEGRAM_BOT_TOKEN || process.env.VITE_TELEGRAM_BOT_TOKEN || '';
+    if (!token) {
+      console.warn('⚠️ [Telegram Webhook]: TELEGRAM_BOT_TOKEN belum dikonfigurasi di environment variables.');
+      return res.status(200).json({ ok: false, error: 'Telegram bot token not configured' });
+    }
     const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

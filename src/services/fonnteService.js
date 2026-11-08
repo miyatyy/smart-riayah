@@ -4,7 +4,7 @@
  * dengan Seamless Direct Fallback ke https://api.fonnte.com
  */
 
-const DEFAULT_TOKEN = '8UN12iqFjKNBYdds8FCG';
+const DEFAULT_TOKEN = (import.meta.env.VITE_FONNTE_TOKEN || '').trim();
 
 function getStoredToken(customToken) {
   if (customToken && typeof customToken === 'string' && customToken.trim()) {
@@ -13,7 +13,7 @@ function getStoredToken(customToken) {
   if (typeof window !== 'undefined' && window.localStorage) {
     const saved = localStorage.getItem('sr_fonnte_token');
     if (!saved || saved === 'XvFjdLyyvBgNUbXBZYzZ') {
-      localStorage.setItem('sr_fonnte_token', DEFAULT_TOKEN);
+      if (DEFAULT_TOKEN) localStorage.setItem('sr_fonnte_token', DEFAULT_TOKEN);
       return DEFAULT_TOKEN;
     }
     if (saved && saved.trim()) return saved.trim();

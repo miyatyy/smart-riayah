@@ -3,7 +3,7 @@
  * Generator Barcode Gate Pass & Notifikasi WhatsApp Persetujuan Kunjungan Senin-Kamis oleh Admin Ri'ayah
  */
 
-const DEFAULT_FONNTE_TOKEN = process.env.FONNTE_TOKEN || '8UN12iqFjKNBYdds8FCG';
+const DEFAULT_FONNTE_TOKEN = (process.env.FONNTE_TOKEN || process.env.VITE_FONNTE_TOKEN || '').trim();
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');

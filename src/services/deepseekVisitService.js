@@ -6,10 +6,10 @@
 import { getRealtimePondokClock, formatCalendarPromptForDeepSeek } from '../utils/pondokTimeUtils';
 import { generateBarcodeToken, getVisitGatePassUrls } from '../utils/barcodeUtils';
 
-export const DEFAULT_DEEPSEEK_KEY = 'sk-5b97e9e1d00846818565250d944cc047';
-export const DEFAULT_DEEPSEEK_BASE_URL = 'https://api.deepseek.com/v1/chat/completions';
-export const DEFAULT_DEEPSEEK_MODEL = 'deepseek-chat';
-export const DEFAULT_FONNTE_TOKEN = '8UN12iqFjKNBYdds8FCG';
+export const DEFAULT_DEEPSEEK_KEY = (import.meta.env.VITE_DEEPSEEK_API_KEY || '').trim();
+export const DEFAULT_DEEPSEEK_BASE_URL = (import.meta.env.VITE_DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1/chat/completions').trim();
+export const DEFAULT_DEEPSEEK_MODEL = (import.meta.env.VITE_DEEPSEEK_MODEL || 'deepseek-chat').trim();
+export const DEFAULT_FONNTE_TOKEN = (import.meta.env.VITE_FONNTE_TOKEN || '').trim();
 
 /**
  * Tes koneksi langsung ke DeepSeek API
