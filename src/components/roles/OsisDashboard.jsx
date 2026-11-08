@@ -125,11 +125,9 @@ export default function OsisDashboard() {
       tazir: tazir.trim()
     };
 
-    // Instant optimistic response dengan transisi halus 200ms
-    setTimeout(() => {
+    try {
       const newReport = submitOsisReport(reportPayload);
 
-      setIsSubmitting(false);
       setSuccessAlert(`✅ Laporan untuk ananda ${reportPayload.santriNama} berhasil dikirim ke Admin Ri'ayah dengan ID [${newReport.id}].`);
       sound.playSuccess?.();
 
@@ -141,7 +139,12 @@ export default function OsisDashboard() {
       setKategori('PELANGGARAN');
 
       setTimeout(() => setSuccessAlert(null), 7000);
-    }, 200);
+    } catch (err) {
+      console.error('Error submitting OSIS report:', err);
+      alert('Gagal mengirim laporan: ' + (err.message || 'Terjadi kesalahan sistem'));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Filtered History

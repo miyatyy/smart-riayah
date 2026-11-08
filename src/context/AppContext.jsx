@@ -1283,18 +1283,6 @@ export const AppProvider = ({ children }) => {
           } catch (e) {}
           return updated;
         });
-        setNotifications(prev => [
-          {
-            id: `NOTIF-OSIS-${Date.now()}`,
-            type: 'OSIS_REPORT_NEW',
-            title: '📋 Laporan Kelakuan Santri dari OSIS',
-            message: `[${payload.bidangOsis}] melaporkan ananda ${payload.santriNama} (${payload.kelas}): "${payload.jenis}". Menunggu verifikasi Admin Ri'ayah.`,
-            time: payload.waktu || 'Baru saja',
-            read: false,
-            reportId: payload.id
-          },
-          ...prev
-        ]);
       })
       .on('broadcast', { event: 'osis.report_verified' }, ({ payload }) => {
         if (!isMounted || !payload?.id) return;
@@ -4087,22 +4075,7 @@ export const AppProvider = ({ children }) => {
         bc.close();
       } catch (e) {}
 
-      // 3. Notifikasi Lonceng Top Bar Admin Ri'ayah
-      const notifText = `📷 Scan Pos Satpam: ${updatedBooking.nama_penjenguk} (Wali dari ${updatedBooking.nama_santri}) telah tiba dan berhasil scan barcode di gerbang pukul ${clock.jam_menit} WITA.`;
-      setNotifications(prev => [
-        {
-          id: `NOTIF-GATE-${Date.now()}`,
-          type: 'GATE_ARRIVED',
-          title: 'Tamu Tiba di Gerbang (Pos Satpam)',
-          message: notifText,
-          time: clock.jam_menit_detik,
-          read: false,
-          booking: updatedBooking
-        },
-        ...prev
-      ]);
-
-      // 4. Kirim notifikasi WA ke nomor wali santri bahwa tamu telah check-in di pos gerbang
+      // 3. Kirim notifikasi WA ke nomor wali santri bahwa tamu telah check-in di pos gerbang
       if (updatedBooking.no_wa_penjenguk) {
         sendWhatsAppNotification(
           `${updatedBooking.nama_penjenguk} (Wali ${updatedBooking.nama_santri})`,
@@ -4588,20 +4561,6 @@ export const AppProvider = ({ children }) => {
         bc.close();
       }
     } catch (e) {}
-
-    // Lonceng Notifikasi ke Admin Ri'ayah
-    setNotifications(prev => [
-      {
-        id: `NOTIF-OSIS-${Date.now()}`,
-        type: 'OSIS_REPORT_NEW',
-        title: '📋 Laporan Kelakuan Santri dari OSIS',
-        message: `[${newReport.bidangOsis}] melaporkan ananda ${newReport.santriNama} (${newReport.kelas}): "${newReport.jenis}". Menunggu verifikasi Admin Ri'ayah.`,
-        time: clock.jam_menit_detik,
-        read: false,
-        reportId: newReport.id
-      },
-      ...prev
-    ]);
 
     sound.playSuccess?.();
     return newReport;
