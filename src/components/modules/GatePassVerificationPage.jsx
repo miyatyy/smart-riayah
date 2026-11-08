@@ -25,7 +25,7 @@ import {
   Award
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
-import { getRealtimePondokClock, calculateVisitCountdown } from '../../utils/pondokTimeUtils';
+import { getRealtimePondokClock, calculateVisitCountdown, checkBarcodeLifecycle } from '../../utils/pondokTimeUtils';
 import { getVisitGatePassUrls, downloadBarcodeImage } from '../../utils/barcodeUtils';
 
 export default function GatePassVerificationPage({ token, onBackToDashboard }) {
@@ -351,6 +351,32 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
       ctx.fillText('Scan Kamera HP / Google Lens', 840, 440);
       ctx.fillText('Otomatis Verifikasi Check-In', 840, 456);
 
+      // ─── STEMPEL AIR MERAH MILIK BARCODE HANGUS (EXPIRED WATERMARK) ───
+      const currentLifecycle = checkBarcodeLifecycle(booking, liveClock);
+      if (currentLifecycle.isExpired) {
+        ctx.save();
+        ctx.translate(840, 250);
+        ctx.rotate(-0.35); // Rotasi miring ~20 derajat
+
+        // Box stempel merah tebal dengan background semi-transparan
+        ctx.fillStyle = 'rgba(254, 242, 242, 0.92)';
+        ctx.beginPath();
+        ctx.roundRect(-95, -28, 190, 56, 10);
+        ctx.fill();
+
+        ctx.strokeStyle = '#DC2626';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        ctx.fillStyle = '#B91C1C';
+        ctx.font = 'bold 16px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('⛔ EXPIRED', 0, -4);
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText('SUDAH DIGUNAKAN', 0, 16);
+        ctx.restore();
+      }
+
       // Export Canvas ke PNG Data URL
       try {
         const pngUrl = canvas.toDataURL('image/png');
@@ -372,6 +398,27 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
       ctx.textAlign = 'center';
       ctx.fillText('SMART RIAYAH', 840, 245);
       ctx.fillText('E-GATE PASS', 840, 265);
+
+      const currentLifecycle = checkBarcodeLifecycle(booking, liveClock);
+      if (currentLifecycle.isExpired) {
+        ctx.save();
+        ctx.translate(840, 250);
+        ctx.rotate(-0.35);
+        ctx.fillStyle = 'rgba(254, 242, 242, 0.92)';
+        ctx.beginPath();
+        ctx.roundRect(-95, -28, 190, 56, 10);
+        ctx.fill();
+        ctx.strokeStyle = '#DC2626';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+        ctx.fillStyle = '#B91C1C';
+        ctx.font = 'bold 16px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('⛔ EXPIRED', 0, -4);
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText('SUDAH DIGUNAKAN', 0, 16);
+        ctx.restore();
+      }
 
       try {
         const pngUrl = canvas.toDataURL('image/png');
@@ -502,83 +549,98 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
             <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin mx-auto" />
             <h3 className="font-bold text-sm text-slate-300">Memverifikasi keaslian E-Barcode &amp; mencatat scan...</h3>
           </div>
-        ) : (
-          <div className={`p-5 sm:p-6 rounded-3xl border shadow-xl transition animate-fade-in ${
-            verificationState.isDone
-              ? 'bg-slate-900 border-slate-700 text-slate-300'
-              : verificationState.isPending
-              ? 'bg-gradient-to-r from-amber-950/90 via-amber-900/80 to-amber-950/90 border-amber-500/80 text-amber-100 shadow-amber-950/40'
-              : verificationState.isRejected
-              ? 'bg-gradient-to-r from-rose-950/90 via-rose-900/80 to-rose-950/90 border-rose-500/80 text-rose-100'
-              : verificationState.success
-              ? 'bg-gradient-to-r from-emerald-950/95 via-teal-900/90 to-emerald-950/95 border-emerald-500 text-emerald-100 shadow-emerald-950/50'
-              : 'bg-rose-950/90 border-rose-500 text-rose-100'
-          }`}>
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div className="flex items-start gap-4">
-                <div className="p-3 rounded-2xl bg-white/10 shrink-0 mt-0.5 backdrop-blur-xs">
-                  {verificationState.isDone ? (
-                    <Lock className="w-8 h-8 text-slate-400" />
-                  ) : verificationState.isPending ? (
-                    <Clock className="w-8 h-8 text-amber-400 animate-pulse" />
-                  ) : verificationState.isRejected ? (
-                    <XCircle className="w-8 h-8 text-rose-400" />
-                  ) : verificationState.success ? (
-                    <CheckCircle className="w-8 h-8 text-emerald-400" />
-                  ) : (
-                    <AlertTriangle className="w-8 h-8 text-rose-400" />
-                  )}
-                </div>
+        ) : (() => {
+          const currentLifecycle = checkBarcodeLifecycle(booking, liveClock);
+          const isExpired = currentLifecycle.isExpired || verificationState.isDone;
+          const isBeforeHours = currentLifecycle.isBeforeHours;
+          const isFuture = currentLifecycle.isFuture;
+          const isPending = currentLifecycle.isPending || verificationState.isPending;
+          const isRejected = currentLifecycle.status === 'REJECTED' || verificationState.isRejected;
+          const isActiveValid = currentLifecycle.isActive || currentLifecycle.isVisiting || verificationState.success;
 
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold tracking-wider uppercase bg-white/10 border border-white/20">
-                      TOKEN: {token || 'N/A'}
-                    </span>
-                    {verificationState.success && (
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-400 text-slate-950 flex items-center gap-1">
-                        <Sparkles className="w-3 h-3" />
-                        Live Verified
-                      </span>
+          return (
+            <div className={`p-5 sm:p-6 rounded-3xl border shadow-xl transition animate-fade-in ${
+              isExpired
+                ? 'bg-gradient-to-r from-rose-950/95 via-rose-900/90 to-rose-950/95 border-rose-500 text-rose-100 shadow-rose-950/50'
+                : (isBeforeHours || isFuture || isPending)
+                ? 'bg-gradient-to-r from-amber-950/90 via-amber-900/80 to-amber-950/90 border-amber-500/80 text-amber-100 shadow-amber-950/40'
+                : isRejected
+                ? 'bg-gradient-to-r from-rose-950/90 via-rose-900/80 to-rose-950/90 border-rose-500/80 text-rose-100'
+                : 'bg-gradient-to-r from-emerald-950/95 via-teal-900/90 to-emerald-950/95 border-emerald-500 text-emerald-100 shadow-emerald-950/50'
+            }`}>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-start gap-4">
+                  <div className="p-3 rounded-2xl bg-white/10 shrink-0 mt-0.5 backdrop-blur-xs">
+                    {isExpired ? (
+                      <AlertTriangle className="w-8 h-8 text-rose-400" />
+                    ) : (isBeforeHours || isFuture || isPending) ? (
+                      <Clock className="w-8 h-8 text-amber-400 animate-pulse" />
+                    ) : isRejected ? (
+                      <XCircle className="w-8 h-8 text-rose-400" />
+                    ) : (
+                      <CheckCircle className="w-8 h-8 text-emerald-400" />
                     )}
                   </div>
 
-                  <h2 className="text-lg sm:text-xl font-black text-white tracking-tight">
-                    {verificationState.isDone
-                      ? '🔒 KUNJUNGAN TELAH SELESAI / KUPON SUDAH DIGUNAKAN'
-                      : verificationState.isPending
-                      ? '⏳ MENUNGGU APPROVAL ADMIN RI\'AYAH (KUNJUNGAN HARI KERJA)'
-                      : verificationState.isRejected
-                      ? '⛔ PERMOHONAN KUNJUNGAN DITOLAK ADMIN RI\'AYAH'
-                      : verificationState.success
-                      ? '✅ TIKET KUNJUNGAN SAH & TELAH DI-SCAN'
-                      : verificationState.message}
-                  </h2>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold tracking-wider uppercase bg-white/10 border border-white/20">
+                        TOKEN: {token || 'N/A'}
+                      </span>
+                      {isActiveValid && !isExpired && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-400 text-slate-950 flex items-center gap-1">
+                          <Sparkles className="w-3 h-3" />
+                          Live Verified
+                        </span>
+                      )}
+                      {isExpired && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-500 text-white flex items-center gap-1">
+                          Blocked / Expired
+                        </span>
+                      )}
+                    </div>
 
-                  <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-2xl">
-                    {verificationState.isDone
-                      ? `Tamu telah selesai berkunjung dan tercatat check-out pada pukul ${booking?.jam_keluar_aktual || 'selesai'}. Terima kasih telah berkunjung.`
-                      : verificationState.isPending
-                      ? 'Permohonan kunjungan santri pada hari kerja (Senin-Kamis) harus disetujui terlebih dahulu oleh Pengasuhan/Admin Ri\'ayah sebelum gerbang dibuka.'
-                      : verificationState.success
-                      ? `Tercatat masuk di sistem Smart Riayah pada ${booking?.waktu_scan_aktual || `${liveClock.nama_hari}, ${liveClock.tanggal_lengkap} • ${liveClock.jam_menit_detik} WITA`}. Silakan tunjukkan kupon di bawah ini kepada petugas Pos Jaga Satpam.`
-                      : 'Kode tiket tidak ditemukan di database. Pastikan Anda melakukan pemindaian barcode resmi yang diterbitkan Smart Riayah.'}
-                  </p>
+                    <h2 className="text-lg sm:text-xl font-black text-white tracking-tight">
+                      {isExpired
+                        ? '⛔ BARCODE TIDAK DAPAT DIGUNAKAN LAGI (MASA BERLAKU HABIS / KUNJUNGAN TELAH SELESAI)'
+                        : isBeforeHours
+                        ? `⏳ BELUM WAKTUNYA MASUK (Menunggu Jam Kunjungan: ${booking?.jam_kunjungan} WITA)`
+                        : isFuture
+                        ? `⏳ TIKET TERJADWAL UNTUK ${booking?.hari_kunjungan?.toUpperCase() || 'MENDATANG'}, ${booking?.tanggal_kunjungan}`
+                        : isPending
+                        ? '⏳ MENUNGGU APPROVAL ADMIN RI\'AYAH (KUNJUNGAN HARI KERJA)'
+                        : isRejected
+                        ? '⛔ PERMOHONAN KUNJUNGAN DITOLAK ADMIN RI\'AYAH'
+                        : '✅ TIKET KUNJUNGAN SAH & TELAH DI-SCAN'}
+                    </h2>
+
+                    <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-2xl">
+                      {isExpired
+                        ? 'Tiket kunjungan ini sudah tidak berlaku karena telah melewati jam operasional kunjungan atau telah selesai check-out. Penggunaan ulang barcode ditolak demi keamanan santri.'
+                        : isBeforeHours
+                        ? `Belum waktunya masuk. Pemeriksaan tiket dan gerbang pos satpam dibuka mulai 15 menit sebelum jam kunjungan pukul ${booking?.jam_kunjungan} WITA. Silakan menunggu di area tunggu pos jaga.`
+                        : isFuture
+                        ? `Tiket ini berlaku untuk hari ${booking?.hari_kunjungan}, ${booking?.tanggal_kunjungan} pukul ${booking?.jam_kunjungan} - ${booking?.jam_selesai || '16:30'} WITA. Belum dapat digunakan untuk check-in saat ini.`
+                        : isPending
+                        ? 'Permohonan kunjungan santri pada hari kerja (Senin-Kamis) harus disetujui terlebih dahulu oleh Pengasuhan/Admin Ri\'ayah sebelum gerbang dibuka.'
+                        : `Tercatat masuk di sistem Smart Riayah pada ${booking?.waktu_scan_aktual || `${liveClock.nama_hari}, ${liveClock.tanggal_lengkap} • ${liveClock.jam_menit_detik} WITA`}. Silakan tunjukkan kupon di bawah ini kepada petugas Pos Jaga Satpam.`}
+                    </p>
+                  </div>
                 </div>
-              </div>
 
-              {/* Status Badge Live */}
-              <div className="self-end sm:self-center shrink-0">
-                <div className="text-right font-mono text-[11px] bg-black/30 p-2.5 rounded-xl border border-white/10 space-y-0.5">
-                  <div className="text-slate-400 font-sans text-[10px]">Waktu Pemindaian:</div>
-                  <div className="text-emerald-300 font-bold">
-                    {booking?.waktu_scan_aktual || `${liveClock.jam_menit_detik} WITA`}
+                {/* Status Badge Live */}
+                <div className="self-end sm:self-center shrink-0">
+                  <div className="text-right font-mono text-[11px] bg-black/30 p-2.5 rounded-xl border border-white/10 space-y-0.5">
+                    <div className="text-slate-400 font-sans text-[10px]">Waktu Pemindaian:</div>
+                    <div className="text-emerald-300 font-bold">
+                      {booking?.waktu_scan_aktual || `${liveClock.jam_menit_detik} WITA`}
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ─── 2. GENERATOR GAMBAR KUPON KUNJUNGAN DIGITAL (AUTO-GENERATED CANVAS IMAGE) ─── */}
         <section className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl space-y-5">
@@ -901,3 +963,4 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
     </div>
   );
 }
+

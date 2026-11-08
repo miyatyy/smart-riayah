@@ -21,6 +21,16 @@ import {
   Activity,
   Bell,
   Smartphone,
+  CheckCircle,
+  Clock,
+  AlertTriangle,
+  Calendar,
+  ShieldAlert,
+  Trash2,
+  ExternalLink,
+  CheckCheck,
+  X,
+  Sparkles,
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
 
@@ -114,12 +124,20 @@ export default function Navbar({ onOpenFlutterModal }) {
     disconnectSerial,
     setIsSerialMonitorOpen,
     setIsAiAgentOpen,
-    visitBookings
+    visitBookings,
+    chatLogs,
+    manualReplyNeededCount,
+    lastChatPurgeSummary,
+    isFonnteEnabled,
+    disciplineRecords,
   } = useApp();
 
   const [time, setTime] = useState('');
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [isDismissedAll, setIsDismissedAll] = useState(false);
   const userMenuRef = useRef(null);
+  const notificationRef = useRef(null);
 
   // Live clock
   useEffect(() => {
@@ -132,11 +150,14 @@ export default function Navbar({ onOpenFlutterModal }) {
     return () => clearInterval(id);
   }, []);
 
-  // Close user menu on outside click
+  // Close dropdowns on outside click
   useEffect(() => {
     const handler = (e) => {
       if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
         setShowUserMenu(false);
+      }
+      if (notificationRef.current && !notificationRef.current.contains(e.target)) {
+        setShowNotifications(false);
       }
     };
     document.addEventListener('mousedown', handler);
@@ -148,9 +169,19 @@ export default function Navbar({ onOpenFlutterModal }) {
 
   const santriDiLuar = santriList.filter(s => s.statusAsrama === 'DI_LUAR' || s.statusAsrama === 'TERLAMBAT').length;
   const santriDiPondok = santriList.length - santriDiLuar;
-  const pendingVisitsCount = Array.isArray(visitBookings) 
-    ? visitBookings.filter(b => b.status_kunjungan === 'Menunggu Approval').length 
-    : 0;
+
+  const pendingVisits = Array.isArray(visitBookings) 
+    ? visitBookings.filter(b => b.status_kunjungan === 'Menunggu Approval') 
+    : [];
+  const pendingChats = Array.isArray(chatLogs) 
+    ? chatLogs.filter(c => c.needs_manual_reply === true) 
+    : [];
+  const recentOsisReports = Array.isArray(disciplineRecords) 
+    ? disciplineRecords.slice(0, 2) 
+    : [];
+
+  const totalActionableCount = isDismissedAll ? 0 : (pendingVisits.length + pendingChats.length);
+
 
   return (
     <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-sm border-b border-slate-100 shadow-sm">
@@ -241,29 +272,229 @@ export default function Navbar({ onOpenFlutterModal }) {
 
           <div className="w-px h-5 bg-slate-200 mx-1 hidden sm:block" />
 
-          {/* Notifikasi Bell Approval Kunjungan Santri (Khusus Hari Senin–Kamis) */}
-          {(role === 'admin_riayah' || role === 'superadmin' || role === 'security') && (
-            <Tip label={pendingVisitsCount > 0 ? `🔔 ${pendingVisitsCount} Permohonan Kunjungan Hari Kerja Menunggu Persetujuan` : 'Jadwal & Kunjungan Tamu'} side="bottom">
-              <button
-                onClick={() => {
-                  if (role !== 'admin_riayah' && role !== 'security') setRole('admin_riayah');
-                  setActiveRoleTab(role === 'security' ? 'pos_kunjungan' : 'visit_bookings');
-                  sound.playBeep?.();
-                }}
-                className={`relative flex items-center justify-center w-9 h-9 rounded-xl transition ${
-                  pendingVisitsCount > 0
-                    ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 ring-2 ring-amber-400 ring-offset-1 animate-pulse'
-                    : 'text-slate-500 hover:bg-slate-100'
-                }`}
-              >
-                <Bell className="w-4 h-4" />
-                {pendingVisitsCount > 0 && (
-                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-rose-600 text-white rounded-full text-[10px] font-black flex items-center justify-center shadow-md animate-bounce">
-                    {pendingVisitsCount}
-                  </span>
-                )}
-              </button>
-            </Tip>
+          {/* Lonceng Notifikasi Cerdas & Interaktif — KHUSUS ROLE ADMIN RI'AYAH (RBAC ISOLATION) */}
+          {role === 'admin_riayah' && (
+            <div className="relative" ref={notificationRef}>
+              <Tip label={totalActionableCount > 0 ? `🔔 ${totalActionableCount} Tindakan Butuh Respon Admin` : 'Pusat Notifikasi Admin Ri\'ayah'} side="bottom">
+                <button
+                  onClick={() => {
+                    setShowNotifications(v => !v);
+                    sound.playBeep?.();
+                  }}
+                  className={`relative flex items-center justify-center w-9 h-9 rounded-xl transition ${
+                    totalActionableCount > 0
+                      ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 ring-2 ring-amber-400 ring-offset-1 animate-pulse'
+                      : 'text-slate-500 hover:bg-slate-100'
+                  }`}
+                  aria-label="Pusat Notifikasi Admin Ri'ayah"
+                >
+                  <Bell className="w-4 h-4" />
+                  {totalActionableCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-rose-600 text-white rounded-full text-[10px] font-black flex items-center justify-center shadow-md animate-bounce">
+                      {totalActionableCount}
+                    </span>
+                  )}
+                </button>
+              </Tip>
+
+              {/* FLOATING DROPDOWN NOTIFICATION PANEL */}
+              {showNotifications && (
+                <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200 py-3 px-3.5 z-50 animate-in fade-in slide-in-from-top-2 max-h-[85vh] overflow-y-auto">
+                  {/* Header */}
+                  <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
+                        <Bell className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black text-slate-800">Notifikasi Admin Ri'ayah</h4>
+                        <p className="text-[10px] text-slate-500">Pusat kendali tugas &amp; peringatan sistem</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          setIsDismissedAll(true);
+                          sound.playSuccess?.();
+                        }}
+                        className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2 py-1 rounded-md transition flex items-center gap-1"
+                        title="Tandai semua telah dibaca"
+                      >
+                        <CheckCheck className="w-3 h-3" />
+                        <span>Tandai Dibaca</span>
+                      </button>
+                      <button
+                        onClick={() => setShowNotifications(false)}
+                        className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {/* SEKSI A: PERMOHONAN APPROVAL KUNJUNGAN (SENIN-KAMIS) */}
+                    <div>
+                      <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 mb-1.5">
+                        <span className="flex items-center gap-1.5 text-amber-700">
+                          <Calendar className="w-3.5 h-3.5" />
+                          Permohonan Approval Kunjungan ({pendingVisits.length})
+                        </span>
+                        {pendingVisits.length > 0 && (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 font-bold">
+                            Perlu ACC
+                          </span>
+                        )}
+                      </div>
+                      {pendingVisits.length === 0 ? (
+                        <div className="p-2 rounded-xl bg-slate-50 text-[11px] text-slate-500 text-center font-medium">
+                          ✅ Tidak ada kunjungan hari kerja yang menunggu persetujuan.
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {pendingVisits.map(v => (
+                            <div key={v.id} className="p-2.5 rounded-xl bg-amber-50/80 border border-amber-200/80 text-xs flex items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="font-bold text-amber-950 truncate">{v.nama_santri} ({v.kelas})</div>
+                                <div className="text-[10px] text-amber-800 truncate">Wali: {v.nama_penjenguk} • {v.hari_kunjungan}, {v.jam_kunjungan}</div>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setShowNotifications(false);
+                                  setActiveRoleTab('visit_bookings');
+                                  sound.playBeep?.();
+                                }}
+                                className="shrink-0 px-2 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] transition shadow-xs"
+                              >
+                                Lihat &amp; Approve
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* SEKSI B: CHAT AI INBOX PERLU BALASAN MANUAL */}
+                    <div>
+                      <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 mb-1.5">
+                        <span className="flex items-center gap-1.5 text-rose-700">
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          Chat AI Inbox Perlu Balasan ({pendingChats.length})
+                        </span>
+                        {pendingChats.length > 0 && (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-rose-100 text-rose-800 font-bold animate-pulse">
+                            Manual
+                          </span>
+                        )}
+                      </div>
+                      {pendingChats.length === 0 ? (
+                        <div className="p-2 rounded-xl bg-slate-50 text-[11px] text-slate-500 text-center font-medium">
+                          ✨ Seluruh chat wali ditangani otonom oleh AI Smart Riayah.
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {pendingChats.map(c => (
+                            <div key={c.id} className="p-2.5 rounded-xl bg-rose-50/80 border border-rose-200/80 text-xs flex items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="font-bold text-rose-950 truncate">{c.name}</div>
+                                <div className="text-[10px] text-rose-800/90 truncate italic">"{c.lastPreview || 'Pesan butuh konfirmasi admin'}"</div>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setShowNotifications(false);
+                                  navigateToAiInbox?.();
+                                  sound.playBeep?.();
+                                }}
+                                className="shrink-0 px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[10px] transition shadow-xs"
+                              >
+                                Balas Sekarang
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* SEKSI C: LAPORAN PERILAKU OSIS BARU */}
+                    <div>
+                      <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 mb-1.5">
+                        <span className="flex items-center gap-1.5 text-indigo-700">
+                          <ShieldAlert className="w-3.5 h-3.5" />
+                          Laporan Kedisiplinan &amp; OSIS
+                        </span>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-indigo-100 text-indigo-800 font-bold">
+                          Terbaru
+                        </span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {recentOsisReports.length > 0 ? (
+                          recentOsisReports.map((v, i) => (
+                            <div key={v.id || i} className="p-2 rounded-xl bg-indigo-50/60 border border-indigo-100 text-[11px] flex items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="font-bold text-indigo-950 truncate">{v.namaSantri || v.santri || 'Santri'}</div>
+                                <div className="text-[10px] text-indigo-700 truncate">{v.keterangan || v.pelanggaran || 'Catatan kedisiplinan asrama'} ({v.poin || '-5'} Poin)</div>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setShowNotifications(false);
+                                  setActiveRoleTab('rooms');
+                                  sound.playBeep?.();
+                                }}
+                                className="shrink-0 px-2 py-0.5 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-800 font-bold text-[10px] transition"
+                              >
+                                Review
+                              </button>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="p-2 rounded-xl bg-slate-50 text-[11px] text-slate-500 text-center font-medium">
+                            🌿 Tidak ada laporan pelanggaran baru hari ini.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* SEKSI D: NOTIFIKASI SISTEM & KEAMANAN */}
+                    <div className="pt-2 border-t border-slate-100">
+                      <div className="text-[11px] font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                        <Wifi className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Notifikasi Sistem &amp; Keamanan</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {/* Status Fonnte */}
+                        <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between text-[11px]">
+                          <div className="flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full ${isFonnteEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                            <span className="font-medium text-slate-700">Fonnte WhatsApp:</span>
+                          </div>
+                          <span className={`font-mono font-bold text-[10px] px-1.5 py-0.5 rounded ${isFonnteEnabled ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'}`}>
+                            {isFonnteEnabled ? 'Connected (6285960213654)' : 'Disconnected'}
+                          </span>
+                        </div>
+
+                        {/* Status Scheduler 03.00 WITA */}
+                        <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/80 text-[11px] text-slate-600 space-y-0.5">
+                          <div className="flex items-center justify-between font-medium">
+                            <span className="flex items-center gap-1 text-slate-700 font-bold">
+                              <span>🧹 Retensi 24 Jam:</span>
+                            </span>
+                            <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                              03.00 WITA Aktif
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-500 leading-tight">
+                            {lastChatPurgeSummary
+                              ? `Pembersihan terakhir: ${lastChatPurgeSummary.lastPurgeTime} (${lastChatPurgeSummary.deletedCount} chat dihapus).`
+                              : 'Scheduler aktif: Pembersihan otomatis chat >24 jam berjalan setiap pukul 03.00 WITA.'
+                            }
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {/* AI Inbox (Percakapan Realtime WhatsApp & Telegram) - HANYA UNTUK ADMIN RI'AYAH */}
@@ -282,7 +513,7 @@ export default function Navbar({ onOpenFlutterModal }) {
                 }
               }}
               tooltip="AI Inbox (Live WhatsApp & Telegram)"
-              badge={unreadWaCount}
+              badge={manualReplyNeededCount > 0 ? manualReplyNeededCount : 0}
               variant="wa"
             />
           )}

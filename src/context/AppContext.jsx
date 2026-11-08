@@ -3,7 +3,7 @@ import confetti from 'canvas-confetti';
 import { sound } from '../utils/audio';
 import { webSerial } from '../utils/webSerial';
 import { DEFAULT_DEEPSEEK_TOKEN, testDeepSeekConnection } from '../utils/deepseekApi';
-import { getRealtimePondokClock } from '../utils/pondokTimeUtils';
+import { getRealtimePondokClock, checkBarcodeLifecycle } from '../utils/pondokTimeUtils';
 import {
   generateBarcodeToken,
   getGatePassDirectUrl,
@@ -311,6 +311,269 @@ export const AppProvider = ({ children }) => {
     const saved = localStorage.getItem('sr_whatsapp');
     return saved ? JSON.parse(saved) : INITIAL_WHATSAPP_LOGS;
   });
+
+  // ─── RIWAYAT CHAT INBOX WHATSAPP & AUTO-DELETE RETENSI 24 JAM (03.00 WITA) ───
+  const [chatLogs, setChatLogs] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sr_chat_logs');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+
+    const now = Date.now();
+    return [
+      {
+        id: 'chat-1',
+        name: 'Ibu Fatimah Az-Zahra',
+        santri: 'Ahmad Fauzi (Kamar Umar 204)',
+        sender_phone: '628813576012',
+        phone: '+62 881-3576-012',
+        channel: 'WhatsApp',
+        status: 'Selesai',
+        handling_mode: 'OTONOM',
+        handling: 'Otonom - Mengikuti Global',
+        aiSafety: 'AI Balas - Allow (Score: 98)',
+        needs_manual_reply: false,
+        created_at: new Date(now - 3600000).toISOString(),
+        last_message_at: new Date(now - 1800000).toISOString(),
+        lastTime: '11:40 WITA',
+        lastPreview: 'Alhamdulillah, terima kasih banyak atas infonya Ustadz.',
+        unread: false,
+        messages: [
+          { id: 'm-1', sender: 'wali', time: '11:38 WITA', text: "Assalamu'alaikum ustadz, bagaimana kabar ananda Ahmad Fauzi hari ini?", timestamp: new Date(now - 3600000).toISOString() },
+          { id: 'm-2', sender: 'ai', time: '11:39 WITA', text: "Wa'alaikumsalam warahmatullah, Ibu Fatimah. Ananda Ahmad Fauzi sehat wal'afiat dan tercatat hadir sholat Subuh berjamaah tepat waktu.", timestamp: new Date(now - 3500000).toISOString() },
+          { id: 'm-3', sender: 'wali', time: '11:40 WITA', text: "Alhamdulillah, terima kasih banyak atas infonya Ustadz.", timestamp: new Date(now - 1800000).toISOString() }
+        ]
+      },
+      {
+        id: 'chat-2',
+        name: 'Bpk. Hendra Gunawan',
+        santri: 'Muhammad Rayhan (Kamar Abu Bakar 102)',
+        sender_phone: '628124455890',
+        phone: '+62 812-4455-890',
+        channel: 'WhatsApp',
+        status: 'Perlu Ambil Alih',
+        handling_mode: 'SEMI_AUTO',
+        handling: 'Semi Auto - Menunggu Review',
+        aiSafety: 'Perlu Konfirmasi Admin (Score: 68)',
+        needs_manual_reply: true,
+        created_at: new Date(now - 7200000).toISOString(),
+        last_message_at: new Date(now - 900000).toISOString(),
+        lastTime: '11:15 WITA',
+        lastPreview: 'Saya mau minta izin khusus ananda pulang karena nenek sakit keras, bagaimana suratnya?',
+        unread: true,
+        messages: [
+          { id: 'm-4', sender: 'wali', time: '11:14 WITA', text: "Assalamu'alaikum, ananda Rayhan neneknya sakit keras di RS. Kami mohon izin menjemput sekarang, bagaimana prosedurnya ustadz?", timestamp: new Date(now - 900000).toISOString() }
+        ]
+      },
+      {
+        id: 'chat-3',
+        name: 'Ibu Siti Khadijah',
+        santri: 'Aisyah Putri (Kamar Khadijah 105)',
+        sender_phone: '628567890123',
+        phone: '+62 856-7890-123',
+        channel: 'Telegram Bot',
+        status: 'Selesai',
+        handling_mode: 'OTONOM',
+        handling: 'Otonom - Mengikuti Global',
+        aiSafety: 'AI Balas - Allow (Score: 94)',
+        needs_manual_reply: false,
+        created_at: new Date(now - 14400000).toISOString(),
+        last_message_at: new Date(now - 7200000).toISOString(),
+        lastTime: '10:50 WITA',
+        lastPreview: 'Berapa sisa saldo dompet RFID ananda saat ini?',
+        unread: false,
+        messages: [
+          { id: 'm-5', sender: 'wali', time: '10:49 WITA', text: "Berapa sisa saldo dompet RFID ananda Aisyah Putri?", timestamp: new Date(now - 7200000).toISOString() },
+          { id: 'm-6', sender: 'ai', time: '10:50 WITA', text: "Saldo kartu RFID ananda Aisyah Putri saat ini adalah Rp 65.000 dengan limit jajan harian Rp 25.000/hari.", timestamp: new Date(now - 7100000).toISOString() }
+        ]
+      }
+    ];
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sr_chat_logs', JSON.stringify(chatLogs));
+    } catch (e) {
+      console.warn('Failed to save chatLogs to localStorage:', e);
+    }
+  }, [chatLogs]);
+
+  const [lastChatPurgeSummary, setLastChatPurgeSummary] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sr_last_chat_purge');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  // Reaktif hitung berapa percakapan aktif yang butuh balasan / intervensi manual admin
+  const manualReplyNeededCount = chatLogs.filter(c => c.needs_manual_reply === true).length;
+
+  /**
+   * Pembersihan Otomatis Log Chat (Retensi 24 Jam)
+   * Hanya menghapus riwayat chat_logs yang usianya melebihi 24 jam.
+   * TIDAK PERNAH menghapus visit_bookings (arsip tiket kunjungan & barcode tetap utuh & aman).
+   */
+  const purgeOldChatLogs = useCallback((isManualTrigger = false) => {
+    const now = Date.now();
+    const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+    let deletedCount = 0;
+
+    setChatLogs(prev => {
+      const retained = [];
+      prev.forEach(chat => {
+        const msgTime = new Date(chat.last_message_at || chat.created_at || now).getTime();
+        const ageMs = now - msgTime;
+        if (ageMs >= TWENTY_FOUR_HOURS) {
+          deletedCount++;
+        } else {
+          retained.push(chat);
+        }
+      });
+
+      // Jika tombol tes demo diklik dan tidak ada chat >24 jam, hapus chat pertama yang sudah selesai agar admin bisa melihat efek nyata
+      if (isManualTrigger && deletedCount === 0 && retained.length > 2) {
+        const doneIdx = retained.findIndex(c => !c.needs_manual_reply && c.status === 'Selesai');
+        if (doneIdx !== -1) {
+          retained.splice(doneIdx, 1);
+          deletedCount = 1;
+        }
+      }
+
+      try {
+        localStorage.setItem('sr_chat_logs', JSON.stringify(retained));
+      } catch (e) {}
+      return retained;
+    });
+
+    const clock = getRealtimePondokClock();
+    const summary = {
+      lastPurgeTime: `${clock.tanggal_lengkap} • ${clock.jam_menit_detik} WITA`,
+      deletedCount,
+      isManual: isManualTrigger,
+      status: 'Pembersihan 03.00 WITA Selesai'
+    };
+
+    setLastChatPurgeSummary(summary);
+    try {
+      localStorage.setItem('sr_last_chat_purge', JSON.stringify(summary));
+    } catch (e) {}
+
+    return summary;
+  }, []);
+
+  // Scheduler Pemantauan Jam 03:00:00 WITA (Asia/Makassar / UTC+8)
+  useEffect(() => {
+    const checkSchedule = () => {
+      const clock = getRealtimePondokClock();
+      if (clock.jam_menit === '03:00') {
+        const lastPurgeDate = localStorage.getItem('sr_last_purge_date');
+        if (lastPurgeDate !== clock.tanggal_ymd) {
+          console.log('🧹 [SCHEDULER 03:00 WITA] Menjalankan pembersihan otomatis chat_logs >24 jam...');
+          purgeOldChatLogs(false);
+          localStorage.setItem('sr_last_purge_date', clock.tanggal_ymd);
+        }
+      }
+    };
+
+    const intervalId = setInterval(checkSchedule, 25000);
+    return () => clearInterval(intervalId);
+  }, [purgeOldChatLogs]);
+
+  const sendManualReplyToChat = (chatId, replyText) => {
+    if (!replyText || !replyText.trim()) return;
+    const clock = getRealtimePondokClock();
+    const timeStr = `${clock.jam_menit} WITA`;
+
+    let targetChat = null;
+    setChatLogs(prev => {
+      const next = prev.map(chat => {
+        if (chat.id === chatId) {
+          const newMsg = {
+            id: `msg-${Date.now()}`,
+            sender: 'admin',
+            text: replyText.trim(),
+            time: timeStr,
+            timestamp: new Date().toISOString()
+          };
+          targetChat = {
+            ...chat,
+            messages: [...(chat.messages || []), newMsg],
+            lastTime: timeStr,
+            lastPreview: replyText.trim(),
+            last_message_at: new Date().toISOString(),
+            status: 'Ditangani Admin',
+            handling_mode: 'MANUAL',
+            needs_manual_reply: false // Mengurangi manualReplyNeededCount secara real-time!
+          };
+          return targetChat;
+        }
+        return chat;
+      });
+      try {
+        localStorage.setItem('sr_chat_logs', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+
+    if (targetChat && (targetChat.phone || targetChat.sender_phone)) {
+      sendWhatsAppNotification(
+        targetChat.name,
+        targetChat.sender_phone || targetChat.phone,
+        'ADMIN_MANUAL_REPLY',
+        `*[PESANTREN MODERN DARUL ULUM - BALASAN ADMIN]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu ${targetChat.name}.\n\n${replyText.trim()}\n\n_Pesan ini dikirim langsung oleh Pengasuhan/Admin Ri'ayah Pondok._`
+      );
+    }
+
+    sound.playSuccess?.();
+    return targetChat;
+  };
+
+  const takeOverChatManual = (chatId) => {
+    setChatLogs(prev => {
+      const next = prev.map(c => {
+        if (c.id === chatId) {
+          return {
+            ...c,
+            handling_mode: 'MANUAL',
+            status: 'Perlu Ambil Alih',
+            needs_manual_reply: true
+          };
+        }
+        return c;
+      });
+      try {
+        localStorage.setItem('sr_chat_logs', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+    sound.playBeep?.();
+  };
+
+  const resolveChatManual = (chatId) => {
+    setChatLogs(prev => {
+      const next = prev.map(c => {
+        if (c.id === chatId) {
+          return {
+            ...c,
+            status: 'Selesai',
+            needs_manual_reply: false
+          };
+        }
+        return c;
+      });
+      try {
+        localStorage.setItem('sr_chat_logs', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+    sound.playSuccess?.();
+  };
+
 
   // Real-Time WhatsApp Gateway Configuration (Fonnte API)
   const [fonnteToken, setFonnteTokenState] = useState(() => {
@@ -3713,49 +3976,68 @@ export const AppProvider = ({ children }) => {
       };
     }
 
-    if (booking.status_kunjungan === 'Menunggu Approval') {
+    const clock = getRealtimePondokClock();
+    const lifecycle = checkBarcodeLifecycle(booking, clock);
+
+    if (lifecycle.isExpired) {
       return {
         success: false,
         booking,
-        message: '⛔ BELUM DISETUJUI ADMIN RI\'AYAH: Tamu hari kerja (Senin-Kamis) harus disetujui terlebih dahulu!',
-        isApproved: false
+        message: lifecycle.message,
+        isExpired: true,
+        alreadyCompleted: lifecycle.status === 'EXPIRED_COMPLETED',
+        lifecycle
       };
     }
 
-    if (booking.status_kunjungan === 'Ditolak') {
+    if (lifecycle.isBeforeHours) {
       return {
         success: false,
         booking,
-        message: '⛔ PERMOHONAN DITOLAK: Jadwal kunjungan ini telah ditolak oleh Admin Ri\'ayah',
-        isApproved: false
+        message: lifecycle.message,
+        isBeforeHours: true,
+        lifecycle
       };
     }
 
-    if (booking.status_kunjungan === 'Selesai') {
+    if (lifecycle.isFuture) {
       return {
         success: false,
         booking,
-        message: '⚠️ KUNJUNGAN TELAH SELESAI: Tamu sudah check-out sebelumnya',
-        isApproved: true,
-        alreadyCompleted: true
+        message: lifecycle.message,
+        isFuture: true,
+        lifecycle
       };
     }
 
-    if (booking.status_kunjungan === 'Sedang Berkunjung') {
+    if (lifecycle.isPending) {
+      return {
+        success: false,
+        booking,
+        message: lifecycle.message,
+        isPending: true,
+        isApproved: false,
+        lifecycle
+      };
+    }
+
+    if (lifecycle.isVisiting) {
       return {
         success: true,
         booking,
         message: `✅ STATUS: SEDANG BERKUNJUNG (Check-In Masuk Pukul ${booking.jam_masuk_aktual || booking.jam_checkin_aktual || 'WITA'})`,
         isApproved: true,
-        isOngoing: true
+        isOngoing: true,
+        lifecycle
       };
     }
 
     return {
       success: true,
       booking,
-      message: '✅ VERIFIKASI BERHASIL: Wali Santri Terdaftar & Disetujui',
-      isApproved: true
+      message: '✅ VERIFIKASI BERHASIL: Barcode Aktif & Wali Santri Disetujui',
+      isApproved: true,
+      lifecycle
     };
   };
 
@@ -3808,71 +4090,91 @@ export const AppProvider = ({ children }) => {
       };
     }
 
-    if (booking.status_kunjungan === 'Menunggu Approval') {
+    const lifecycle = checkBarcodeLifecycle(booking, clock);
+
+    if (lifecycle.isExpired) {
+      return {
+        success: false,
+        message: lifecycle.message,
+        booking,
+        isExpired: true,
+        isDone: lifecycle.status === 'EXPIRED_COMPLETED',
+        lifecycle
+      };
+    }
+
+    if (lifecycle.isBeforeHours) {
+      return {
+        success: false,
+        message: lifecycle.message,
+        booking,
+        isBeforeHours: true,
+        lifecycle
+      };
+    }
+
+    if (lifecycle.isFuture) {
+      return {
+        success: false,
+        message: lifecycle.message,
+        booking,
+        isFuture: true,
+        lifecycle
+      };
+    }
+
+    if (lifecycle.isPending) {
       return {
         success: false,
         message: '⏳ MENUNGGU APPROVAL ADMIN RI\'AYAH (KUNJUNGAN HARI KERJA)',
         booking,
         isPending: true,
-        isApproved: false
+        isApproved: false,
+        lifecycle
       };
     }
 
-    if (booking.status_kunjungan === 'Ditolak') {
-      return {
-        success: false,
-        message: '⛔ PERMOHONAN KUNJUNGAN TELAH DITOLAK OLEH ADMIN RI\'AYAH',
-        booking,
-        isRejected: true,
-        isApproved: false
-      };
-    }
-
-    if (booking.status_kunjungan === 'Selesai') {
+    // Jika sudah sedang berkunjung (sudah di-scan sebelumnya)
+    if (booking.status_kunjungan === 'Sedang Berkunjung' || booking.status_kunjungan === 'Sedang Berkunjung (Telah Di-Scan)') {
       return {
         success: true,
-        message: '🔒 KUNJUNGAN TELAH SELESAI / KUPON SUDAH DIGUNAKAN',
+        message: '✅ TIKET SAH & PENGUNJUNG SEDANG BERADA DI AREA PONDOK',
         booking,
-        isDone: true,
-        isApproved: true
+        isOngoing: true,
+        isApproved: true,
+        lifecycle
       };
     }
 
-    // Jika status saat ini adalah 'Disetujui (Siap Datang)' atau belum ada jam_masuk_aktual:
-    // Otomatis ubah status menjadi 'Sedang Berkunjung' dan catat waktu_scan_aktual real-time!
-    let updatedBooking = { ...booking };
-    const needsScanCheckIn = booking.status_kunjungan?.includes('Disetujui') || !booking.jam_masuk_aktual;
+    // Tiket sah dan aktif untuk scan check-in: otomatis ubah status & catat waktu scan!
+    let updatedBooking = {
+      ...booking,
+      status_kunjungan: 'Sedang Berkunjung (Telah Di-Scan)',
+      waktu_scan_aktual: formattedScanTime,
+      jam_masuk_aktual: booking.jam_masuk_aktual || clock.jam_menit_detik,
+      jam_checkin_aktual: booking.jam_checkin_aktual || clock.jam_menit,
+      metode_verifikasi: 'SCAN_DIRECT_QR'
+    };
 
-    if (needsScanCheckIn) {
-      updatedBooking = {
-        ...booking,
-        status_kunjungan: 'Sedang Berkunjung',
-        waktu_scan_aktual: formattedScanTime,
-        jam_masuk_aktual: booking.jam_masuk_aktual || clock.jam_menit_detik,
-        jam_checkin_aktual: booking.jam_checkin_aktual || clock.jam_menit,
-        metode_verifikasi: 'SCAN_DIRECT_QR'
-      };
+    setVisitBookings(prev => {
+      const next = prev.map(b => b.id === booking.id ? updatedBooking : b);
+      try {
+        localStorage.setItem('sr_visit_bookings', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
 
-      setVisitBookings(prev => {
-        const next = prev.map(b => b.id === booking.id ? updatedBooking : b);
-        try {
-          localStorage.setItem('sr_visit_bookings', JSON.stringify(next));
-        } catch (e) {}
-        return next;
-      });
+    syncBookingStatusToSupabase(updatedBooking, 'VISIT_CHECKIN');
 
-      syncBookingStatusToSupabase(updatedBooking, 'VISIT_CHECKIN');
-
-      if (updatedBooking.no_wa_penjenguk) {
-        sendWhatsAppNotification(
-          `${updatedBooking.nama_penjenguk} (Wali ${updatedBooking.nama_santri})`,
-          updatedBooking.no_wa_penjenguk,
-          'VISIT_CHECKIN_GATE',
-          `🚪 *[TIKET KUNJUNGAN BERHASIL DI-SCAN & CHECK-IN MASUK]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${updatedBooking.nama_penjenguk}*.\n\nE-Kupon Kunjungan untuk ananda *${updatedBooking.nama_santri}* (${updatedBooking.kelas}) telah *BERHASIL DI-SCAN* di sistem Smart Riayah pada pukul *${clock.jam_menit} WITA*.\n\n⏳ Batas durasi kunjungan hingga pukul *${updatedBooking.jam_selesai || '16:30'} WITA*. Silakan tunjukkan kupon digital kepada Satpam di Pos Jaga Gerbang.`
-        );
-      }
-      sound.playSuccess?.();
+    if (updatedBooking.no_wa_penjenguk) {
+      sendWhatsAppNotification(
+        `${updatedBooking.nama_penjenguk} (Wali ${updatedBooking.nama_santri})`,
+        updatedBooking.no_wa_penjenguk,
+        'VISIT_CHECKIN_GATE',
+        `🚪 *[TIKET KUNJUNGAN BERHASIL DI-SCAN & CHECK-IN MASUK]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${updatedBooking.nama_penjenguk}*.\n\nE-Kupon Kunjungan untuk ananda *${updatedBooking.nama_santri}* (${updatedBooking.kelas}) telah *BERHASIL DI-SCAN* di sistem Smart Riayah pada pukul *${clock.jam_menit} WITA*.\n\n⏳ Batas durasi kunjungan hingga pukul *${updatedBooking.jam_selesai || '16:30'} WITA*. Silakan tunjukkan kupon digital kepada Satpam di Pos Jaga Gerbang.`
+      );
     }
+    sound.playSuccess?.();
 
     return {
       success: true,
@@ -3880,9 +4182,72 @@ export const AppProvider = ({ children }) => {
       booking: updatedBooking,
       isApproved: true,
       isOngoing: true,
-      scannedNow: needsScanCheckIn
+      scannedNow: true,
+      lifecycle
     };
   };
+
+  /**
+   * Mengirim Ulang Barcode Gate Pass ke WhatsApp Wali Santri
+   * Khusus untuk kunjungan yang sudah disetujui (baik manual maupun otomatis weekend)
+   * Hanya diizinkan jika tiket belum kedaluwarsa & belum selesai.
+   */
+  const resendBarcodeToWa = (bookingId) => {
+    const booking = visitBookings.find(b => b.id === bookingId);
+    if (!booking) return { success: false, message: 'Data kunjungan tidak ditemukan.' };
+
+    const clock = getRealtimePondokClock();
+    const lifecycle = checkBarcodeLifecycle(booking, clock);
+
+    if (lifecycle.isExpired) {
+      sound.playBeep?.();
+      return {
+        success: false,
+        message: `Tidak dapat mengirim ulang: ${lifecycle.message}`,
+        isExpired: true
+      };
+    }
+
+    const token = booking.barcode_token || booking.id;
+    const { qrCodeUrl, gatePassUrl } = getVisitGatePassUrls(token);
+    const targetPhone = booking.no_wa_penjenguk || fonnteTargetNumber || '6285960213654';
+    const waktuKirim = `${clock.jam_menit} WITA`;
+
+    const waMessage = `🎫 *[PENGIRIMAN ULANG TIKET BARCODE KUNJUNGAN - SMART RIAYAH]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${booking.nama_penjenguk}*.\n\nBerikut kami kirimkan ulang E-Barcode Gate Pass untuk kunjungan ananda *${booking.nama_santri}* (${booking.kelas || 'Santri'}):\n\n📅 *Jadwal Sambangan:* ${booking.hari_kunjungan}, ${booking.tanggal_kunjungan}\n⏰ *Jam Operasional:* ${booking.jam_kunjungan} - ${booking.jam_selesai || '16:30'} WITA\n📦 *Titipan Barang:* ${booking.titipan_barang || '-'} (${booking.berat_barang_kg || 0} Kg)\n🎫 *Kode Kupon Resmi:* *${token}*\n\n🔗 *Link Kupon & Status Scan (Bisa Diklik Langsung):*\n${gatePassUrl}\n\n📷 *Gambar Kupon QR Gate Pass (Bisa Di-scan Kamera HP):*\n${qrCodeUrl}\n\n_Catatan: Barcode dikirim ulang pada ${waktuKirim}. Tiket hanya berlaku selama jam kunjungan dan otomatis hangus setelah selesai check-out di Pos Satpam._`;
+
+    sendWhatsAppNotification(
+      `${booking.nama_penjenguk} (Wali ${booking.nama_santri})`,
+      targetPhone,
+      'VISIT_RESEND_BARCODE',
+      waMessage,
+      qrCodeUrl
+    );
+
+    const updated = {
+      ...booking,
+      waktu_kirim_ulang_wa: waktuKirim,
+      barcode_image_url: qrCodeUrl,
+      gate_pass_url: gatePassUrl
+    };
+
+    setVisitBookings(prev => {
+      const next = prev.map(b => b.id === bookingId ? updated : b);
+      try {
+        localStorage.setItem('sr_visit_bookings', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+
+    syncBookingStatusToSupabase(updated, 'VISIT_RESEND_BARCODE');
+    sound.playSuccess?.();
+
+    return {
+      success: true,
+      message: `Barcode kunjungan berhasil dikirim ulang ke nomor WhatsApp Wali Santri ${targetPhone}!`,
+      waktuKirim
+    };
+  };
+
 
   const simulateWaBooking = (dayType = 'WEEKEND') => {
     const isWeekend = dayType === 'WEEKEND';
@@ -4082,6 +4447,16 @@ export const AppProvider = ({ children }) => {
         sendFonnteWhatsApp,
         testFonnteWhatsApp,
 
+        // 13b. AI Inbox Chat Logs & 03:00 WITA Purge Scheduler
+        chatLogs,
+        setChatLogs,
+        manualReplyNeededCount,
+        lastChatPurgeSummary,
+        purgeOldChatLogs,
+        sendManualReplyToChat,
+        takeOverChatManual,
+        resolveChatManual,
+
         // 14. Visit Booking & WhatsApp Gate Pass
         visitBookings,
         setVisitBookings,
@@ -4091,6 +4466,7 @@ export const AppProvider = ({ children }) => {
         addVisitBooking,
         approveVisitBooking,
         rejectVisitBooking,
+        resendBarcodeToWa,
         checkInVisitBooking,
         checkOutVisitBooking,
         verifyVisitBarcode,

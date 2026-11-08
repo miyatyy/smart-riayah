@@ -386,7 +386,11 @@ export default function SecurityVisitGateModule() {
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <h4 className="font-black text-sm tracking-tight text-white">
-                      {isLiveOngoing
+                      {verificationResult.lifecycle?.isExpired
+                        ? '⛔ BARCODE TIDAK DAPAT DIGUNAKAN LAGI (EXPIRED / KUNJUNGAN SELESAI)'
+                        : verificationResult.lifecycle?.isBeforeHours
+                        ? `⏳ BELUM WAKTUNYA MASUK (${liveBooking?.jam_kunjungan || '14:00'} WITA)`
+                        : isLiveOngoing
                         ? '✅ STATUS: SEDANG BERKUNJUNG (CHECK-IN BERHASIL)'
                         : isLiveDone
                         ? '✓ STATUS: KUNJUNGAN TELAH SELESAI'

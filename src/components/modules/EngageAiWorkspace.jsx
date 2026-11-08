@@ -158,7 +158,15 @@ function EngageAiWorkspaceContent() {
     rooms,
     sendWhatsAppNotification,
     engageActiveTab,
-    setEngageActiveTab
+    setEngageActiveTab,
+    chatLogs,
+    setChatLogs,
+    manualReplyNeededCount,
+    lastChatPurgeSummary,
+    purgeOldChatLogs,
+    sendManualReplyToChat,
+    takeOverChatManual,
+    resolveChatManual
   } = useApp();
 
   // ─── Main Tabs Navigation ───
@@ -443,6 +451,7 @@ function EngageAiWorkspaceContent() {
             {navPills.map(tab => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
+              const isInbox = tab.id === 'inbox';
               return (
                 <button
                   key={tab.id}
@@ -455,6 +464,12 @@ function EngageAiWorkspaceContent() {
                 >
                   <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-emerald-600' : 'text-emerald-300'}`} />
                   <span>{tab.label}</span>
+                  {/* Badge notifikasi angka cerdas hanya jika perlu balasan manual */}
+                  {isInbox && manualReplyNeededCount > 0 && (
+                    <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-rose-600 text-white animate-pulse shadow-sm">
+                      {manualReplyNeededCount}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -496,6 +511,14 @@ function EngageAiWorkspaceContent() {
           deviceData={deviceData}
           addSafetyLog={addSafetyLog}
           showToast={showToast}
+          chatLogs={chatLogs}
+          setChatLogs={setChatLogs}
+          manualReplyNeededCount={manualReplyNeededCount}
+          purgeOldChatLogs={purgeOldChatLogs}
+          lastChatPurgeSummary={lastChatPurgeSummary}
+          sendManualReplyToChat={sendManualReplyToChat}
+          takeOverChatManual={takeOverChatManual}
+          resolveChatManual={resolveChatManual}
         />
       )}
 
@@ -1957,7 +1980,20 @@ function TabChannels({
 /* =========================================================================================
    SUB-COMPONENT: TAB 3 - AI INBOX (LIST & DETAIL)
    ========================================================================================= */
-function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
+function TabAiInbox({
+  fonnteToken,
+  deviceData,
+  addSafetyLog,
+  showToast,
+  chatLogs,
+  setChatLogs,
+  manualReplyNeededCount = 0,
+  purgeOldChatLogs,
+  lastChatPurgeSummary,
+  sendManualReplyToChat,
+  takeOverChatManual,
+  resolveChatManual
+}) {
   const [selectedChat, setSelectedChat] = useState(null);
   const [isSendingOverride, setIsSendingOverride] = useState(false);
   const [isManualOverrideActive, setIsManualOverrideActive] = useState(false);
@@ -1969,8 +2005,8 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
   const [overrideMessage, setOverrideMessage] = useState('');
   const [isSimulating, setIsSimulating] = useState(false);
 
-  // ─── Conversations Directory ───
-  const [conversations, setConversations] = useState([
+  // ─── Conversations Directory (Source of Truth: chatLogs dari AppContext) ───
+  const conversations = chatLogs && chatLogs.length > 0 ? chatLogs : [
     {
       id: 'chat-1',
       name: 'Ibu Fatimah Az-Zahra',
@@ -1983,6 +2019,7 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
       lastTime: '11:40 WIB',
       lastPreview: 'Assalamu\'alaikum, apakah ananda Fauzi hari ini sholat subuh berjamaah?',
       unread: false,
+      needs_manual_reply: false,
       messages: [
         { sender: 'wali', time: '11:38 WIB', text: 'Assalamu\'alaikum ustadz, bagaimana kabar ananda Ahmad Fauzi hari ini?' },
         { sender: 'ai', time: '11:39 WIB', text: 'Wa\'alaikumsalam warahmatullah, Ibu Fatimah. Ananda Ahmad Fauzi sehat wal\'afiat dan tercatat hadir sholat Subuh berjamaah di Masjid Jami\' tepat waktu. Poin kedisiplinannya saat ini 96/100 (Mumtaz).' },
@@ -1995,13 +2032,14 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
       santri: 'Muhammad Rayhan (Kamar Abu Bakar 102)',
       phone: '+62 812-4455-890',
       channel: 'WhatsApp',
-      status: 'Open',
-      handling: 'Otonom - Mengikuti Global',
+      status: 'Perlu Ambil Alih',
+      handling: 'Semi Auto - Perlu Review',
       isManual: false,
-      aiSafety: 'AI Balas - Allow (Score: 89)',
+      needs_manual_reply: true,
+      aiSafety: 'Perlu Konfirmasi Admin (Score: 68)',
       lastTime: '11:15 WIB',
       lastPreview: 'Saya mau tanya prosedur perpanjangan izin pulang karena anak demam di rumah.',
-      unread: false,
+      unread: true,
       messages: [
         { sender: 'wali', time: '11:14 WIB', text: 'Assalamu\'alaikum, ananda Rayhan sedang demam di rumah. Bagaimana prosedur mengajukan perpanjangan liburan?' },
         { sender: 'ai', time: '11:15 WIB', text: 'Wa\'alaikumsalam Bapak Hendra. Syafakallah untuk ananda. Bapak dapat mengajukan perpanjangan liburan langsung melalui menu Perizinan di aplikasi Smart Riayah dengan mengunggah foto surat dokter/keterangan sakit.' }
@@ -2016,6 +2054,7 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
       status: 'Open',
       handling: 'Otonom - Mengikuti Global',
       aiSafety: 'AI Balas - Allow (Score: 94)',
+      needs_manual_reply: false,
       lastTime: '10:50 WIB',
       lastPreview: 'Berapa sisa saldo dompet RFID ananda saat ini?',
       unread: false,
@@ -2024,7 +2063,13 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
         { sender: 'ai', time: '10:50 WIB', text: 'Saldo kartu RFID ananda Aisyah Putri saat ini adalah Rp 65.000 dengan limit jajan harian Rp 25.000/hari.' }
       ]
     }
-  ]);
+  ];
+
+  const setConversations = (updater) => {
+    if (typeof setChatLogs === 'function') {
+      setChatLogs(updater);
+    }
+  };
 
   // ─── Real-Time Inbound Live Chat Feed Stream ───
   const [liveFeedLogs, setLiveFeedLogs] = useState([
@@ -2486,8 +2531,14 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
 
         setSelectedChat(prev => ({
           ...prev,
-          messages: [...prev.messages, newMsg]
+          messages: [...prev.messages, newMsg],
+          needs_manual_reply: false,
+          status: 'Ditangani Admin'
         }));
+
+        if (typeof sendManualReplyToChat === 'function' && selectedChat?.id) {
+          sendManualReplyToChat(selectedChat.id, textToSend);
+        }
 
         addSafetyLog?.(
           'outbound success',
@@ -2977,6 +3028,46 @@ function TabAiInbox({ fonnteToken, deviceData, addSafetyLog, showToast }) {
   // Tampilan Daftar Inbox (Utama)
   return (
     <div className="space-y-6">
+      {/* ─── BANNER RETENSI LOG CHAT 24 JAM & AUTO-CLEAN 03.00 WITA ─── */}
+      <div className="bg-slate-900 border border-emerald-500/30 text-white p-3.5 sm:p-4 rounded-2xl shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center font-bold text-lg shrink-0">
+            🧹
+          </div>
+          <div>
+            <div className="text-xs sm:text-sm font-bold text-white flex items-center gap-2 flex-wrap">
+              <span>🧹 Auto-Clean Aktif: Seluruh log chat &gt;24 jam dihapus otomatis setiap pukul 03.00 WITA dini hari.</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 font-mono">
+                WITA (UTC+8)
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-300 mt-0.5">
+              Pembersihan ini hanya merapikan riwayat chat room dan <strong className="text-emerald-300">TIDAK PERNAH menghapus data tiket kunjungan tamu (visit_bookings)</strong>.
+              {lastChatPurgeSummary && (
+                <span className="text-slate-400 ml-1">
+                  • Terakhir dibersihkan: {lastChatPurgeSummary.lastPurgeTime} ({lastChatPurgeSummary.deletedCount} chat dibersihkan)
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            if (purgeOldChatLogs) {
+              const res = purgeOldChatLogs(true);
+              sound.playSuccess?.();
+              showToast?.(`🧹 Pembersihan 03.00 WITA Selesai: ${res.deletedCount} chat lama dibersihkan. Seluruh arsip visit_bookings tetap utuh & aman!`, 'success');
+            }
+          }}
+          className="shrink-0 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition shadow-md flex items-center gap-2 self-start md:self-center"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-emerald-200" />
+          <span>Tes Jalankan Pembersihan 03.00 WITA</span>
+        </button>
+      </div>
+
       {/* 1. Panel Uji Langsung Balasan Otonom AI (Simulasi WhatsApp Masuk) */}
       <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-slate-50 p-4 rounded-2xl border border-emerald-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>

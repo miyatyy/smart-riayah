@@ -115,7 +115,7 @@ const ROLE_CONFIG = {
 /* ─────────────────────────────────────────────
    MENU ITEMS per role
 ───────────────────────────────────────────── */
-function getMenuItems(role, { permits, rooms, santriList, blacklistedUids, gateLogs, medicalRecords, pendingPermitsCount, warningPermitsCount, santriDiLuar, pendingVisitsCount = 0 }) {
+function getMenuItems(role, { permits, rooms, santriList, blacklistedUids, gateLogs, medicalRecords, pendingPermitsCount, warningPermitsCount, santriDiLuar, pendingVisitsCount = 0, manualReplyNeededCount = 0 }) {
   switch (role) {
     case 'superadmin':
       return [
@@ -138,7 +138,7 @@ function getMenuItems(role, { permits, rooms, santriList, blacklistedUids, gateL
         { id: 'express_kiosk', label: 'Kiosk Izin', icon: Zap, badge: 'Cepat' },
         { id: 'visit_bookings', label: 'Kunjungan Tamu', icon: Calendar, badge: pendingVisitsCount > 0 ? `${pendingVisitsCount} Menunggu` : 'QR Pass', urgent: pendingVisitsCount > 0 },
         { id: 'gate_logs', label: 'Log Gerbang', icon: ClipboardList, badge: `${gateLogs.length}` },
-        { id: 'whatsapp_manager', label: 'WhatsApp', icon: Smartphone, badge: 'Live' },
+        { id: 'whatsapp_manager', label: 'WhatsApp', icon: Smartphone, badge: manualReplyNeededCount > 0 ? `${manualReplyNeededCount}` : null, urgent: manualReplyNeededCount > 0 },
         { id: 'ai_analytics', label: 'AI Evaluasi', icon: Sparkles, badge: 'AI', highlight: true },
       ];
     case 'parent':
@@ -243,7 +243,8 @@ export default function Sidebar({ onOpenFlutterModal }) {
     unreadWaCount,
     setUnreadWaCount,
     isFonnteEnabled,
-    visitBookings
+    visitBookings,
+    manualReplyNeededCount
   } = useApp();
 
   const [showDevSwitcher, setShowDevSwitcher] = useState(false);
@@ -267,7 +268,8 @@ export default function Sidebar({ onOpenFlutterModal }) {
 
   const menuItems = getMenuItems(role, {
     permits, rooms, santriList, blacklistedUids, gateLogs, medicalRecords,
-    pendingPermitsCount, warningPermitsCount, santriDiLuar, pendingVisitsCount
+    pendingPermitsCount, warningPermitsCount, santriDiLuar, pendingVisitsCount,
+    manualReplyNeededCount
   });
 
   const handleMenuClick = (id) => {
@@ -474,9 +476,9 @@ export default function Sidebar({ onOpenFlutterModal }) {
                 <div className="flex items-center gap-2">
                   <div className="relative">
                     <MessageSquare className="w-3.5 h-3.5 text-emerald-500 group-hover:scale-110 transition" />
-                    {unreadWaCount > 0 && (
-                      <span className="animate-ping absolute -top-1 -right-1.5 bg-rose-500 text-white text-[8px] w-3.5 h-3.5 rounded-full flex items-center justify-center font-bold">
-                        {unreadWaCount}
+                    {manualReplyNeededCount > 0 && (
+                      <span className="absolute -top-1 -right-1.5 bg-rose-600 text-white text-[9px] min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center font-bold shadow-sm animate-pulse">
+                        {manualReplyNeededCount}
                       </span>
                     )}
                   </div>
@@ -503,9 +505,9 @@ export default function Sidebar({ onOpenFlutterModal }) {
                   title="Buka Live WhatsApp Gateway"
                 >
                   <MessageSquare className="w-4 h-4" />
-                  {unreadWaCount > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
-                      {unreadWaCount}
+                  {manualReplyNeededCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-rose-600 text-white text-[9px] min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center font-bold">
+                      {manualReplyNeededCount}
                     </span>
                   )}
                 </button>

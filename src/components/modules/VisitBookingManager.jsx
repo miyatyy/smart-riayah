@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
 import { parseBookingWithDeepSeek } from '../../services/deepseekVisitService';
-import { getRealtimePondokClock, calculateVisitCountdown } from '../../utils/pondokTimeUtils';
+import { getRealtimePondokClock, calculateVisitCountdown, checkBarcodeLifecycle } from '../../utils/pondokTimeUtils';
 import { getBarcodeImageUrl, getVisitGatePassUrls, downloadBarcodeImage } from '../../utils/barcodeUtils';
 
 export default function VisitBookingManager({ isCompact = false }) {
@@ -47,10 +47,11 @@ export default function VisitBookingManager({ isCompact = false }) {
     simulateWaBooking,
     santriList,
     addVisitBooking,
-    isFonnteEnabled
+    isFonnteEnabled,
+    resendBarcodeToWa
   } = useApp();
 
-  const [activeFilter, setActiveFilter] = useState('ALL'); // 'ALL' | 'PENDING' | 'WEEKEND' | 'SATPAM' | 'ACTIVE' | 'COMPLETED'
+  const [activeFilter, setActiveFilter] = useState('ALL'); // 'ALL' | 'APPROVED_LOGS' | 'PENDING' | 'WEEKEND' | 'SATPAM' | 'ACTIVE' | 'COMPLETED'
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilter, setDateFilter] = useState('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -60,6 +61,7 @@ export default function VisitBookingManager({ isCompact = false }) {
   const [copiedToken, setCopiedToken] = useState(false);
   const [customWaChat, setCustomWaChat] = useState("Assalamu'alaikum ustadz, saya Bu Fatimah wali ananda Ahmad Fauzi kelas 10A kamar Umar 204 dari Surabaya, mau sambang hari Senin tgl 2026-11-09 jam 14.00 WIB bawa madu herbal 2 kg.");
   const [isAiParsing, setIsAiParsing] = useState(false);
+  const [toastNotification, setToastNotification] = useState(null);
 
   // Live Clock Ticking Engine (1000ms)
   const [liveClock, setLiveClock] = useState(() => getRealtimePondokClock());
@@ -117,11 +119,21 @@ export default function VisitBookingManager({ isCompact = false }) {
   const totalHariIni = bookings.filter(b => b.tanggal_kunjungan === todayStr || b.status_kunjungan === 'Sedang Berkunjung').length;
   const pendingWeekday = bookings.filter(b => b.status_kunjungan === 'Menunggu Approval').length;
   const autoApprovedWeekend = bookings.filter(b => b.approval_type === 'AUTO_WEEKEND').length;
+  const approvedVisitsCount = bookings.filter(b => 
+    b.status_kunjungan === 'Disetujui (Siap Datang)' || 
+    b.approval_type === 'AUTO_WEEKEND' || 
+    (b.barcode_token && b.status_kunjungan !== 'Menunggu Approval' && b.status_kunjungan !== 'Ditolak')
+  ).length;
   const totalBeratTitipan = bookings.reduce((sum, b) => sum + (Number(b.berat_barang_kg) || 0), 0).toFixed(1);
 
   // Filter bookings
   const filteredBookings = bookings.filter(b => {
     // Tab filter
+    if (activeFilter === 'APPROVED_LOGS' && !(
+      b.status_kunjungan === 'Disetujui (Siap Datang)' || 
+      b.approval_type === 'AUTO_WEEKEND' || 
+      (b.barcode_token && b.status_kunjungan !== 'Menunggu Approval' && b.status_kunjungan !== 'Ditolak')
+    )) return false;
     if (activeFilter === 'PENDING' && b.status_kunjungan !== 'Menunggu Approval') return false;
     if (activeFilter === 'WEEKEND' && b.approval_type !== 'AUTO_WEEKEND') return false;
     if (activeFilter === 'SATPAM' && b.booking_source !== 'MANUAL_SATPAM') return false;
@@ -476,6 +488,19 @@ export default function VisitBookingManager({ isCompact = false }) {
         </div>
       )}
 
+      {/* Toast Feedback Pengiriman Barcode */}
+      {toastNotification && (
+        <div className="p-3.5 rounded-2xl bg-teal-600 text-white text-xs font-bold flex items-center justify-between gap-3 shadow-md animate-in slide-in-from-top-2 border border-teal-700">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 shrink-0 text-white" />
+            <span>{toastNotification}</span>
+          </div>
+          <button onClick={() => setToastNotification(null)} className="p-1 hover:bg-white/20 rounded">
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* ─── 3. TABEL MONITORING KUNJUNGAN & BOOKING WHATSAPP ─── */}
       <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden space-y-0">
         {/* Table Top Controls & Filter */}
@@ -484,6 +509,7 @@ export default function VisitBookingManager({ isCompact = false }) {
           <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-1">
             {[
               { id: 'ALL', label: `Semua (${bookings.length})` },
+              { id: 'APPROVED_LOGS', label: `📜 Log Approval & Kirim Barcode (${approvedVisitsCount})` },
               { id: 'PENDING', label: `Perlu Approval (${pendingWeekday})`, badge: pendingWeekday > 0 },
               { id: 'WEEKEND', label: `Booking Weekend (${autoApprovedWeekend})` },
               { id: 'SATPAM', label: 'Input Satpam' },
@@ -763,28 +789,73 @@ export default function VisitBookingManager({ isCompact = false }) {
                               </button>
                             </>
                           ) : (
-                            <div className="flex items-center gap-1.5 justify-center">
-                              <button
-                                onClick={() => setSelectedBookingForPass(b)}
-                                className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition border border-slate-200 flex items-center gap-1"
-                                title="Lihat detail tiket & QR code"
-                              >
-                                <QrCode className="w-3 h-3 text-emerald-600" />
-                                <span>Lihat Tiket</span>
-                              </button>
-                              <button
-                                onClick={() => {
-                                  const token = b.barcode_token || b.id;
-                                  const { gatePassUrl } = getVisitGatePassUrls(token);
-                                  window.open(gatePassUrl, '_blank');
-                                  sound.playSuccess?.();
-                                }}
-                                className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-[11px] transition border border-emerald-200 flex items-center gap-1 shadow-2xs"
-                                title="Buka simulasi scan E-Kupon langsung di tab baru"
-                              >
-                                <ExternalLink className="w-3 h-3 text-emerald-600" />
-                                <span className="hidden sm:inline">Kupon</span>
-                              </button>
+                            <div className="flex flex-col items-center gap-1.5 justify-center">
+                              <div className="flex items-center gap-1.5 justify-center flex-wrap">
+                                {/* Tombol Kirim Ulang Barcode ke WA */}
+                                {(() => {
+                                  const lifecycle = checkBarcodeLifecycle(b, liveClock);
+                                  if (lifecycle.isExpired) {
+                                    return (
+                                      <button
+                                        disabled
+                                        className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-400 font-bold text-[10px] cursor-not-allowed border border-slate-200 flex items-center gap-1"
+                                        title={lifecycle.message}
+                                      >
+                                        <span>🔒 Masa Kunjungan Berakhir</span>
+                                      </button>
+                                    );
+                                  }
+                                  return (
+                                    <button
+                                      onClick={async () => {
+                                        if (typeof resendBarcodeToWa === 'function') {
+                                          const res = await resendBarcodeToWa(b.id);
+                                          if (res.success) {
+                                            setToastNotification(res.message);
+                                            sound.playSuccess?.();
+                                            setTimeout(() => setToastNotification(null), 5000);
+                                          } else {
+                                            alert(res.message);
+                                          }
+                                        }
+                                      }}
+                                      className="px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold text-[10px] transition shadow-xs flex items-center gap-1"
+                                      title={`Kirim ulang tiket barcode resmi ke nomor WhatsApp Wali (${b.no_wa_penjenguk})`}
+                                    >
+                                      <Send className="w-3 h-3" />
+                                      <span>📲 Kirim Ulang Barcode ke WA</span>
+                                    </button>
+                                  );
+                                })()}
+
+                                <button
+                                  onClick={() => setSelectedBookingForPass(b)}
+                                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] transition border border-slate-200 flex items-center gap-1"
+                                  title="Lihat detail tiket & QR code"
+                                >
+                                  <QrCode className="w-3 h-3 text-emerald-600" />
+                                  <span>Lihat Tiket</span>
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    const token = b.barcode_token || b.id;
+                                    const { gatePassUrl } = getVisitGatePassUrls(token);
+                                    window.open(gatePassUrl, '_blank');
+                                    sound.playSuccess?.();
+                                  }}
+                                  className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-[10px] transition border border-emerald-200 flex items-center gap-1 shadow-2xs"
+                                  title="Buka simulasi scan E-Kupon langsung di tab baru"
+                                >
+                                  <ExternalLink className="w-3 h-3 text-emerald-600" />
+                                  <span className="hidden sm:inline">Kupon</span>
+                                </button>
+                              </div>
+
+                              {b.waktu_kirim_ulang_wa && (
+                                <span className="text-[9px] text-teal-700 font-mono font-medium">
+                                  📲 Dikirim ulang: {b.waktu_kirim_ulang_wa}
+                                </span>
+                              )}
                             </div>
                           )}
                         </div>

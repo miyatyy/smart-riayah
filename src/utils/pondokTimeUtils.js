@@ -207,3 +207,156 @@ export function checkVisitingHoursValidity(hariName, jamKunjunganStr) {
   }
 }
 
+/**
+ * Validasi Siklus Hidup Barcode Tiket Kunjungan Secara Ketat (Strict Barcode Lifecycle)
+ * 1. Sebelum Jam Kunjungan -> BEFORE_HOURS (Belum waktunya masuk)
+ * 2. Selama Jam Kunjungan -> ACTIVE_VALID (Sah digunakan)
+ * 3. Melebihi Jam Selesai atau Setelah Check-Out -> EXPIRED (Hangus & diblokir penggunaan ulang)
+ */
+export function checkBarcodeLifecycle(booking, clock = getRealtimePondokClock()) {
+  if (!booking) {
+    return {
+      status: 'NOT_FOUND',
+      isValidForScan: false,
+      isExpired: true,
+      canCheckIn: false,
+      badgeLabel: '⛔ TIKET TIDAK DITEMUKAN',
+      alertType: 'danger',
+      message: 'Data tiket kunjungan tidak ditemukan di sistem Smart Riayah.'
+    };
+  }
+
+  // 1. Status Selesai atau Check-out atau Ditolak
+  if (
+    booking.status_kunjungan === 'Selesai' ||
+    booking.is_used_completed === true ||
+    booking.is_barcode_expired === true ||
+    booking.status_approval === 'REJECTED' ||
+    booking.status_kunjungan === 'Ditolak'
+  ) {
+    return {
+      status: 'EXPIRED_COMPLETED',
+      isValidForScan: false,
+      isExpired: true,
+      canCheckIn: false,
+      badgeLabel: '⛔ EXPIRED / SUDAH DIGUNAKAN',
+      alertType: 'danger',
+      message: 'Kunjungan telah selesai dan tiket barcode telah di-checkout/hangus. Barcode tidak dapat digunakan kembali demi keamanan santri.'
+    };
+  }
+
+  // 2. Status Masih Menunggu Approval (Senin-Kamis belum di-approve admin)
+  if (booking.status_kunjungan === 'Menunggu Approval') {
+    return {
+      status: 'PENDING_APPROVAL',
+      isValidForScan: false,
+      isExpired: false,
+      isPending: true,
+      canCheckIn: false,
+      badgeLabel: '⏳ MENUNGGU APPROVAL ADMIN',
+      alertType: 'warning',
+      message: "Permohonan kunjungan hari kerja (Senin–Kamis) masih menunggu persetujuan resmi dari Admin Ri'ayah."
+    };
+  }
+
+  // 3. Validasi Tanggal (Bila ada tanggal_kunjungan format YYYY-MM-DD)
+  if (booking.tanggal_kunjungan && /^\d{4}-\d{2}-\d{2}$/.test(booking.tanggal_kunjungan)) {
+    if (clock.tanggal_ymd > booking.tanggal_kunjungan) {
+      return {
+        status: 'EXPIRED_DATE_PAST',
+        isValidForScan: false,
+        isExpired: true,
+        canCheckIn: false,
+        badgeLabel: '⛔ KEDALUWARSA (TANGGAL LEWAT)',
+        alertType: 'danger',
+        message: `Jadwal kunjungan pada ${booking.hari_kunjungan || ''} (${booking.tanggal_kunjungan}) telah lewat. Barcode tiket otomatis hangus.`
+      };
+    }
+
+    if (clock.tanggal_ymd < booking.tanggal_kunjungan) {
+      return {
+        status: 'FUTURE_DATE',
+        isValidForScan: false,
+        isExpired: false,
+        isFuture: true,
+        canCheckIn: false,
+        badgeLabel: `⏳ BELUM WAKTUNYA (${booking.hari_kunjungan || 'Mendatang'}, ${booking.tanggal_kunjungan})`,
+        alertType: 'warning',
+        message: `Tiket dijadwalkan untuk hari ${booking.hari_kunjungan || ''}, ${booking.tanggal_kunjungan} pukul ${booking.jam_kunjungan || '14:00'} WITA. Belum dapat digunakan untuk masuk saat ini.`
+      };
+    }
+
+    // Hari H Kunjungan (clock.tanggal_ymd === booking.tanggal_kunjungan)
+    // Bandingkan jam kedatangan
+    const [clockH, clockM] = clock.jam_menit.split(':').map(v => parseInt(v, 10) || 0);
+    const clockMinutes = clockH * 60 + clockM;
+
+    let startMinutes = 0;
+    if (booking.jam_kunjungan && booking.jam_kunjungan.includes(':')) {
+      const [h, m] = booking.jam_kunjungan.split(':').map(v => parseInt(v, 10) || 0);
+      startMinutes = h * 60 + m;
+    }
+
+    let endMinutes = 24 * 60;
+    if (booking.jam_selesai && booking.jam_selesai.includes(':')) {
+      const [h, m] = booking.jam_selesai.split(':').map(v => parseInt(v, 10) || 0);
+      endMinutes = h * 60 + m;
+    }
+
+    // Toleransi toleran 15 menit sebelum jam_kunjungan untuk antrian pos satpam
+    const allowedStartMinutes = Math.max(0, startMinutes - 15);
+
+    if (startMinutes > 0 && clockMinutes < allowedStartMinutes) {
+      return {
+        status: 'BEFORE_HOURS',
+        isValidForScan: false,
+        isExpired: false,
+        isBeforeHours: true,
+        canCheckIn: false,
+        badgeLabel: `⏳ BELUM WAKTUNYA MASUK (${booking.jam_kunjungan} WITA)`,
+        alertType: 'warning',
+        message: `Belum waktunya masuk. Menunggu jam kunjungan santri pukul ${booking.jam_kunjungan} WITA (Buka mulai 15 menit sebelumnya).`
+      };
+    }
+
+    if (endMinutes < 24 * 60 && clockMinutes > endMinutes) {
+      return {
+        status: 'EXPIRED_HOURS_OVER',
+        isValidForScan: false,
+        isExpired: true,
+        canCheckIn: false,
+        badgeLabel: '⛔ EXPIRED (JAM BERKUNJUNG SELESAI)',
+        alertType: 'danger',
+        message: `Jam operasional kunjungan (${booking.jam_kunjungan || '14:00'} - ${booking.jam_selesai} WITA) telah berakhir. Tiket barcode telah hangus.`
+      };
+    }
+  }
+
+  // 4. Jika Sedang Berkunjung
+  if (booking.status_kunjungan === 'Sedang Berkunjung' || booking.status_kunjungan === 'Sedang Berkunjung (Telah Di-Scan)') {
+    return {
+      status: 'CURRENTLY_VISITING',
+      isValidForScan: false, // Sudah di-scan masuk, menunggu check-out
+      isExpired: false,
+      isVisiting: true,
+      canCheckIn: false,
+      badgeLabel: '✅ SEDANG BERKUNJUNG (SUDAH DI-SCAN)',
+      alertType: 'success',
+      message: 'Pengunjung telah berhasil check-in di Pos Satpam dan saat ini sedang berada di lingkungan pondok.'
+    };
+  }
+
+  // 5. Tiket Sah dan Aktif untuk Check-In
+  return {
+    status: 'ACTIVE_VALID',
+    isValidForScan: true,
+    isExpired: false,
+    isActive: true,
+    canCheckIn: true,
+    badgeLabel: '✅ BARCODE AKTIF & SAH DIGUNAKAN',
+    alertType: 'success',
+    message: 'Barcode tiket kunjungan sah, aktif, dan dapat diverifikasi masuk di Pos Jaga Keamanan.'
+  };
+}
+
+
