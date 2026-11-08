@@ -23,6 +23,7 @@ import {
   Bell,
   Smartphone,
   CheckCircle,
+  CheckCircle2,
   Clock,
   AlertTriangle,
   Calendar,

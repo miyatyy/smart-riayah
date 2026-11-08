@@ -19,6 +19,7 @@ import {
   RefreshCw, 
   Check, 
   X, 
+  XCircle, 
   UserPlus, 
   PhoneCall, 
   Home, 
@@ -381,7 +382,7 @@ export default function AdminRiayahDashboard() {
     try {
       console.log('📡 [Supabase] Mengirim payload pendaftaran santri baru via insertSantriToSupabase:', payload);
 
-      const insertRes = await insertSantriToSupabase(payload, {
+      let insertRes = await insertSantriToSupabase(payload, {
         reassignCard: allowReassignCard,
         forceUpdate: (registeredSantriWithUid && isSameSantri)
       });
@@ -395,15 +396,37 @@ export default function AdminRiayahDashboard() {
         if (isDuplicateKey) {
           const ownerName = insertRes.existingSantri?.nama_lengkap || registeredSantriWithUid?.nama || 'santri lain di sistem';
           const ownerNis = (insertRes.existingSantri?.nis || registeredSantriWithUid?.nis) ? ` (NIS: ${insertRes.existingSantri?.nis || registeredSantriWithUid?.nis})` : '';
-          alert(
-            `⚠️ KARTU SUDAH DIGUNAKAN DI DATABASE!\n\nKartu RFID [${payload.rfid_uid}] sudah terdaftar atas nama "${ownerName}"${ownerNis}.\n\nSaran Tindakan:\n1. Klik "🎲 Acak UID Baru" untuk membuat nomor UID kartu baru yang unik, ATAU\n2. Centang "🔄 Alihkan / Daur Ulang Kartu ke Santri Ini" lalu klik simpan kembali.`
+
+          const wantReassign = window.confirm(
+            `⚠️ KARTU SUDAH DIGUNAKAN DI DATABASE!\n\n` +
+            `Kartu RFID [${payload.rfid_uid}] saat ini terdaftar atas nama "${ownerName}"${ownerNis}.\n\n` +
+            `Apakah Anda ingin MENGALIHKAN kartu ini ke santri "${payload.nama_lengkap}" sekarang?\n\n` +
+            `• Klik OK: Alihkan kartu ke santri ini dan simpan langsung ke Supabase.\n` +
+            `• Klik Batal: Batalkan dan acak kode UID baru yang unik.`
           );
+
+          if (wantReassign) {
+            setAllowReassignCard(true);
+            const retryRes = await insertSantriToSupabase(payload, {
+              reassignCard: true,
+              forceUpdate: true
+            });
+            if (retryRes.success) {
+              insertRes = retryRes;
+            } else {
+              alert(`❌ Gagal mengalihkan kartu: ${retryRes.error?.message || 'Terjadi kesalahan sistem'}`);
+              return;
+            }
+          } else {
+            handleGenerateUniqueUid();
+            alert(`ℹ️ Kode kartu telah diacak menjadi UID baru yang unik. Silakan klik tombol "Simpan ke Supabase" kembali.`);
+            return;
+          }
+        } else {
+          console.error('❌ [Supabase] Gagal menyimpan data santri ke tabel santri:', insertRes.error);
+          alert(`❌ Gagal menyimpan santri ke database Supabase!\n\nDetail Error: ${insertRes.error.message || JSON.stringify(insertRes.error)}`);
           return;
         }
-
-        console.error('❌ [Supabase] Gagal menyimpan data santri ke tabel santri:', insertRes.error);
-        alert(`❌ Gagal menyimpan santri ke database Supabase!\n\nDetail Error: ${insertRes.error.message || JSON.stringify(insertRes.error)}`);
-        return;
       }
 
       console.log('✅ [Supabase] Berhasil menyimpan santri ke tabel santri:', insertRes);

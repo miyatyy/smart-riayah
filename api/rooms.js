@@ -6,10 +6,10 @@ let pool = null;
 function getPool() {
   try {
     if (!pool) {
-      const isSupabase = !!process.env.DATABASE_URL;
-      if (!isSupabase && !process.env.DB_HOST && process.env.NODE_ENV === 'production') {
+      if (!process.env.DATABASE_URL && !process.env.DB_HOST) {
         return null;
       }
+      const isSupabase = !!process.env.DATABASE_URL;
       const poolConfig = isSupabase
         ? {
             connectionString: process.env.DATABASE_URL,

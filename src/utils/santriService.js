@@ -78,7 +78,7 @@ export async function insertSantriToSupabase(santriData, options = {}) {
       const { data: matchRows, error: checkUidErr } = await supabase
         .from('santri')
         .select('*')
-        .or(`rfid_uid.eq.${cleanUid},rfid_uid.ilike.${cleanUid}`)
+        .ilike('rfid_uid', cleanUid)
         .limit(1);
 
       if (!checkUidErr && matchRows && matchRows.length > 0) {
@@ -220,7 +220,7 @@ export async function insertSantriToSupabase(santriData, options = {}) {
         const { data: conflictRows } = await supabase
           .from('santri')
           .select('*')
-          .or(`rfid_uid.eq.${cleanUid},rfid_uid.ilike.${cleanUid}`)
+          .ilike('rfid_uid', cleanUid)
           .limit(1);
 
         const conflictRow = (conflictRows && conflictRows.length > 0) ? conflictRows[0] : null;
