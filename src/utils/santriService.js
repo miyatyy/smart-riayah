@@ -1,6 +1,20 @@
 import { supabase } from './supabaseClient';
 
 /**
+ * Utility pengecekan kemiripan nama santri untuk mendeteksi variasi ejaan
+ * (contoh: 'Nurmiyati' vs 'Nurmiyaty', 'Dewi' vs 'Dewi Sartika')
+ */
+export function isNameSimilar(a, b) {
+  if (!a || !b) return false;
+  const s1 = a.trim().toLowerCase().replace(/[^a-z0-9]/g, '').replace(/y$/, 'i');
+  const s2 = b.trim().toLowerCase().replace(/[^a-z0-9]/g, '').replace(/y$/, 'i');
+  if (s1 === s2) return true;
+  if (s1.includes(s2) || s2.includes(s1)) return true;
+  if (s1.length >= 4 && s2.length >= 4 && (s1.startsWith(s2.slice(0, 5)) || s2.startsWith(s1.slice(0, 5)))) return true;
+  return false;
+}
+
+/**
  * Menyimpan data santri baru atau memperbarui data santri ke tabel 'santri' di database Supabase.
  * Menangani secara cerdas:
  * 1. Deteksi duplikasi rfid_uid sebelum insert untuk mencegah 409 unique constraint error ("santri_rfid_uid_key").
@@ -61,28 +75,28 @@ export async function insertSantriToSupabase(santriData, options = {}) {
     // 1. Cek apakah ada record yang menggunakan rfid_uid ini di Supabase
     let existingSantriByUid = null;
     if (cleanUid) {
-      const { data: matchUid, error: checkUidErr } = await supabase
+      const { data: matchRows, error: checkUidErr } = await supabase
         .from('santri')
         .select('*')
-        .eq('rfid_uid', cleanUid)
-        .maybeSingle();
+        .ilike('rfid_uid', cleanUid)
+        .limit(1);
 
-      if (!checkUidErr && matchUid) {
-        existingSantriByUid = matchUid;
+      if (!checkUidErr && matchRows && matchRows.length > 0) {
+        existingSantriByUid = matchRows[0];
       }
     }
 
     // 2. Cek apakah ada record dengan ID yang sama
     let existingSantriById = null;
     if (payload.id) {
-      const { data: matchId, error: checkIdErr } = await supabase
+      const { data: matchIdRows, error: checkIdErr } = await supabase
         .from('santri')
         .select('*')
         .eq('id', payload.id)
-        .maybeSingle();
+        .limit(1);
 
-      if (!checkIdErr && matchId) {
-        existingSantriById = matchId;
+      if (!checkIdErr && matchIdRows && matchIdRows.length > 0) {
+        existingSantriById = matchIdRows[0];
       }
     }
 
@@ -90,15 +104,13 @@ export async function insertSantriToSupabase(santriData, options = {}) {
     if (existingSantriByUid) {
       const isSameStudent = 
         (existingSantriById && existingSantriById.id === existingSantriByUid.id) ||
-        (existingSantriByUid.nama_lengkap && cleanNama && 
-          (existingSantriByUid.nama_lengkap.toLowerCase().includes(cleanNama.toLowerCase()) || 
-           cleanNama.toLowerCase().includes(existingSantriByUid.nama_lengkap.toLowerCase()))) ||
+        isNameSimilar(cleanNama, existingSantriByUid.nama_lengkap) ||
         (existingSantriByUid.nis && String(existingSantriByUid.nis) === cleanNis) ||
         options.forceUpdate;
 
       if (isSameStudent) {
         // Santri yang sama: UPDATE datanya tanpa membuat id baru
-        console.log(`ℹ️ [Supabase insertSantri] Santri "${cleanNama}" sudah terdaftar (ID: ${existingSantriByUid.id}). Memperbarui data...`);
+        console.log(`ℹ️ [Supabase insertSantri] Santri "${cleanNama}" cocok dengan data tersimpan (ID: ${existingSantriByUid.id}). Memperbarui data...`);
         const updatePayload = {
           ...payload,
           id: existingSantriByUid.id
@@ -127,12 +139,12 @@ export async function insertSantriToSupabase(santriData, options = {}) {
 
       // Santri berbeda tapi kartu sama
       if (options.reassignCard) {
-        // Alihkan kartu: lepas rfid_uid dari santri lama
+        // Alihkan kartu: lepas rfid_uid dari seluruh record yang menggunakan kartu ini
         console.log(`🔄 [Supabase insertSantri] Melepaskan kartu [${cleanUid}] dari "${existingSantriByUid.nama_lengkap}" (ID: ${existingSantriByUid.id})...`);
         await supabase
           .from('santri')
           .update({ rfid_uid: null, updated_at: new Date().toISOString() })
-          .eq('id', existingSantriByUid.id);
+          .ilike('rfid_uid', cleanUid);
 
         // Simpan santri baru
         const { data: insertedData, error: insertErr } = await supabase
@@ -199,17 +211,17 @@ export async function insertSantriToSupabase(santriData, options = {}) {
     if (insertError) {
       // Jika terjadi race condition atau constraint violation tak terduga
       if (insertError.code === '23505' || insertError.message?.includes('santri_rfid_uid_key')) {
-        console.warn('⚠️ [Supabase insertSantri] Terdeteksi race-condition constraint unik rfid_uid, mencoba pemulihan otomatis...');
-        const { data: conflictRow } = await supabase
+        console.warn('⚠️ [Supabase insertSantri] Terdeteksi constraint unik rfid_uid, mencoba pemulihan otomatis...');
+        const { data: conflictRows } = await supabase
           .from('santri')
           .select('*')
-          .eq('rfid_uid', cleanUid)
-          .maybeSingle();
+          .ilike('rfid_uid', cleanUid)
+          .limit(1);
+
+        const conflictRow = (conflictRows && conflictRows.length > 0) ? conflictRows[0] : null;
 
         if (conflictRow) {
-          const namesMatch = cleanNama && conflictRow.nama_lengkap &&
-            (conflictRow.nama_lengkap.toLowerCase().includes(cleanNama.toLowerCase()) ||
-             cleanNama.toLowerCase().includes(conflictRow.nama_lengkap.toLowerCase()));
+          const namesMatch = isNameSimilar(cleanNama, conflictRow.nama_lengkap);
 
           if (namesMatch) {
             const { data: recoverData } = await supabase
@@ -236,6 +248,17 @@ export async function insertSantriToSupabase(santriData, options = {}) {
             }
           };
         }
+
+        // Jika conflictRow tidak ditemukan (misal pembatasan read/RLS), tetap return duplicateUid: true agar tidak throw raw alert
+        return {
+          success: false,
+          duplicateUid: true,
+          existingSantri: { nama_lengkap: 'Santri Lain (Database)', rfid_uid: cleanUid },
+          error: {
+            code: '23505',
+            message: `Kartu RFID [${cleanUid}] sudah terdaftar di database Supabase.`
+          }
+        };
       }
 
       console.error('❌ [Supabase insertSantri] Gagal menyimpan data:', insertError);

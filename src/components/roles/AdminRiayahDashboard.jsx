@@ -54,7 +54,7 @@ import DeleteConfirmModal from '../common/DeleteConfirmModal';
 import BulkCsvImportModal from '../common/BulkCsvImportModal';
 import { downloadCsvFile, getTemplateCsv } from '../../utils/csvUtils';
 import { supabase } from '../../utils/supabaseClient';
-import { insertSantriToSupabase } from '../../utils/santriService';
+import { insertSantriToSupabase, isNameSimilar } from '../../utils/santriService';
 
 export default function AdminRiayahDashboard() {
   const { 
@@ -264,13 +264,13 @@ export default function AdminRiayahDashboard() {
     return santriList.find(s => (s.rfidUid || s.rfid_uid || '').trim().toUpperCase() === clean) || null;
   }, [onboardingForm.rfidUid, santriList]);
 
-  // Cek apakah kartu milik santri yang sama (misal Nurmiyaty memperbarui kamar)
+  // Cek apakah kartu milik santri yang sama (misal Nurmiyati / Nurmiyaty memperbarui kamar)
   const isSameSantri = React.useMemo(() => {
     if (!registeredSantriWithUid) return false;
-    const formName = (onboardingForm.nama || '').trim().toLowerCase();
-    const existingName = (registeredSantriWithUid.nama || registeredSantriWithUid.nama_lengkap || '').trim().toLowerCase();
+    const formName = (onboardingForm.nama || '').trim();
+    const existingName = (registeredSantriWithUid.nama || registeredSantriWithUid.nama_lengkap || '').trim();
     if (!formName) return true;
-    return formName === existingName || formName.includes(existingName) || existingName.includes(formName);
+    return isNameSimilar(formName, existingName);
   }, [registeredSantriWithUid, onboardingForm.nama]);
 
   const [allowReassignCard, setAllowReassignCard] = useState(false);
@@ -380,9 +380,11 @@ export default function AdminRiayahDashboard() {
       });
 
       if (!insertRes.success && insertRes.error) {
-        if (insertRes.duplicateUid && insertRes.existingSantri) {
+        if (insertRes.duplicateUid) {
+          const ownerName = insertRes.existingSantri?.nama_lengkap || 'santri lain di sistem';
+          const ownerNis = insertRes.existingSantri?.nis ? ` (NIS: ${insertRes.existingSantri.nis})` : '';
           alert(
-            `⚠️ KARTU SUDAH DIGUNAKAN DI DATABASE!\n\nKartu RFID [${payload.rfid_uid}] sudah terdaftar atas nama "${insertRes.existingSantri.nama_lengkap}" (NIS: ${insertRes.existingSantri.nis || '-'}).\n\nSaran Tindakan:\n1. Klik "🎲 Acak UID Baru", ATAU\n2. Centang "🔄 Alihkan / Daur Ulang Kartu ke Santri Ini" lalu klik simpan kembali.`
+            `⚠️ KARTU SUDAH DIGUNAKAN DI DATABASE!\n\nKartu RFID [${payload.rfid_uid}] sudah terdaftar atas nama "${ownerName}"${ownerNis}.\n\nSaran Tindakan:\n1. Klik "🎲 Acak UID Baru" untuk membuat nomor UID kartu baru yang unik, ATAU\n2. Centang "🔄 Alihkan / Daur Ulang Kartu ke Santri Ini" lalu klik simpan kembali.`
           );
           return;
         }

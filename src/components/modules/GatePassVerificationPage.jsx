@@ -2,237 +2,105 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   Shield,
-  CheckCircle,
-  XCircle,
-  Clock,
-  AlertTriangle,
   Download,
-  Printer,
-  Send,
-  ArrowLeft,
-  User,
-  Phone,
-  MapPin,
-  Calendar,
-  Package,
-  QrCode,
-  Sparkles,
-  Lock,
-  Check,
-  Copy,
-  ExternalLink,
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
   RefreshCw,
-  Award
+  QrCode,
+  FileCheck
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
-import { getRealtimePondokClock, calculateVisitCountdown, checkBarcodeLifecycle } from '../../utils/pondokTimeUtils';
+import { getRealtimePondokClock, checkBarcodeLifecycle } from '../../utils/pondokTimeUtils';
 import { getVisitGatePassUrls, downloadBarcodeImage } from '../../utils/barcodeUtils';
 
-// Subcomponent 1: Live Clock in Header (Isolated 1s interval)
-const LiveClockHeader = React.memo(function LiveClockHeader() {
-  const [clock, setClock] = useState(() => getRealtimePondokClock());
-  useEffect(() => {
-    const timer = setInterval(() => setClock(getRealtimePondokClock()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-  return (
-    <div className="hidden md:flex flex-col text-right font-mono text-[11px] text-slate-400">
-      <span>{clock.nama_hari}, {clock.tanggal_lengkap}</span>
-      <span className="text-emerald-400 font-bold">{clock.jam_menit_detik} WITA</span>
-    </div>
-  );
-});
-
-// Subcomponent 2: Live Countdown Timer (Isolated 1s interval)
-const LiveCountdownBadge = React.memo(function LiveCountdownBadge({ jamSelesai, tgl }) {
-  const [countdown, setCountdown] = useState(() => calculateVisitCountdown(jamSelesai, tgl));
-  useEffect(() => {
-    const timer = setInterval(() => setCountdown(calculateVisitCountdown(jamSelesai, tgl)), 1000);
-    return () => clearInterval(timer);
-  }, [jamSelesai, tgl]);
-  if (!countdown) return null;
-  return (
-    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold font-mono ${
-      countdown.isOverstay ? 'bg-rose-500/20 text-rose-300 border border-rose-400/30 animate-pulse' : 'bg-blue-500/20 text-blue-300 border border-blue-400/30'
-    }`}>
-      <Clock className="w-3.5 h-3.5" />
-      <span>{countdown.isOverstay ? `⚠️ Overstay: ${countdown.remainingText}` : `⏳ Sisa Waktu Kunjungan: ${countdown.remainingText}`}</span>
-    </span>
-  );
-});
-
-// Subcomponent 3: Animated Checkmark Banner on Check-In
-const AnimatedCheckmarkBanner = React.memo(function AnimatedCheckmarkBanner({ booking }) {
-  if (!booking) return null;
-  return (
-    <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-900 border-2 border-emerald-500/80 rounded-3xl p-6 sm:p-7 shadow-2xl text-white space-y-5 animate-fade-in">
-      <style>{`
-        @keyframes checkmarkStroke {
-          0% { stroke-dashoffset: 48; }
-          100% { stroke-dashoffset: 0; }
-        }
-        @keyframes checkmarkScale {
-          0%, 100% { transform: scale(1); }
-          50% { transform: scale(1.08); }
-        }
-        .anim-checkmark-stroke {
-          stroke-dasharray: 48;
-          stroke-dashoffset: 0;
-          animation: checkmarkStroke 0.6s cubic-bezier(0.65, 0, 0.45, 1) forwards;
-        }
-        .anim-checkmark-box {
-          animation: checkmarkScale 0.6s ease-in-out;
-        }
-      `}</style>
-      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-        {/* Animated Green Checkmark SVG */}
-        <div className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 mx-auto sm:mx-0 flex items-center justify-center rounded-full bg-emerald-500/20 border-2 border-emerald-400 anim-checkmark-box shadow-lg shadow-emerald-500/20">
-          <svg className="w-10 h-10 sm:w-12 sm:h-12 text-emerald-400" viewBox="0 0 52 52">
-            <circle
-              className="stroke-current text-emerald-500/30"
-              strokeWidth="4"
-              fill="none"
-              cx="26"
-              cy="26"
-              r="23"
-            />
-            <path
-              className="stroke-current text-emerald-400 anim-checkmark-stroke"
-              strokeWidth="4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              fill="none"
-              d="M14.1 27.2l7.1 7.2 16.7-16.8"
-            />
-          </svg>
-        </div>
-
-        <div className="text-center sm:text-left flex-1 min-w-0">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider bg-emerald-500 text-slate-950 shadow-sm">
-            <CheckCircle className="w-3.5 h-3.5" />
-            CHECK-IN BERHASIL — WALI SANTRI TELAH TIBA DI PONDOK
-          </span>
-          <h2 className="text-xl sm:text-2xl font-black text-white mt-2 tracking-tight">
-            Selamat Datang di Pondok Pesantren Modern Darul Ulum
-          </h2>
-          <p className="text-xs text-emerald-200/90 mt-1 leading-relaxed">
-            Barcode gate pass telah berhasil di-scan dan status kehadiran wali santri telah tercatat secara sah di sistem pusat.
-          </p>
-        </div>
-      </div>
-
-      {/* Rincian Kedatangan Tamu & Santri */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-black/40 p-4 rounded-2xl border border-emerald-500/30 text-xs">
-        <div>
-          <span className="text-[10px] uppercase font-bold text-slate-400 block font-mono">Nama Santri</span>
-          <span className="font-extrabold text-white text-sm block truncate mt-0.5">{booking.nama_santri}</span>
-          <span className="text-[10px] text-emerald-300 font-mono">{booking.kelas}</span>
-        </div>
-        <div>
-          <span className="text-[10px] uppercase font-bold text-slate-400 block font-mono">Wali / Penjenguk</span>
-          <span className="font-extrabold text-white text-sm block truncate mt-0.5">{booking.nama_penjenguk}</span>
-          <span className="text-[10px] text-slate-300">{booking.status_penjenguk || 'Wali Santri'}</span>
-        </div>
-        <div>
-          <span className="text-[10px] uppercase font-bold text-slate-400 block font-mono">Waktu Check-In</span>
-          <span className="font-mono font-extrabold text-emerald-400 text-sm block mt-0.5">
-            {booking.jam_masuk_aktual || booking.jam_checkin_aktual || 'WITA'}
-          </span>
-          <span className="text-[10px] text-slate-300">{booking.hari_kunjungan}, {booking.tanggal_kunjungan}</span>
-        </div>
-        <div>
-          <span className="text-[10px] uppercase font-bold text-slate-400 block font-mono">Titipan Barang &amp; Berat</span>
-          <span className="font-extrabold text-cyan-300 text-sm block mt-0.5">
-            {booking.berat_barang_kg ? `${booking.berat_barang_kg} Kg` : '0 Kg'}
-          </span>
-          <span className="text-[10px] text-slate-300 truncate block">{booking.titipan_barang && booking.titipan_barang !== '-' ? booking.titipan_barang : 'Tidak ada titipan'}</span>
-        </div>
-      </div>
-    </div>
-  );
-});
-
-export default function GatePassVerificationPage({ token, onBackToDashboard }) {
-  const {
-    visitBookings,
-    verifyAndScanTicket,
-    checkInVisitBooking,
-    checkOutVisitBooking,
-    sendWhatsAppNotification,
-    isAuthenticated,
-    role
-  } = useApp();
+export default function GatePassVerificationPage({ token }) {
+  const { visitBookings, lookupVisitBooking } = useApp();
 
   const [booking, setBooking] = useState(null);
-  const [verificationState, setVerificationState] = useState({
+  const [lookupState, setLookupState] = useState({
     loading: true,
     success: false,
-    message: 'Memverifikasi kode tiket di sistem...',
+    message: 'Memuat kupon kunjungan digital...',
+    isExpired: false,
     isPending: false,
-    isRejected: false,
-    isDone: false,
-    isOngoing: false
+    isOngoing: false,
+    isApproved: false
   });
 
   const [couponImageUrl, setCouponImageUrl] = useState('');
   const [isGeneratingCanvas, setIsGeneratingCanvas] = useState(true);
-  const [copiedLink, setCopiedLink] = useState(false);
-  const [resendingWa, setResendingWa] = useState(false);
-  const [waSentSuccess, setWaSentSuccess] = useState(false);
 
   const canvasRef = useRef(null);
-  const hasVerifiedRef = useRef(false);
   const hasGeneratedCanvasRef = useRef(false);
 
-  // 1. Trigger Otomatis "Tiket Telah Di-Scan" tepat 1 kali saat halaman pertama dibuka
+  // 1. Pure Read-Only Lookup Kupon (TIDAK Auto-Check-in saat wali santri membuka link di HP)
   useEffect(() => {
     if (!token) {
-      setVerificationState({
+      setLookupState({
         loading: false,
         success: false,
         message: '⛔ Parameter kode tiket tidak ditemukan pada URL.',
+        isExpired: false,
         isPending: false,
-        isRejected: false,
-        isDone: false,
-        isOngoing: false
+        isOngoing: false,
+        isApproved: false
       });
+      setIsGeneratingCanvas(false);
       return;
     }
 
-    if (hasVerifiedRef.current) return;
-    hasVerifiedRef.current = true;
+    const res = lookupVisitBooking ? lookupVisitBooking(token) : null;
+    if (res && res.booking) {
+      setBooking(res.booking);
+      setLookupState({
+        loading: false,
+        success: res.success,
+        message: res.message,
+        isExpired: res.isExpired,
+        isPending: res.isPending,
+        isOngoing: res.isOngoing,
+        isApproved: res.isApproved
+      });
+    } else {
+      // Fallback direct find in visitBookings
+      const clean = String(token).trim().toUpperCase();
+      const b = Array.isArray(visitBookings) ? visitBookings.find(item =>
+        (item.barcode_token && item.barcode_token.toUpperCase() === clean) ||
+        (item.id && item.id.toUpperCase() === clean) ||
+        (item.barcode_token && clean.includes(item.barcode_token.toUpperCase())) ||
+        (item.barcode_token && item.barcode_token.toUpperCase().includes(clean))
+      ) : null;
 
-    const result = verifyAndScanTicket(token);
-    if (result.booking) {
-      setBooking(result.booking);
+      if (b) {
+        const clock = getRealtimePondokClock();
+        const lc = checkBarcodeLifecycle(b, clock);
+        setBooking(b);
+        setLookupState({
+          loading: false,
+          success: true,
+          message: lc.isExpired ? '⛔ MASA BERLAKU KUPON TELAH HABIS' : '✅ KUPON RESMI AKTIF',
+          isExpired: lc.isExpired || b.status_kunjungan === 'Selesai',
+          isPending: b.status_kunjungan === 'Menunggu Approval',
+          isOngoing: b.status_kunjungan === 'Sedang Berkunjung',
+          isApproved: b.status_kunjungan?.includes('Disetujui')
+        });
+      } else {
+        setLookupState({
+          loading: false,
+          success: false,
+          message: '⛔ Kupon tidak ditemukan atau kode tiket belum terdaftar.',
+          isExpired: false,
+          isPending: false,
+          isOngoing: false,
+          isApproved: false
+        });
+        setIsGeneratingCanvas(false);
+      }
     }
+  }, [token, visitBookings]);
 
-    setVerificationState({
-      loading: false,
-      success: result.success,
-      message: result.message,
-      isPending: result.isPending || false,
-      isRejected: result.isRejected || false,
-      isDone: result.isDone || false,
-      isOngoing: result.isOngoing || false
-    });
-  }, [token]);
-
-  // Keep booking synchronized with main state changes
-  useEffect(() => {
-    if (!token || !Array.isArray(visitBookings)) return;
-    const clean = String(token).trim().toUpperCase();
-    const live = visitBookings.find(b =>
-      (b.barcode_token && b.barcode_token.toUpperCase() === clean) ||
-      (b.id && b.id.toUpperCase() === clean) ||
-      (b.barcode_token && clean.includes(b.barcode_token.toUpperCase()))
-    );
-    if (live) {
-      setBooking(live);
-    }
-  }, [visitBookings, token]);
-
-  // 2. Generator Gambar Kupon Kunjungan Digital (Dieksekusi Tepat 1 Kali & Terkunci Permanen)
+  // 2. Generator Gambar Kupon Kunjungan Digital (.PNG Resolusi Tinggi & Terkunci Permanen)
   useEffect(() => {
     if (!booking || hasGeneratedCanvasRef.current) return;
 
@@ -250,16 +118,16 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
     canvas.width = 1000;
     canvas.height = 560;
 
-    // A. Background Utama Kupon
+    // A. Latar Belakang Kartu Putih
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, 1000, 560);
 
-    // Subtle Outer Border
+    // Border Halus Luar
     ctx.strokeStyle = '#E2E8F0';
     ctx.lineWidth = 4;
     ctx.strokeRect(2, 2, 996, 556);
 
-    // B. Header Bar Emerald Khas Smart Riayah
+    // B. Header Bar Emerald Khas Darul Ulum
     const headerGrad = ctx.createLinearGradient(0, 0, 1000, 0);
     headerGrad.addColorStop(0, '#064E3B');
     headerGrad.addColorStop(0.5, '#047857');
@@ -267,33 +135,32 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
     ctx.fillStyle = headerGrad;
     ctx.fillRect(0, 0, 1000, 96);
 
-    // Gold Accent Stripe di Bawah Header
+    // Aksen Emas
     ctx.fillStyle = '#F59E0B';
     ctx.fillRect(0, 96, 1000, 4);
 
-    // Header Content
+    // Teks Header
     ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 20px sans-serif';
     ctx.fillText('🏛️ PONDOK PESANTREN MODERN DARUL ULUM', 36, 42);
 
     ctx.fillStyle = '#A7F3D0';
     ctx.font = 'bold 12px sans-serif';
-    ctx.letterSpacing = '1px';
     ctx.fillText('KUPON RESMI IZIN KUNJUNGAN WALI SANTRI & TITIPAN BARANG', 40, 70);
 
-    // Header Right Badge
+    // Badge Kode Kupon Kanan Atas
     ctx.fillStyle = '#FFFFFF';
     ctx.beginPath();
-    ctx.roundRect(750, 24, 215, 48, 12);
+    ctx.roundRect(740, 24, 225, 48, 12);
     ctx.fill();
 
     ctx.fillStyle = '#065F46';
     ctx.font = 'bold 10px monospace';
-    ctx.fillText('GATE PASS RESMI PONDOK', 765, 43);
+    ctx.fillText('GATE PASS RESMI PONDOK', 755, 43);
     ctx.font = 'bold 13px monospace';
-    ctx.fillText(tokenCode, 765, 60);
+    ctx.fillText(tokenCode, 755, 60);
 
-    // C. Garis Potong Perforasi (Perforated Line at x = 710)
+    // C. Garis Perforasi (x = 710)
     ctx.save();
     ctx.setLineDash([6, 6]);
     ctx.strokeStyle = '#CBD5E1';
@@ -304,8 +171,8 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
     ctx.stroke();
     ctx.restore();
 
-    // Setengah lingkaran punch-hole di atas dan bawah perforasi
-    ctx.fillStyle = '#0F172A'; // warna latar luar
+    // Punch-hole notches
+    ctx.fillStyle = '#0F172A';
     ctx.beginPath();
     ctx.arc(710, 100, 14, 0, Math.PI);
     ctx.fill();
@@ -314,22 +181,25 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
     ctx.fill();
 
     // D. SISI KIRI: DATA LENGKAP KUNJUNGAN & SANTRI
-    // Status Badge
-    const isOngoing = booking.status_kunjungan === 'Sedang Berkunjung';
+    const isOngoing = booking.status_kunjungan === 'Sedang Berkunjung' || booking.status_kunjungan?.includes('Sedang Berkunjung');
     const isApproved = booking.status_kunjungan?.includes('Disetujui');
     const isDone = booking.status_kunjungan === 'Selesai';
+    const clock = getRealtimePondokClock();
+    const lc = checkBarcodeLifecycle(booking, clock);
+    const isExpired = lc.isExpired || isDone;
 
-    ctx.fillStyle = isOngoing ? '#DCFCE7' : isApproved ? '#E0F2FE' : '#F1F5F9';
+    // Status Pill
+    ctx.fillStyle = isExpired ? '#FEE2E2' : isOngoing ? '#DCFCE7' : isApproved ? '#E0F2FE' : '#F1F5F9';
     ctx.beginPath();
-    ctx.roundRect(36, 120, 320, 28, 8);
+    ctx.roundRect(36, 120, 360, 28, 8);
     ctx.fill();
 
-    ctx.fillStyle = isOngoing ? '#15803D' : isApproved ? '#0369A1' : '#475569';
+    ctx.fillStyle = isExpired ? '#B91C1C' : isOngoing ? '#15803D' : isApproved ? '#0369A1' : '#475569';
     ctx.font = 'bold 11px sans-serif';
     ctx.fillText(
+      isExpired ? '● STATUS: EXPIRED / KUNJUNGAN TELAH SELESAI' :
       isOngoing ? '● STATUS: TELAH DI-SCAN (SEDANG BERKUNJUNG)' :
-      isApproved ? '● STATUS: DISETUJUI (SIAP KUNJUNGAN)' :
-      isDone ? '● STATUS: KUNJUNGAN TELAH SELESAI' : '● STATUS: MENUNGGU APPROVAL',
+      isApproved ? '● STATUS: DISETUJUI (SIAP KUNJUNGAN)' : '● STATUS: MENUNGGU APPROVAL PONDOK',
       48, 138
     );
 
@@ -346,7 +216,7 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
     ctx.font = 'bold 13px sans-serif';
     ctx.fillText(`Kelas: ${booking.kelas || '10-A'}   •   Asal Daerah: ${booking.asal || 'Surabaya, Jawa Timur'}`, 36, 230);
 
-    // Garis Pemisah Halus
+    // Garis Pemisah 1
     ctx.strokeStyle = '#F1F5F9';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -355,7 +225,6 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
     ctx.stroke();
 
     // 2. Data Penjenguk & Jadwal
-    // Kolom Kiri
     ctx.fillStyle = '#64748B';
     ctx.font = 'bold 11px sans-serif';
     ctx.fillText('PENJENGUK (WALI SANTRI):', 36, 272);
@@ -368,26 +237,26 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
     ctx.font = 'bold 12px monospace';
     ctx.fillText(`WhatsApp: ${booking.no_wa_penjenguk || '081234567890'} (Terverifikasi)`, 36, 314);
 
-    // Kolom Kanan
+    // Jadwal Kunjungan
     ctx.fillStyle = '#64748B';
     ctx.font = 'bold 11px sans-serif';
-    ctx.fillText('JADWAL & WAKTU KUNJUNGAN:', 370, 272);
+    ctx.fillText('JADWAL & WAKTU BERLAKU KUNJUNGAN:', 370, 272);
 
     ctx.fillStyle = '#1E293B';
     ctx.font = 'bold 15px sans-serif';
-    ctx.fillText(`${booking.hari_kunjungan || 'Sabtu'}, ${booking.tanggal_kunjungan || new Date().toISOString().slice(0, 10)}`, 370, 294);
+    ctx.fillText(`${booking.hari_kunjungan || 'Sabtu'}, ${booking.tanggal_kunjungan || clock.tanggal_lengkap}`, 370, 294);
 
     ctx.fillStyle = '#0284C7';
     ctx.font = 'bold 14px monospace';
-    ctx.fillText(`Pukul: ${booking.jam_kunjungan || '14:00'} - ${booking.jam_selesai || '15:30'} WITA`, 370, 314);
+    ctx.fillText(`Pukul: ${booking.jam_kunjungan || '14:00'} s/d ${booking.jam_selesai || '15:30'} WITA`, 370, 314);
 
-    // Garis Pemisah Halus 2
+    // Garis Pemisah 2
     ctx.beginPath();
     ctx.moveTo(36, 332);
     ctx.lineTo(670, 332);
     ctx.stroke();
 
-    // 3. Data Titipan Barang (Logistics Box)
+    // 3. Titipan Barang
     ctx.fillStyle = '#F0FDF4';
     ctx.beginPath();
     ctx.roundRect(36, 348, 634, 76, 12);
@@ -397,7 +266,7 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
 
     ctx.fillStyle = '#166534';
     ctx.font = 'bold 11px sans-serif';
-    ctx.fillText('📦 PEMERIKSAAN TITIPAN BARANG POS JAGA SATPAM:', 50, 370);
+    ctx.fillText('📦 TITIPAN BARANG & PEMERIKSAAN POS JAGA SATPAM:', 50, 370);
 
     ctx.fillStyle = '#0F172A';
     ctx.font = 'bold 13px sans-serif';
@@ -406,40 +275,41 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
 
     ctx.fillStyle = '#047857';
     ctx.font = 'bold 13px sans-serif';
-    ctx.fillText(`Berat Barang: ${booking.berat_barang_kg || 0} Kg  (Batas Aman Pondok: Maks. 5.0 Kg)`, 50, 412);
+    ctx.fillText(`Berat Barang: ${booking.berat_barang_kg || 0} Kg  (Batas Aman Pondok: Maksimal 5.0 Kg)`, 50, 412);
 
-    // Catatan Kaki Kupon Resmi
+    // Catatan Kaki Kupon
     ctx.fillStyle = '#64748B';
     ctx.font = 'italic 10px sans-serif';
-    ctx.fillText('Catatan: Kupon resmi ini terbit melalui Smart Riayah System & terverifikasi oleh DeepSeek AI Engine.', 36, 448);
-    ctx.fillText('Wajib menjaga adab bertamu, busana muslim/muslimah rapi, dan mematuhi batas durasi kunjungan pondok.', 36, 464);
+    ctx.fillText('Catatan: Kupon ini diterbitkan resmi oleh Sistem Smart Riayah Pondok Pesantren Modern Darul Ulum.', 36, 448);
+    ctx.fillText('Wajib berbusana sopan/muslim, menjaga ketertiban, dan mematuhi batas durasi kunjungan santri.', 36, 464);
 
-    // Footer Stamp Air Watermark
+    // Watermark Digital Stamp
     ctx.save();
     ctx.translate(530, 485);
-    ctx.rotate(-0.1);
-    ctx.strokeStyle = '#059669';
+    ctx.rotate(-0.08);
+    ctx.strokeStyle = isExpired ? '#DC2626' : '#059669';
     ctx.lineWidth = 2.5;
     ctx.beginPath();
     ctx.roundRect(-120, -22, 240, 44, 8);
     ctx.stroke();
 
-    ctx.fillStyle = '#059669';
+    ctx.fillStyle = isExpired ? '#DC2626' : '#059669';
     ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('★ VERIFIED & SCANNED ★', 0, -4);
+    ctx.fillText(isExpired ? '⛔ EXPIRED / SELESAI' : '★ VERIFIED & OFFICIAL ★', 0, -4);
     ctx.font = 'bold 10px monospace';
     ctx.fillText('SMART RIAYAH GATE PASS', 0, 12);
     ctx.restore();
 
-    // E. SISI KANAN: STUB SLIP POS SATPAM (x = 730 to 980)
+    // E. SISI KANAN: STUB SLIP QR & BARCODE POS SATPAM (x = 730 to 980)
     ctx.fillStyle = '#0F172A';
     ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'left';
     ctx.fillText('SLIP POS JAGA', 730, 130);
 
     ctx.fillStyle = '#64748B';
     ctx.font = '10px sans-serif';
-    ctx.fillText('VERIFIKASI GERBANG UTAMA', 730, 146);
+    ctx.fillText('PINDAI DI POS GERBANG PONDOK', 730, 146);
 
     // Render QR Code di Stub (memuat direct link gatePassUrl)
     const qrImg = new Image();
@@ -447,13 +317,11 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
     const qrSource = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(gatePassUrl)}&format=png`;
     qrImg.src = qrSource;
 
-    qrImg.onload = () => {
-      ctx.drawImage(qrImg, 755, 165, 170, 170);
-
+    const finalizeCanvas = () => {
       // Barcode Garis Simbolik di bawah QR
       ctx.fillStyle = '#0F172A';
       ctx.fillRect(735, 360, 210, 40);
-      // Buat garis barcode putih
+      // Garis barcode putih
       ctx.fillStyle = '#FFFFFF';
       for (let i = 745; i < 935; i += 6) {
         const w = (i % 4 === 0) ? 3 : 1.5;
@@ -467,20 +335,18 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
 
       ctx.fillStyle = '#64748B';
       ctx.font = '10px sans-serif';
-      ctx.fillText('Scan Kamera HP / Google Lens', 840, 440);
-      ctx.fillText('Otomatis Verifikasi Check-In', 840, 456);
+      ctx.fillText('Tunjukkan Barcode ke Petugas Satpam', 840, 442);
+      ctx.fillText('Untuk Pemindaian Kamera Pos Jaga', 840, 458);
 
-      // ─── STEMPEL AIR MERAH MILIK BARCODE HANGUS (EXPIRED WATERMARK) ───
-      const currentLifecycle = checkBarcodeLifecycle(booking, getRealtimePondokClock());
-      if (currentLifecycle.isExpired) {
+      // STEMPEL MERAH JIKA EXPIRED / SUDAH DIGUNAKAN
+      if (isExpired) {
         ctx.save();
         ctx.translate(840, 250);
-        ctx.rotate(-0.35); // Rotasi miring ~20 derajat
+        ctx.rotate(-0.35);
 
-        // Box stempel merah tebal dengan background semi-transparan
-        ctx.fillStyle = 'rgba(254, 242, 242, 0.92)';
+        ctx.fillStyle = 'rgba(254, 242, 242, 0.94)';
         ctx.beginPath();
-        ctx.roundRect(-95, -28, 190, 56, 10);
+        ctx.roundRect(-100, -30, 200, 60, 10);
         ctx.fill();
 
         ctx.strokeStyle = '#DC2626';
@@ -490,13 +356,12 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
         ctx.fillStyle = '#B91C1C';
         ctx.font = 'bold 16px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('⛔ EXPIRED', 0, -4);
+        ctx.fillText('⛔ EXPIRED', 0, -5);
         ctx.font = 'bold 11px sans-serif';
         ctx.fillText('SUDAH DIGUNAKAN', 0, 16);
         ctx.restore();
       }
 
-      // Export Canvas ke PNG Data URL
       try {
         const pngUrl = canvas.toDataURL('image/png');
         setCouponImageUrl(pngUrl);
@@ -507,8 +372,13 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
       setIsGeneratingCanvas(false);
     };
 
+    qrImg.onload = () => {
+      ctx.drawImage(qrImg, 755, 165, 170, 170);
+      finalizeCanvas();
+    };
+
     qrImg.onerror = () => {
-      // Fallback visual jika offline
+      // Fallback kotak QR jika offline
       ctx.fillStyle = '#F8FAFC';
       ctx.fillRect(755, 165, 170, 170);
       ctx.strokeStyle = '#CBD5E1';
@@ -518,549 +388,137 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
       ctx.textAlign = 'center';
       ctx.fillText('SMART RIAYAH', 840, 245);
       ctx.fillText('E-GATE PASS', 840, 265);
-
-      const currentLifecycle = checkBarcodeLifecycle(booking, getRealtimePondokClock());
-      if (currentLifecycle.isExpired) {
-        ctx.save();
-        ctx.translate(840, 250);
-        ctx.rotate(-0.35);
-        ctx.fillStyle = 'rgba(254, 242, 242, 0.92)';
-        ctx.beginPath();
-        ctx.roundRect(-95, -28, 190, 56, 10);
-        ctx.fill();
-        ctx.strokeStyle = '#DC2626';
-        ctx.lineWidth = 4;
-        ctx.stroke();
-        ctx.fillStyle = '#B91C1C';
-        ctx.font = 'bold 16px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('⛔ EXPIRED', 0, -4);
-        ctx.font = 'bold 11px sans-serif';
-        ctx.fillText('SUDAH DIGUNAKAN', 0, 16);
-        ctx.restore();
-      }
-
-      try {
-        const pngUrl = canvas.toDataURL('image/png');
-        setCouponImageUrl(pngUrl);
-        hasGeneratedCanvasRef.current = true;
-      } catch (e) {}
-      setIsGeneratingCanvas(false);
+      finalizeCanvas();
     };
   }, [booking, token]);
 
-  // Copy Link Handler
-  const handleCopyLink = () => {
-    const tokenCode = booking?.barcode_token || booking?.id || token;
-    const { gatePassUrl } = getVisitGatePassUrls(tokenCode);
-    navigator.clipboard.writeText(gatePassUrl);
-    setCopiedLink(true);
-    sound.playBeep?.();
-    setTimeout(() => setCopiedLink(false), 2500);
-  };
-
-  // Download Coupon Image Handler
+  // Handler Download Gambar Kupon
   const handleDownloadCoupon = () => {
     if (!couponImageUrl) return;
-    const santriClean = (booking?.nama_santri || 'Santri').replace(/[^a-zA-Z]/g, '_');
-    downloadBarcodeImage(couponImageUrl, `Kupon_Kunjungan_${santriClean}_${token}.png`);
+    const santriClean = (booking?.nama_santri || 'Santri').replace(/[^a-zA-Z0-9]/g, '_');
+    downloadBarcodeImage(couponImageUrl, `Kupon_Kunjungan_${santriClean}_${token || 'GatePass'}.png`);
     sound.playSuccess?.();
   };
 
-  // Resend Coupon to WhatsApp
-  const handleResendToWhatsApp = () => {
-    if (!booking) return;
-    const tokenCode = booking.barcode_token || booking.id || token;
-    const { gatePassUrl, qrCodeUrl } = getVisitGatePassUrls(tokenCode);
-    const targetPhone = booking.no_wa_penjenguk || '081234567890';
-
-    setResendingWa(true);
-    sendWhatsAppNotification(
-      `${booking.nama_penjenguk} (Wali ${booking.nama_santri})`,
-      targetPhone,
-      'VISIT_GATEPASS_RESEND',
-      `🎫 *[E-KUPON IZIN KUNJUNGAN PONDOK PESANTREN MODERN DARUL ULUM]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${booking.nama_penjenguk}*.\n\nBerikut adalah E-Kupon Kunjungan resmi untuk ananda *${booking.nama_santri}* (${booking.kelas}):\n\n📅 *Jadwal:* ${booking.hari_kunjungan}, ${booking.tanggal_kunjungan}\n⏰ *Waktu:* ${booking.jam_kunjungan} - ${booking.jam_selesai} WITA\n📦 *Titipan:* ${booking.titipan_barang || '-'} (${booking.berat_barang_kg || 0} Kg)\n🎫 *Nomor Kupon:* *${tokenCode}*\n\n🔗 *Link Kupon & Status Scan (Bisa Diklik Langsung):*\n${gatePassUrl}\n\n📷 *Gambar Kupon / QR Gate Pass:*\n${qrCodeUrl}\n\nSilakan klik link di atas atau perlihatkan kupon kepada Satpam di Pos Gerbang Utama saat berkunjung. Terima kasih.`
-    );
-
-    setTimeout(() => {
-      setResendingWa(false);
-      setWaSentSuccess(true);
-      sound.playSuccess?.();
-      setTimeout(() => setWaSentSuccess(false), 3500);
-    }, 600);
-  };
-
-  // Check-In Officer Action
-  const handleOfficerCheckIn = () => {
-    if (!booking) return;
-    checkInVisitBooking(booking.id, 'SCAN_DIRECT_QR');
-    setVerificationState(prev => ({
-      ...prev,
-      success: true,
-      message: '✅ TIKET KUNJUNGAN SAH & TELAH DI-SCAN',
-      isOngoing: true,
-      isPending: false
-    }));
-  };
-
-  // Check-Out Officer Action
-  const handleOfficerCheckOut = () => {
-    if (!booking) return;
-    if (confirm(`Konfirmasi kepulangan / check-out untuk tamu ${booking.nama_penjenguk}?`)) {
-      checkOutVisitBooking(booking.id);
-      setVerificationState(prev => ({
-        ...prev,
-        isDone: true,
-        isOngoing: false,
-        message: '🔒 KUNJUNGAN TELAH SELESAI / KUPON SUDAH DIGUNAKAN'
-      }));
-    }
-  };
-
-  // Hitung Mundur Sisa Waktu Kunjungan (Countdown Timer)
-  const countdown = booking ? calculateVisitCountdown(booking.jam_selesai, booking.tanggal_kunjungan) : null;
-
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-emerald-500 selection:text-white pb-16">
-      {/* ─── TOP BAR HEADER HALAMAN VERIFIKASI ─── */}
-      <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 sm:px-6 py-3.5 shadow-md">
-        <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
+      
+      {/* ─── HEADER HALAMAN KUPON DIGITAL (VIEWER KHUSUS WALI SANTRI) ─── */}
+      <header className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-4 sm:px-6 py-3.5 shadow-md">
+        <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-950/50">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-950/60 shrink-0">
               <Shield className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="text-xs font-black tracking-wider text-emerald-400 font-mono uppercase">
-                  Smart Riayah Gate Pass System
+                <span className="text-[10px] sm:text-xs font-black tracking-wider text-emerald-400 font-mono uppercase">
+                  Pondok Pesantren Modern Darul Ulum
                 </span>
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
               </div>
               <h1 className="text-sm sm:text-base font-extrabold text-white tracking-tight">
-                Pondok Pesantren Modern Darul Ulum
+                Kupon Izin Kunjungan Wali Santri
               </h1>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <LiveClockHeader />
-            {onBackToDashboard && (
-              <button
-                onClick={onBackToDashboard}
-                className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition flex items-center gap-1.5 border border-slate-700 shadow-xs"
-                title="Kembali ke Dashboard Utama"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                <span className="hidden sm:inline">Kembali ke Dashboard</span>
-              </button>
-            )}
-          </div>
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[11px] font-mono font-bold">
+            <FileCheck className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Kupon Digital Resmi</span>
+          </span>
         </div>
       </header>
 
-      {/* ─── KONTEN UTAMA HALAMAN ─── */}
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
+      {/* ─── KONTEN UTAMA: GAMBAR KUPON & TOMBOL DOWNLOAD ─── */}
+      <main className="max-w-3xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
 
-        {/* ─── 1. BANNER STATUS VERIFIKASI BESAR ─── */}
-        {verificationState.loading ? (
+        {/* Status Info Ringkas */}
+        {lookupState.loading ? (
           <div className="p-8 rounded-3xl bg-slate-900 border border-slate-800 text-center animate-pulse space-y-3">
             <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin mx-auto" />
-            <h3 className="font-bold text-sm text-slate-300">Memverifikasi keaslian E-Barcode &amp; mencatat scan...</h3>
+            <h3 className="font-bold text-sm text-slate-300">Menyiapkan kupon digital resmi santri...</h3>
           </div>
-        ) : (() => {
-          const currentLifecycle = checkBarcodeLifecycle(booking, getRealtimePondokClock());
-          const isExpired = currentLifecycle.isExpired || verificationState.isDone;
-          const isBeforeHours = currentLifecycle.isBeforeHours;
-          const isFuture = currentLifecycle.isFuture;
-          const isPending = currentLifecycle.isPending || verificationState.isPending;
-          const isRejected = currentLifecycle.status === 'REJECTED' || verificationState.isRejected;
-          const isActiveValid = currentLifecycle.isActive || currentLifecycle.isVisiting || verificationState.success;
-
-          if (isActiveValid && !isExpired && !isPending && !isRejected) {
-            return <AnimatedCheckmarkBanner booking={booking} />;
-          }
-
-          return (
-            <div className={`p-5 sm:p-6 rounded-3xl border shadow-xl transition animate-fade-in ${
-              isExpired
-                ? 'bg-gradient-to-r from-rose-950/95 via-rose-900/90 to-rose-950/95 border-rose-500 text-rose-100 shadow-rose-950/50'
-                : (isBeforeHours || isFuture || isPending)
-                ? 'bg-gradient-to-r from-amber-950/90 via-amber-900/80 to-amber-950/90 border-amber-500/80 text-amber-100 shadow-amber-950/40'
-                : 'bg-gradient-to-r from-rose-950/90 via-rose-900/80 to-rose-950/90 border-rose-500/80 text-rose-100'
-            }`}>
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex items-start gap-4">
-                  <div className="p-3 rounded-2xl bg-white/10 shrink-0 mt-0.5 backdrop-blur-xs">
-                    {isExpired ? (
-                      <AlertTriangle className="w-8 h-8 text-rose-400" />
-                    ) : (isBeforeHours || isFuture || isPending) ? (
-                      <Clock className="w-8 h-8 text-amber-400 animate-pulse" />
-                    ) : (
-                      <XCircle className="w-8 h-8 text-rose-400" />
-                    )}
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold tracking-wider uppercase bg-white/10 border border-white/20">
-                        TOKEN: {token || 'N/A'}
-                      </span>
-                      {isExpired && (
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-500 text-white flex items-center gap-1">
-                          Blocked / Expired
-                        </span>
-                      )}
-                    </div>
-
-                    <h2 className="text-lg sm:text-xl font-black text-white tracking-tight">
-                      {isExpired
-                        ? '⛔ BARCODE TIDAK DAPAT DIGUNAKAN LAGI (MASA BERLAKU HABIS / KUNJUNGAN TELAH SELESAI)'
-                        : isBeforeHours
-                        ? `⏳ BELUM WAKTUNYA MASUK (Menunggu Jam Kunjungan: ${booking?.jam_kunjungan} WITA)`
-                        : isFuture
-                        ? `⏳ TIKET TERJADWAL UNTUK ${booking?.hari_kunjungan?.toUpperCase() || 'MENDATANG'}, ${booking?.tanggal_kunjungan}`
-                        : isPending
-                        ? '⏳ MENUNGGU APPROVAL ADMIN RI\'AYAH (KUNJUNGAN HARI KERJA)'
-                        : '⛔ PERMOHONAN KUNJUNGAN DITOLAK ADMIN RI\'AYAH'}
-                    </h2>
-
-                    <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-2xl">
-                      {isExpired
-                        ? 'Tiket kunjungan ini sudah tidak berlaku karena telah melewati jam operasional kunjungan atau telah selesai check-out. Penggunaan ulang barcode ditolak demi keamanan santri.'
-                        : isBeforeHours
-                        ? `Belum waktunya masuk. Pemeriksaan tiket dan gerbang pos satpam dibuka mulai 15 menit sebelum jam kunjungan pukul ${booking?.jam_kunjungan} WITA. Silakan menunggu di area tunggu pos jaga.`
-                        : isFuture
-                        ? `Tiket ini berlaku untuk hari ${booking?.hari_kunjungan}, ${booking?.tanggal_kunjungan} pukul ${booking?.jam_kunjungan} - ${booking?.jam_selesai || '16:30'} WITA. Belum dapat digunakan untuk check-in saat ini.`
-                        : isPending
-                        ? 'Permohonan kunjungan santri pada hari kerja (Senin-Kamis) harus disetujui terlebih dahulu oleh Pengasuhan/Admin Ri\'ayah sebelum gerbang dibuka.'
-                        : 'Permohonan kunjungan belum dapat disetujui oleh Pengasuhan Pondok. Silakan hubungi admin pondok.'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Status Badge Live */}
-                <div className="self-end sm:self-center shrink-0">
-                  <div className="text-right font-mono text-[11px] bg-black/30 p-2.5 rounded-xl border border-white/10 space-y-0.5">
-                    <div className="text-slate-400 font-sans text-[10px]">Waktu Pemindaian:</div>
-                    <div className="text-emerald-300 font-bold">
-                      {booking?.waktu_scan_aktual || 'Tercatat di sistem'}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* ─── 2. GENERATOR GAMBAR KUPON KUNJUNGAN DIGITAL (AUTO-GENERATED CANVAS IMAGE) ─── */}
-        <section className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+        ) : lookupState.isExpired ? (
+          <div className="p-4 rounded-2xl bg-rose-950/90 border border-rose-500/80 text-rose-100 flex items-center gap-3 text-xs shadow-lg shadow-rose-950/50">
+            <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
             <div>
-              <div className="flex items-center gap-2">
-                <Award className="w-5 h-5 text-emerald-400" />
-                <h3 className="font-extrabold text-base text-white tracking-tight">
-                  Kupon Kunjungan Digital Resmi (.PNG)
-                </h3>
-              </div>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Gambar kupon beresolusi tinggi otomatis ter-generate dari sistem untuk diperlihatkan ke petugas pos jaga.
-              </p>
+              <span className="font-bold block text-sm">⛔ Kupon Ini Telah Expired / Selesai Digunakan</span>
+              <span className="text-slate-300 text-[11px]">
+                Masa berlaku kunjungan untuk tiket ini telah berakhir. Jika Anda membutuhkan izin baru, silakan ajukan booking via WhatsApp Gateway.
+              </span>
             </div>
-
-            {/* Tombol Copy Link Kupon */}
-            <button
-              onClick={handleCopyLink}
-              className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition flex items-center gap-1.5 self-start sm:self-center border border-slate-700"
-            >
-              {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
-              <span>{copiedLink ? 'Link Tersalin!' : 'Copy Link Kupon'}</span>
-            </button>
           </div>
+        ) : lookupState.isPending ? (
+          <div className="p-4 rounded-2xl bg-amber-950/90 border border-amber-500/80 text-amber-100 flex items-center gap-3 text-xs shadow-lg shadow-amber-950/40">
+            <Clock className="w-5 h-5 text-amber-400 shrink-0 animate-pulse" />
+            <div>
+              <span className="font-bold block text-sm">⏳ Menunggu Persetujuan Admin Ri'ayah</span>
+              <span className="text-slate-300 text-[11px]">
+                Kunjungan hari kerja memerlukan verifikasi Pengasuhan Pondok sebelum barcode dapat di-scan di gerbang.
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="p-3.5 rounded-2xl bg-emerald-950/80 border border-emerald-500/60 text-emerald-100 flex items-center gap-2.5 text-xs shadow-md">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>
+              <strong>Kupon Izin Resmi Aktif.</strong> Unduh gambar kupon di bawah dan tunjukkan ke petugas Satpam di pos gerbang saat tiba di pondok.
+            </span>
+          </div>
+        )}
 
-          {/* Hidden Canvas untuk merender gambar resolusi tinggi */}
-          <canvas ref={canvasRef} className="hidden" />
+        {/* Hidden Canvas untuk Generasi Gambar .PNG */}
+        <canvas ref={canvasRef} className="hidden" />
 
-          {/* Tampilan Visual Gambar Kupon Hasil Render */}
-          <div className="relative group flex items-center justify-center p-2 sm:p-4 bg-slate-950/60 rounded-2xl border border-slate-800 overflow-hidden">
+        {/* Tampilan Visual Gambar Kupon Digital (.PNG) */}
+        <section className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-2xl space-y-5">
+          <div className="relative group flex items-center justify-center p-2 sm:p-3 bg-slate-950/80 rounded-2xl border border-slate-800/80 overflow-hidden">
             {isGeneratingCanvas ? (
-              <div className="py-20 text-center space-y-3">
-                <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin mx-auto" />
+              <div className="py-24 text-center space-y-3">
+                <RefreshCw className="w-9 h-9 text-emerald-400 animate-spin mx-auto" />
                 <p className="text-xs text-slate-400 font-semibold font-mono">
-                  Men-generate elemen kupon visual &amp; watermark digital...
+                  Men-generate elemen kupon visual &amp; barcode resmi...
                 </p>
               </div>
             ) : couponImageUrl ? (
               <img
                 src={couponImageUrl}
-                alt="Kupon Kunjungan Digital Smart Riayah"
-                className="w-full max-w-2xl mx-auto rounded-2xl shadow-2xl border border-slate-700/80 object-contain hover:scale-[1.01] transition duration-300"
+                alt="Kupon Izin Kunjungan Santri Smart Riayah"
+                className="w-full max-w-2xl mx-auto rounded-2xl shadow-2xl border border-slate-700/80 object-contain"
               />
             ) : (
-              <div className="py-16 text-center text-slate-400 text-xs">
+              <div className="py-20 text-center text-slate-400 text-xs">
                 Kupon visual sedang disiapkan...
               </div>
             )}
           </div>
 
-          {/* Baris Tombol Aksi Kupon (.PNG, Print, WhatsApp) */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-            {/* Tombol 1: Download Gambar Kupon */}
+          {/* ─── HANYA SATU TOMBOL BESAR HIJAU EMERALD DOWNLOAD GAMBAR KUPON ─── */}
+          <div className="pt-2 text-center space-y-3">
             <button
               onClick={handleDownloadCoupon}
-              disabled={!couponImageUrl}
-              className="py-3 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-slate-950 font-black text-xs transition shadow-lg shadow-emerald-950/40 flex items-center justify-center gap-2"
+              disabled={!couponImageUrl || isGeneratingCanvas}
+              className="w-full max-w-lg mx-auto py-4 px-6 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:opacity-50 text-white font-black text-sm sm:text-base transition-all shadow-xl shadow-emerald-950/60 flex items-center justify-center gap-2.5 transform hover:-translate-y-0.5"
             >
-              <Download className="w-4 h-4" />
-              <span>Download Kupon (.PNG)</span>
+              <Download className="w-5 h-5 text-white" />
+              <span>📥 Download Gambar Kupon Barcode (.PNG)</span>
             </button>
 
-            {/* Tombol 2: Cetak Kupon Fisik */}
-            <button
-              onClick={() => {
-                window.print();
-                sound.playBeep?.();
-              }}
-              className="py-3 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition border border-slate-700 flex items-center justify-center gap-2"
-            >
-              <Printer className="w-4 h-4 text-emerald-400" />
-              <span>Cetak Kupon (Print Slip)</span>
-            </button>
-
-            {/* Tombol 3: Kirim Ulang Gambar Kupon ke WhatsApp */}
-            <button
-              onClick={handleResendToWhatsApp}
-              disabled={resendingWa || !booking}
-              className="py-3 px-4 rounded-2xl bg-teal-700 hover:bg-teal-600 disabled:opacity-50 text-white font-bold text-xs transition shadow-md flex items-center justify-center gap-2"
-            >
-              {resendingWa ? (
-                <RefreshCw className="w-4 h-4 animate-spin" />
-              ) : (
-                <Send className="w-4 h-4 text-emerald-300" />
-              )}
-              <span>{resendingWa ? 'Mengirim...' : waSentSuccess ? '✓ Terkirim ke WA!' : 'Kirim Ulang ke WhatsApp'}</span>
-            </button>
+            {/* Teks Panduan Singkat */}
+            <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+              Silakan unduh gambar kupon ini dan tunjukkan barcodenya ke kamera petugas Satpam saat tiba di Pos Gerbang Pondok Pesantren.
+            </p>
           </div>
         </section>
 
-        {/* ─── 3. KARTU DATA LENGKAP PENGUNJUNG & SANTRI (9 VARIABEL + METADATA KEAMANAN) ─── */}
-        {booking && (
-          <section className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div>
-                <h3 className="font-extrabold text-base text-white tracking-tight">
-                  Detail Lengkap Data Kunjungan &amp; Pemeriksaan Barang
-                </h3>
-                <p className="text-xs text-slate-400">
-                  Data resmi terverifikasi yang tersinkronisasi langsung dengan Pos Satpam &amp; Admin Ri'ayah.
-                </p>
-              </div>
-              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                9 Data Validated
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-              {/* PANEL 1: DATA SANTRI / SANTRIWATI */}
-              <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-3">
-                <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold font-mono uppercase tracking-wider">
-                  <User className="w-4 h-4" />
-                  <span>1. Data Santri yang Dijenguk</span>
-                </div>
-
-                <div className="space-y-2 text-xs">
-                  <div>
-                    <span className="text-slate-400 block text-[11px]">Nama Lengkap Santri/Wati:</span>
-                    <strong className="text-base text-white font-black">{booking.nama_santri}</strong>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-800/80">
-                    <div>
-                      <span className="text-slate-400 block text-[11px]">Kelas &amp; Kamar Asrama:</span>
-                      <strong className="text-emerald-300 font-bold">{booking.kelas}</strong>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[11px]">Kota / Daerah Asal:</span>
-                      <strong className="text-slate-200">{booking.asal || 'Surabaya'}</strong>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* PANEL 2: DATA PENJENGUK (TAMU) */}
-              <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-3">
-                <div className="flex items-center gap-2 text-teal-400 text-xs font-bold font-mono uppercase tracking-wider">
-                  <Phone className="w-4 h-4" />
-                  <span>2. Data Penjenguk (Tamu)</span>
-                </div>
-
-                <div className="space-y-2 text-xs">
-                  <div>
-                    <span className="text-slate-400 block text-[11px]">Nama Lengkap Penjenguk:</span>
-                    <strong className="text-base text-white font-black">{booking.nama_penjenguk}</strong>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-800/80">
-                    <div>
-                      <span className="text-slate-400 block text-[11px]">Hubungan Keluarga:</span>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-200 border border-slate-700 inline-block">
-                        {booking.status_penjenguk || 'Wali Santri'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[11px]">No. WhatsApp Terdaftar:</span>
-                      <strong className="font-mono text-emerald-400 text-[11px]">{booking.no_wa_penjenguk}</strong>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* PANEL 3: DATA WAKTU REAL-TIME & DURASI KUNJUNGAN */}
-              <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-amber-400 text-xs font-bold font-mono uppercase tracking-wider">
-                    <Calendar className="w-4 h-4" />
-                    <span>3. Waktu &amp; Durasi Kunjungan</span>
-                  </div>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                    {booking.approval_type === 'AUTO_WEEKEND' ? 'Weekend Auto-Approved' : 'Weekday Approval'}
-                  </span>
-                </div>
-
-                <div className="space-y-2.5 text-xs">
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Hari &amp; Tanggal:</span>
-                    <strong className="text-white">{booking.hari_kunjungan}, {booking.tanggal_kunjungan}</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Jam Operasional:</span>
-                    <strong className="font-mono text-cyan-300">{booking.jam_kunjungan} - {booking.jam_selesai} WITA</strong>
-                  </div>
-                  <div className="flex justify-between border-t border-slate-800/80 pt-2">
-                    <span className="text-slate-400">Waktu Scan Masuk:</span>
-                    <strong className="font-mono text-emerald-400">{booking.waktu_scan_aktual || (booking.jam_masuk_aktual ? `${booking.jam_masuk_aktual} WITA` : 'WITA')}</strong>
-                  </div>
-
-                  {/* LIVE COUNTDOWN TIMER */}
-                  <div className="mt-2 p-2.5 rounded-xl bg-slate-900 border border-slate-700/80">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] text-slate-400 font-medium flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-amber-400" />
-                        Live Sisa Waktu Kunjungan:
-                      </span>
-                      <LiveCountdownBadge jamSelesai={booking.jam_selesai} tgl={booking.tanggal_kunjungan} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* PANEL 4: DATA LOGISTIK & TITIPAN BARANG */}
-              <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-cyan-400 text-xs font-bold font-mono uppercase tracking-wider">
-                    <Package className="w-4 h-4" />
-                    <span>4. Titipan Logistik &amp; Keamanan AI</span>
-                  </div>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                    (booking.berat_barang_kg || 0) <= 3.5
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                      : (booking.berat_barang_kg || 0) <= 5.0
-                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                      : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                  }`}>
-                    {(booking.berat_barang_kg || 0) <= 5 ? 'Aman (Maks 5 Kg)' : 'Melebihi Batas'}
-                  </span>
-                </div>
-
-                <div className="space-y-2 text-xs">
-                  <div>
-                    <span className="text-slate-400 block text-[11px]">Rincian Barang Titipan:</span>
-                    <strong className="text-slate-200">
-                      {booking.titipan_barang || 'Tidak ada barang titipan khusus'}
-                    </strong>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-800/80">
-                    <div className="flex justify-between items-center text-[11px] mb-1">
-                      <span className="text-slate-400">Berat Titipan:</span>
-                      <strong className="text-cyan-300 font-mono font-bold">{booking.berat_barang_kg || 0} Kg / 5.0 Kg</strong>
-                    </div>
-                    {/* Visual Progress Bar Batas Berat */}
-                    <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full transition-all duration-500 ${
-                          (booking.berat_barang_kg || 0) <= 3.5
-                            ? 'bg-emerald-500'
-                            : (booking.berat_barang_kg || 0) <= 5.0
-                            ? 'bg-amber-500'
-                            : 'bg-rose-500'
-                        }`}
-                        style={{ width: `${Math.min(100, ((booking.berat_barang_kg || 1) / 5) * 100)}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Catatan Keamanan DeepSeek AI */}
-                  <div className="mt-2 text-[10px] text-slate-400 bg-slate-900/80 p-2 rounded-xl border border-slate-800 flex items-start gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5" />
-                    <span>
-                      Verifikasi DeepSeek AI: Barang titipan terbebas dari rokok/vape, HP/gadget, dan perangkat masak terlarang.
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* ─── 4. TOMBOL KONTROL CEPAT PETUGAS SATPAM / ADMIN ─── */}
-        <section className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-slate-800 flex items-center justify-center text-slate-300 shrink-0">
-              <Shield className="w-5 h-5 text-emerald-400" />
-            </div>
-            <div>
-              <h4 className="text-xs sm:text-sm font-bold text-white">
-                Kontrol Operasional Pos Gerbang Satpam
-              </h4>
-              <p className="text-[11px] text-slate-400">
-                Petugas dapat mengonfirmasi check-in langsung atau mencatat kepulangan tamu di sini.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2.5 flex-wrap w-full sm:w-auto justify-end">
-            {booking && booking.status_kunjungan !== 'Sedang Berkunjung' && booking.status_kunjungan !== 'Selesai' && (
-              <button
-                onClick={handleOfficerCheckIn}
-                className="py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black text-xs transition shadow-md flex items-center gap-1.5"
-              >
-                <CheckCircle className="w-4 h-4" />
-                <span>Konfirmasi Masuk (Check-In)</span>
-              </button>
-            )}
-
-            {booking && booking.status_kunjungan === 'Sedang Berkunjung' && (
-              <button
-                onClick={handleOfficerCheckOut}
-                className="py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition shadow-md flex items-center gap-1.5"
-              >
-                <Lock className="w-4 h-4" />
-                <span>Selesaikan Kunjungan (Check-Out Tamu)</span>
-              </button>
-            )}
-
-            {onBackToDashboard && (
-              <button
-                onClick={onBackToDashboard}
-                className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition border border-slate-700"
-              >
-                ⬅️ Kembali ke Dashboard
-              </button>
-            )}
-          </div>
-        </section>
+        {/* Footer Hak Cipta & Keamanan */}
+        <div className="pt-4 text-center text-[11px] text-slate-500 space-y-1">
+          <p>© {new Date().getFullYear()} Pesantren Modern Darul Ulum • Smart Permit &amp; Ri'ayah System</p>
+          <p className="text-[10px] text-slate-600 font-mono">Tiket Dilindungi Enkripsi 1-Siklus • Terverifikasi DeepSeek AI</p>
+        </div>
 
       </main>
     </div>
   );
 }
-

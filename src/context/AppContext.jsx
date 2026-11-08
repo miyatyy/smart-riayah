@@ -4004,11 +4004,26 @@ export const AppProvider = ({ children }) => {
       // 2. Broadcast ke seluruh tab / halaman secara realtime
       try {
         const bc = new BroadcastChannel('smart_riayah_visit_channel');
-        bc.postMessage({ type: 'VISIT_CHECKIN', booking: updatedBooking });
+        bc.postMessage({ type: 'VISIT_CHECKIN', booking: updatedBooking, scanner: method });
         bc.close();
       } catch (e) {}
 
-      // 3. Kirim notifikasi WA ke nomor wali santri bahwa tamu telah check-in di pos gerbang
+      // 3. Notifikasi Lonceng Top Bar Admin Ri'ayah
+      const notifText = `📷 Scan Pos Satpam: ${updatedBooking.nama_penjenguk} (Wali dari ${updatedBooking.nama_santri}) telah tiba dan berhasil scan barcode di gerbang pukul ${clock.jam_menit} WITA.`;
+      setNotifications(prev => [
+        {
+          id: `NOTIF-GATE-${Date.now()}`,
+          type: 'GATE_ARRIVED',
+          title: 'Tamu Tiba di Gerbang (Pos Satpam)',
+          message: notifText,
+          time: clock.jam_menit_detik,
+          read: false,
+          booking: updatedBooking
+        },
+        ...prev
+      ]);
+
+      // 4. Kirim notifikasi WA ke nomor wali santri bahwa tamu telah check-in di pos gerbang
       if (updatedBooking.no_wa_penjenguk) {
         sendWhatsAppNotification(
           `${updatedBooking.nama_penjenguk} (Wali ${updatedBooking.nama_santri})`,
@@ -4173,6 +4188,48 @@ export const AppProvider = ({ children }) => {
     }
 
     return { success: false, message: '⛔ KARTU RFID TIDAK TERDAFTAR DI DATABASE PONDOK' };
+  };
+
+  // Pure Read-Only Lookup Kupon Kunjungan (Untuk HP Wali Santri — Tanpa Auto-Check-in)
+  const lookupVisitBooking = (token) => {
+    if (!token) return { success: false, message: 'Kode kupon gate pass tidak valid', booking: null };
+    const clean = String(token).trim().toUpperCase();
+    const clock = getRealtimePondokClock();
+
+    const booking = visitBookings.find(b => 
+      (b.barcode_token && b.barcode_token.toUpperCase() === clean) ||
+      (b.id && b.id.toUpperCase() === clean) ||
+      (b.barcode_token && clean.includes(b.barcode_token.toUpperCase())) ||
+      (b.barcode_token && b.barcode_token.toUpperCase().includes(clean))
+    );
+
+    if (!booking) {
+      return {
+        success: false,
+        message: '⛔ TIKET TIDAK DITEMUKAN / KODE KUPON TIDAK TERDAFTAR',
+        booking: null,
+        isApproved: false
+      };
+    }
+
+    const lifecycle = checkBarcodeLifecycle(booking, clock);
+    const isOngoing = booking.status_kunjungan === 'Sedang Berkunjung' || booking.status_kunjungan?.includes('Sedang Berkunjung');
+    const isDone = booking.status_kunjungan === 'Selesai';
+    const isApproved = (booking.status_kunjungan === 'Disetujui (Siap Datang)' || booking.status_kunjungan?.includes('Disetujui')) && !isOngoing && !isDone;
+
+    return {
+      success: true,
+      booking,
+      lifecycle,
+      isExpired: lifecycle.isExpired || isDone,
+      isBeforeHours: lifecycle.isBeforeHours,
+      isFuture: lifecycle.isFuture,
+      isPending: lifecycle.isPending,
+      isApproved,
+      isOngoing,
+      isDone,
+      message: lifecycle.isExpired ? '⛔ MASA BERLAKU KUPON TELAH HABIS / SELESAI DIGUNAKAN' : '✅ KUPON RESMI AKTIF'
+    };
   };
 
   const verifyAndScanTicket = (token) => {
@@ -4586,6 +4643,7 @@ export const AppProvider = ({ children }) => {
         checkOutVisitBooking,
         verifyVisitBarcode,
         verifyVisitRfid,
+        lookupVisitBooking,
         verifyAndScanTicket,
         activeGatePassToken,
         setActiveGatePassToken,

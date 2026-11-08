@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   Shield,
@@ -22,11 +22,36 @@ import {
   Radio,
   FileText,
   ExternalLink,
-  Copy
+  Copy,
+  Camera,
+  CameraOff,
+  Upload,
+  CheckCircle2,
+  Scan,
+  Maximize2
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
-import { getRealtimePondokClock, calculateVisitCountdown } from '../../utils/pondokTimeUtils';
+import { getRealtimePondokClock, calculateVisitCountdown, checkBarcodeLifecycle } from '../../utils/pondokTimeUtils';
 import { getVisitGatePassUrls } from '../../utils/barcodeUtils';
+import { Html5Qrcode } from 'html5-qrcode';
+
+// Ekstraksi Pintar Kode Barcode (Mendukung Raw SR-..., URL ?gatepass=SR-..., dan /gate-pass/SR-...)
+export function extractBarcodeToken(raw) {
+  if (!raw) return '';
+  const text = String(raw).trim();
+  if (text.includes('gatepass=')) {
+    const match = text.match(/gatepass=([^&]+)/i);
+    if (match) return decodeURIComponent(match[1]).trim().toUpperCase();
+  }
+  if (text.includes('/gate-pass/')) {
+    const parts = text.split('/gate-pass/');
+    if (parts[1]) {
+      const cleanPart = parts[1].split('?')[0].split('#')[0];
+      return decodeURIComponent(cleanPart).trim().toUpperCase();
+    }
+  }
+  return text.toUpperCase();
+}
 
 export default function SecurityVisitGateModule() {
   const {
@@ -42,11 +67,22 @@ export default function SecurityVisitGateModule() {
     isSerialConnected
   } = useApp();
 
-  // Verification input states
+  // Verification & Camera States
   const [barcodeInput, setBarcodeInput] = useState('');
-  const [verificationResult, setVerificationResult] = useState(null); // { success, booking, message, isApproved }
   const [activeTabSub, setActiveTabSub] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'PENDING' | 'DONE'
   const [searchTable, setSearchTable] = useState('');
+
+  // Live Camera Scanner States
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameras, setCameras] = useState([]);
+  const [selectedCameraId, setSelectedCameraId] = useState('');
+  const [cameraError, setCameraError] = useState('');
+  const [isCameraStarting, setIsCameraStarting] = useState(false);
+  const html5QrCodeRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  // Modal Pop-Up Hasil Scan Kamera Satpam
+  const [scanModalResult, setScanModalResult] = useState(null); // { isOpen, success, isExpired, title, message, booking }
 
   // Live Clock Ticking Engine (1000ms)
   const [liveClock, setLiveClock] = useState(() => getRealtimePondokClock());
@@ -59,7 +95,31 @@ export default function SecurityVisitGateModule() {
     return () => clearInterval(timer);
   }, []);
 
-  // Real-Time BroadcastChannel listener for check-ins from mobile QR scan
+  // 1. Inisialisasi Deteksi Kamera WebRTC
+  useEffect(() => {
+    Html5Qrcode.getCameras().then(devices => {
+      if (devices && devices.length > 0) {
+        setCameras(devices);
+        // Prioritaskan kamera belakang jika ada, jika tidak gunakan kamera pertama
+        const backCam = devices.find(d => 
+          d.label?.toLowerCase().includes('back') || 
+          d.label?.toLowerCase().includes('belakang') ||
+          d.label?.toLowerCase().includes('environment')
+        );
+        setSelectedCameraId(backCam ? backCam.id : devices[0].id);
+      }
+    }).catch(err => {
+      console.warn('WebRTC Camera discovery note:', err);
+    });
+
+    return () => {
+      if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
+        html5QrCodeRef.current.stop().catch(() => {});
+      }
+    };
+  }, []);
+
+  // 2. Real-Time BroadcastChannel listener for check-ins from other tabs
   useEffect(() => {
     let bc;
     try {
@@ -70,20 +130,6 @@ export default function SecurityVisitGateModule() {
           setToastCheckIn(b);
           sound.playSuccess?.();
           setTimeout(() => setToastCheckIn(null), 8000);
-
-          // Jika kode tiket yang sedang diverifikasi sama, update hasilnya
-          setVerificationResult(prev => {
-            if (prev?.booking && (prev.booking.id === b.id || prev.booking.barcode_token === b.barcode_token)) {
-              return {
-                ...prev,
-                booking: b,
-                message: `✅ STATUS: SEDANG BERKUNJUNG (CHECK-IN BERHASIL)`,
-                isOngoing: true,
-                isApproved: false
-              };
-            }
-            return prev;
-          });
         }
       };
     } catch (e) {}
@@ -93,13 +139,173 @@ export default function SecurityVisitGateModule() {
     };
   }, []);
 
-  function calculateEndTime(minutesToAdd = 60) {
-    const now = new Date();
-    const end = new Date(now.getTime() + minutesToAdd * 60000);
-    return end.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':');
-  }
+  // 3. FUNGSI PEMROSESAN UTAMA HASIL SCAN BARCODE (KAMERA / UPLOAD / USB SCANNER)
+  const handleProcessScannedBarcode = (rawCode, source = 'CAMERA') => {
+    if (!rawCode) return;
+    const token = extractBarcodeToken(rawCode);
+    const bookings = Array.isArray(visitBookings) ? visitBookings : [];
 
-  // Form Input Manual Satpam state (auto-fill live clock & +1 hour end time)
+    const booking = bookings.find(b =>
+      (b.barcode_token && b.barcode_token.toUpperCase() === token) ||
+      (b.id && b.id.toUpperCase() === token) ||
+      (b.barcode_token && token.includes(b.barcode_token.toUpperCase())) ||
+      (b.barcode_token && b.barcode_token.toUpperCase().includes(token))
+    );
+
+    if (!booking) {
+      sound.playAccessDenied?.();
+      setScanModalResult({
+        isOpen: true,
+        success: false,
+        title: '⛔ TIKET TIDAK DITEMUKAN',
+        message: `Kode tiket [${token}] tidak terdaftar di database pondok. Pastikan wali santri menunjukkan kupon resmi yang sah.`,
+        booking: null
+      });
+      return;
+    }
+
+    const clock = getRealtimePondokClock();
+    const lc = checkBarcodeLifecycle(booking, clock);
+
+    // Cek apakah tiket sudah kadaluarsa atau sudah selesai (Check-Out)
+    if (lc.isExpired || booking.status_kunjungan === 'Selesai') {
+      sound.playAccessDenied?.();
+      setScanModalResult({
+        isOpen: true,
+        success: false,
+        isExpired: true,
+        title: '⛔ BARCODE HANGUS / MASA KUNJUNGAN TELAH BERAKHIR',
+        message: 'Kupon ini sudah tidak berlaku karena telah melewati jam operasional kunjungan atau tamu telah check-out sebelumnya. Tiket hangus demi keamanan pondok.',
+        booking
+      });
+      return;
+    }
+
+    // Cek apakah masih menunggu approval hari kerja
+    if (booking.status_kunjungan === 'Menunggu Approval') {
+      sound.playAccessDenied?.();
+      setScanModalResult({
+        isOpen: true,
+        success: false,
+        title: '⏳ MENUNGGU APPROVAL ADMIN RI\'AYAH',
+        message: `Permohonan kunjungan ananda ${booking.nama_santri} pada hari kerja masih menunggu verifikasi pengasuhan pondok.`,
+        booking
+      });
+      return;
+    }
+
+    // Cek apakah ditolak
+    if (booking.status_kunjungan === 'Ditolak') {
+      sound.playAccessDenied?.();
+      setScanModalResult({
+        isOpen: true,
+        success: false,
+        title: '⛔ PERMOHONAN KUNJUNGAN DITOLAK',
+        message: 'Permohonan kunjungan ini telah ditolak oleh Pengasuhan Pondok.',
+        booking
+      });
+      return;
+    }
+
+    // Tiket Sah: Lakukan Check-In Otomatis!
+    const updated = checkInVisitBooking(booking.id, source);
+    sound.playSuccess?.();
+    setScanModalResult({
+      isOpen: true,
+      success: true,
+      title: '✅ SCAN BERHASIL — PENJENGUK TERDAFTAR & RESMI CHECK-IN',
+      message: 'Barcode gate pass sah! Wali santri telah tercatat secara resmi di pos jaga satpam & tersinkron ke dashboard Admin Ri\'ayah.',
+      booking: updated || booking
+    });
+  };
+
+  // 4. Nyalakan Kamera Live
+  const startCamera = async (camId) => {
+    setCameraError('');
+    setIsCameraStarting(true);
+    const targetCam = camId || selectedCameraId;
+
+    try {
+      if (!html5QrCodeRef.current) {
+        html5QrCodeRef.current = new Html5Qrcode('satpam-camera-viewfinder');
+      }
+
+      if (html5QrCodeRef.current.isScanning) {
+        await html5QrCodeRef.current.stop();
+      }
+
+      const cameraConfig = targetCam ? targetCam : { facingMode: 'environment' };
+
+      await html5QrCodeRef.current.start(
+        cameraConfig,
+        {
+          fps: 12,
+          qrbox: { width: 260, height: 260 },
+          aspectRatio: 1.0
+        },
+        (decodedText) => {
+          handleProcessScannedBarcode(decodedText, 'LIVE_CAMERA');
+        },
+        () => {
+          // ignore scan frame misses
+        }
+      );
+      setIsCameraActive(true);
+      sound.playBeep?.();
+    } catch (err) {
+      console.error('Kamera gagal dinyalakan:', err);
+      setCameraError(err?.message || 'Tidak dapat mengakses kamera. Pastikan izin kamera telah disetujui di browser.');
+      setIsCameraActive(false);
+    } finally {
+      setIsCameraStarting(false);
+    }
+  };
+
+  // 5. Matikan Kamera Live
+  const stopCamera = async () => {
+    if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
+      try {
+        await html5QrCodeRef.current.stop();
+        html5QrCodeRef.current.clear();
+      } catch (e) {}
+    }
+    setIsCameraActive(false);
+  };
+
+  // 6. Scan dari File Upload Gambar (.PNG)
+  const handleUploadImageScan = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      let qrScanner = html5QrCodeRef.current;
+      if (!qrScanner) {
+        qrScanner = new Html5Qrcode('satpam-camera-viewfinder');
+        html5QrCodeRef.current = qrScanner;
+      }
+      const decodedText = await qrScanner.scanFile(file, true);
+      handleProcessScannedBarcode(decodedText, 'FILE_UPLOAD');
+    } catch (err) {
+      console.warn('Scan gambar file error:', err);
+      sound.playAccessDenied?.();
+      alert('⚠️ Barcode atau QR Code tidak terdeteksi pada gambar kupon yang diunggah. Pastikan gambar kupon jelas.');
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  // 7. Input Cepat / USB Barcode Scanner Submit
+  const handleManualBarcodeInput = (e) => {
+    e.preventDefault();
+    if (!barcodeInput.trim()) {
+      alert('Silakan ketik atau scan kode barcode!');
+      return;
+    }
+    handleProcessScannedBarcode(barcodeInput, 'USB_BARCODE_SCANNER');
+    setBarcodeInput('');
+  };
+
+  // Form Input Walk-in Manual Satpam state
   const [isManualFormOpen, setIsManualFormOpen] = useState(false);
   const [satpamForm, setSatpamForm] = useState(() => {
     const clock = getRealtimePondokClock();
@@ -123,10 +329,7 @@ export default function SecurityVisitGateModule() {
   });
 
   const handleOpenManualForm = () => {
-    if (isManualFormOpen) {
-      setIsManualFormOpen(false);
-      return;
-    }
+    setIsManualFormOpen(!isManualFormOpen);
     const clock = getRealtimePondokClock();
     const [h, m] = clock.jam_menit.split(':').map(Number);
     const endH = String((h + 1) % 24).padStart(2, '0');
@@ -137,39 +340,8 @@ export default function SecurityVisitGateModule() {
       jam_kunjungan: clock.jam_menit,
       jam_selesai: `${endH}:${endM}`
     }));
-    setIsManualFormOpen(true);
   };
 
-  // Handle barcode verification
-  const handleVerifyBarcode = (e) => {
-    if (e) e.preventDefault();
-    if (!barcodeInput.trim()) {
-      sound.playBeep?.();
-      alert('Silakan masukkan atau scan kode Barcode Kunjungan (WhatsApp)!');
-      return;
-    }
-    const res = verifyVisitBarcode(barcodeInput);
-    setVerificationResult(res);
-    if (res.success) {
-      sound.playSuccess?.();
-    } else {
-      sound.playAccessDenied?.();
-    }
-  };
-
-  // Handle tap RFID verification
-  const handleVerifyRfid = (uidToTest) => {
-    const targetUid = uidToTest || lastScannedUid || '04:A1:2B:9C';
-    const res = verifyVisitRfid(targetUid);
-    setVerificationResult(res);
-    if (res.success) {
-      sound.playSuccess?.();
-    } else {
-      sound.playAccessDenied?.();
-    }
-  };
-
-  // Auto-fill form when santri is selected
   const handleSelectSantri = (santriId) => {
     const s = santriList.find(item => item.id === santriId);
     if (s) {
@@ -184,18 +356,12 @@ export default function SecurityVisitGateModule() {
     }
   };
 
-  // Handle manual submit by Satpam
   const handleSatpamSubmit = (e) => {
     e.preventDefault();
     if (!satpamForm.nama_santri || !satpamForm.nama_penjenguk) {
       alert('Nama Santri dan Nama Penjenguk wajib diisi!');
       return;
     }
-    if (satpamForm.status_penjenguk === 'Lainnya' && !satpamForm.status_penjenguk_lainnya?.trim()) {
-      alert('Silakan ketik keterangan status hubungan lainnya!');
-      return;
-    }
-
     const finalStatus = satpamForm.status_penjenguk === 'Lainnya' && satpamForm.status_penjenguk_lainnya?.trim()
       ? `Lainnya (${satpamForm.status_penjenguk_lainnya.trim()})`
       : satpamForm.status_penjenguk;
@@ -203,48 +369,28 @@ export default function SecurityVisitGateModule() {
     const created = addVisitBooking({
       ...satpamForm,
       status_penjenguk: finalStatus,
-      status_penjenguk_lainnya: satpamForm.status_penjenguk_lainnya?.trim() || '',
       booking_source: 'MANUAL_SATPAM',
       tanggal_kunjungan: new Date().toISOString().slice(0, 10),
-      status_kunjungan: 'Sedang Berkunjung' // Langsung check-in saat diinput satpam
+      status_kunjungan: 'Sedang Berkunjung'
     });
 
-    setVerificationResult({
-      success: true,
-      booking: created,
-      message: '✅ DATA KUNJUNGAN MANUAL BERHASIL DICATAT & DISINKRONKAN KE ADMIN RI\'AYAH',
-      isApproved: true
-    });
-
+    handleProcessScannedBarcode(created.barcode_token || created.id, 'MANUAL_SATPAM');
     setIsManualFormOpen(false);
-    // Reset form
-    setSatpamForm({
-      nama_santri: '',
-      kelas: '',
-      asal: '',
-      jam_kunjungan: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':'),
-      jam_selesai: calculateEndTime(visitSettings?.max_durasi_menit || 90),
-      titipan_barang: '',
-      berat_barang_kg: 1.0,
-      nama_penjenguk: '',
-      status_penjenguk: 'Wali (Ayah/Ibu)',
-      status_penjenguk_lainnya: '',
-      no_wa_penjenguk: '081234567890'
-    });
   };
 
   const bookings = Array.isArray(visitBookings) ? visitBookings : [];
 
-  // Dapatkan data live booking yang selalu tersinkronisasi reaktif dengan state utama
-  const liveBooking = verificationResult?.booking
-    ? (bookings.find(b => b.id === verificationResult.booking.id || (b.barcode_token && b.barcode_token === verificationResult.booking.barcode_token)) || verificationResult.booking)
-    : null;
+  // DAFTAR PENGUNJUNG YANG SEDANG BERKUNJUNG (AKTIF DI AREA / SUDAH DI-SCAN)
+  const activeVisitingGuests = bookings
+    .filter(b => b.status_kunjungan === 'Sedang Berkunjung' || b.status_kunjungan?.includes('Sedang Berkunjung'))
+    .sort((a, b) => {
+      // Yang baru di-scan ditaruh paling atas
+      const timeA = a.jam_masuk_aktual || a.jam_checkin_aktual || '00:00';
+      const timeB = b.jam_masuk_aktual || b.jam_checkin_aktual || '00:00';
+      return timeB.localeCompare(timeA);
+    });
 
-  const isLiveOngoing = liveBooking?.status_kunjungan === 'Sedang Berkunjung' || liveBooking?.status_kunjungan?.includes('Sedang Berkunjung');
-  const isLiveApproved = (liveBooking?.status_kunjungan === 'Disetujui (Siap Datang)' || liveBooking?.status_kunjungan === 'Disetujui' || liveBooking?.status_kunjungan?.includes('Disetujui')) && !isLiveOngoing;
-  const isLiveDone = liveBooking?.status_kunjungan === 'Selesai';
-  const isLivePending = liveBooking?.status_kunjungan === 'Menunggu Approval';
-
+  // Filter untuk tabel arsip umum di bawah
   const filteredList = bookings.filter(b => {
     const bOngoing = b.status_kunjungan === 'Sedang Berkunjung' || b.status_kunjungan?.includes('Sedang Berkunjung');
     if (activeTabSub === 'ACTIVE' && !bOngoing) return false;
@@ -266,7 +412,36 @@ export default function SecurityVisitGateModule() {
 
   return (
     <div className="space-y-6 font-sans">
-      {/* ─── BARIS STATUS JAM & HARI REAL-TIME (LIVE CLOCK & MODE SISTEM POS SATPAM) ─── */}
+      
+      {/* ─── SCOPED KEYFRAME ANIMATION UNTUK LASER KAMERA & CENTANG HIJAU ─── */}
+      <style>{`
+        @keyframes laserSweepVertical {
+          0% { top: 10%; opacity: 0.3; }
+          50% { opacity: 1; }
+          100% { top: 90%; opacity: 0.3; }
+        }
+        @keyframes checkmarkScaleUp {
+          0% { transform: scale(0.7); opacity: 0; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes checkmarkDraw {
+          0% { stroke-dashoffset: 48; }
+          100% { stroke-dashoffset: 0; }
+        }
+        .anim-camera-laser {
+          animation: laserSweepVertical 2.2s ease-in-out infinite alternate;
+        }
+        .anim-checkmark-box {
+          animation: checkmarkScaleUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        .anim-checkmark-stroke {
+          stroke-dasharray: 48;
+          stroke-dashoffset: 0;
+          animation: checkmarkDraw 0.6s ease-in-out forwards;
+        }
+      `}</style>
+
+      {/* ─── BARIS STATUS WAKTU REAL-TIME POS JAGA SATPAM ─── */}
       <div className="bg-slate-900 border border-slate-700/80 rounded-2xl p-4 shadow-lg text-white flex flex-col md:flex-row items-start md:items-center justify-between gap-3 font-sans">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400 shadow-inner shrink-0">
@@ -274,7 +449,7 @@ export default function SecurityVisitGateModule() {
           </div>
           <div>
             <div className="text-[11px] font-bold tracking-wider text-slate-400 uppercase font-mono flex items-center gap-1.5">
-              <span>🕒 Waktu Sistem Real-Time (Pos Jaga Satpam)</span>
+              <span>🕒 Waktu Real-Time Pos Gerbang Utama</span>
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
             </div>
             <div className="text-sm sm:text-base font-extrabold text-white font-mono flex items-center gap-2 mt-0.5">
@@ -288,320 +463,461 @@ export default function SecurityVisitGateModule() {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="text-right hidden lg:block">
-            <div className="text-[10px] text-slate-400 font-medium">📅 Mode Sistem Hari Ini:</div>
-          </div>
-          {liveClock.is_weekday ? (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-400/40 shadow-sm animate-pulse">
-              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>HARI KERJA (SENIN–KAMIS) — Booking WA Wajib Approval Admin Ri'ayah &amp; Wajib Scan Barcode WA</span>
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 shadow-sm">
-              <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>AKHIR PEKAN (JUMAT–MINGGU) — Auto-Approval Booking WA Aktif</span>
-            </span>
-          )}
+          <button
+            onClick={handleOpenManualForm}
+            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition shadow-md flex items-center gap-1.5"
+          >
+            <Plus className="w-4 h-4" />
+            <span>+ Input Tamu Walk-In (Satpam)</span>
+          </button>
         </div>
       </div>
 
-      {/* Banner Notifikasi Realtime Check-In Tamu dari Kamera HP / Scanner */}
+      {/* ─── TOAST NOTIFIKASI CHECK-IN DARI BROADCAST ─── */}
       {toastCheckIn && (
-        <div className="bg-emerald-600 text-white p-3.5 rounded-2xl shadow-lg border border-emerald-400 flex items-center justify-between gap-3 animate-fade-in">
+        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-xl flex items-center justify-between gap-3 animate-fade-in text-xs">
           <div className="flex items-center gap-2.5">
-            <CheckCircle className="w-5 h-5 text-emerald-200 animate-pulse shrink-0" />
-            <span className="text-xs font-bold leading-relaxed">
-              🔔 TAMU CHECK-IN: Wali dari <strong>{toastCheckIn.nama_santri}</strong> ({toastCheckIn.nama_penjenguk}) telah scan barcode &amp; masuk gerbang pukul {toastCheckIn.jam_masuk_aktual || toastCheckIn.jam_checkin_aktual || 'WITA'}.
-            </span>
+            <CheckCircle2 className="w-5 h-5 text-emerald-200 animate-bounce" />
+            <div>
+              <span className="font-bold">🔔 TAMU TELAH SCAN BARCODE &amp; CHECK-IN:</span>
+              <span className="ml-1.5 font-medium">
+                {toastCheckIn.nama_penjenguk} (Wali {toastCheckIn.nama_santri}) • Jam: {toastCheckIn.jam_masuk_aktual || 'WITA'}
+              </span>
+            </div>
           </div>
-          <button
-            onClick={() => setToastCheckIn(null)}
-            className="text-xs text-emerald-200 hover:text-white font-bold p-1 rounded-lg hover:bg-emerald-700"
-          >
-            ✕
-          </button>
+          <button onClick={() => setToastCheckIn(null)} className="text-white/80 hover:text-white font-bold">✕</button>
         </div>
       )}
 
-      {/* ─── BAGIAN A: PANEL VERIFIKASI KEDATANGAN (SCAN BARCODE WA / TAP RFID) ─── */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-emerald-950 text-white rounded-3xl p-6 shadow-xl border border-slate-700 space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Shield className="w-5 h-5 text-emerald-400" />
-              <h3 className="text-lg font-black tracking-tight text-white">
-                Pos Jaga Keamanan: Verifikasi Kedatangan Tamu &amp; Titipan Barang
-              </h3>
+      {/* ─────────────────────────────────────────────────────────────
+          PANEL UTAMA: KAMERA PEMINDAI KUPON BARCODE WALI SANTRI
+          ───────────────────────────────────────────────────────────── */}
+      <div className="bg-slate-900 border-2 border-emerald-500/60 rounded-3xl p-5 sm:p-6 shadow-2xl text-white space-y-5 relative overflow-hidden">
+        
+        {/* Background Ambient Glow */}
+        <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Header Panel Kamera */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4 relative z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-400 shrink-0">
+              <Camera className="w-5 h-5" />
             </div>
-            <p className="text-xs text-slate-300">
-              Pindai Barcode Kunjungan (WhatsApp) atau Tap Kartu RFID untuk validasi izin masuk wali santri.
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-black text-base sm:text-lg text-white tracking-tight">
+                  📷 Kamera Pemindai Kupon Barcode Wali Santri
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">
+                  Live Scanner
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Arahkan kamera ke gambar kupon di HP wali santri untuk verifikasi check-in otomatis.
+              </p>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleOpenManualForm}
-              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-sm flex items-center gap-1.5"
-            >
-              <Plus className="w-4 h-4" />
-              <span>{isManualFormOpen ? 'Tutup Form Manual' : 'Input Tamu Walk-In (Satpam)'}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* 2 Metode Verifikasi: Barcode WA & Tap RFID */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-2">
-          {/* Metode 1: Scan Barcode WA */}
-          <div className="bg-slate-800/80 border border-slate-700 p-4 rounded-2xl space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-                <QrCode className="w-4 h-4" />
-                1. Scan / Masukkan Barcode WhatsApp (Gate Pass)
-              </span>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono">
-                Scan Cepat
-              </span>
-            </div>
-
-            <form onSubmit={handleVerifyBarcode} className="flex gap-2">
-              <input
-                type="text"
-                placeholder="Scan / ketik kode (contoh: GP-DU-FAUZI-9821)..."
-                value={barcodeInput}
-                onChange={(e) => setBarcodeInput(e.target.value)}
-                className="flex-1 px-3 py-2 text-xs rounded-xl bg-slate-900 border border-slate-600 text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 font-mono font-bold"
-              />
-              <button
-                type="submit"
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1"
+          {/* Tombol Kontrol Kamera Live */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {cameras.length > 1 && isCameraActive && (
+              <select
+                value={selectedCameraId}
+                onChange={(e) => {
+                  setSelectedCameraId(e.target.value);
+                  startCamera(e.target.value);
+                }}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-xs font-semibold focus:outline-none focus:border-emerald-500"
               >
-                <span>Verifikasi</span>
-              </button>
-            </form>
-          </div>
+                {cameras.map((c, i) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label || `Kamera ${i + 1}`}
+                  </option>
+                ))}
+              </select>
+            )}
 
-          {/* Metode 2: Tap Kartu RFID */}
-          <div className="bg-slate-800/80 border border-slate-700 p-4 rounded-2xl space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-cyan-400 flex items-center gap-1.5">
-                <CreditCard className="w-4 h-4" />
-                2. Tap Kartu RFID Santri / Wali (RC522 13.56 MHz)
-              </span>
-              <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${isSerialConnected ? 'bg-cyan-500/20 text-cyan-300' : 'bg-amber-500/20 text-amber-300'}`}>
-                {isSerialConnected ? 'Hardware Online' : 'Simulasi Aktif'}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
+            {isCameraActive ? (
               <button
-                type="button"
-                onClick={() => handleVerifyRfid('04:A1:2B:9C')}
-                className="flex-1 py-2 px-3 rounded-xl bg-cyan-600/80 hover:bg-cyan-600 text-white text-xs font-bold transition flex items-center justify-center gap-2"
+                onClick={stopCamera}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition shadow-md flex items-center gap-1.5"
               >
-                <Radio className="w-4 h-4 text-cyan-200 animate-pulse" />
-                <span>Simulasi Tap RFID Ahmad Fauzi (04:A1:2B:9C)</span>
+                <CameraOff className="w-4 h-4" />
+                <span>⏹️ Matikan Kamera</span>
               </button>
+            ) : (
               <button
-                type="button"
-                onClick={() => handleVerifyRfid(lastScannedUid)}
-                className="py-2 px-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold transition font-mono"
-                title="Tap UID Terakhir"
+                onClick={() => startCamera(selectedCameraId)}
+                disabled={isCameraStarting}
+                className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition shadow-lg shadow-emerald-500/30 flex items-center gap-2"
               >
-                Tap UID Terakhir
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Kotak Hasil Validasi Ketat (Instant Visual Alert & Real-time Live State Sync) */}
-        {verificationResult && (
-          <div className={`p-4 rounded-2xl border transition animate-fade-in ${
-            verificationResult.success
-              ? isLiveOngoing
-                ? 'bg-blue-950/85 border-blue-500 text-blue-100 shadow-lg shadow-blue-950/40'
-                : isLiveDone
-                ? 'bg-slate-900/90 border-slate-600 text-slate-200'
-                : 'bg-emerald-950/85 border-emerald-500 text-emerald-100 shadow-lg shadow-emerald-950/40'
-              : 'bg-rose-950/85 border-rose-500 text-rose-100'
-          }`}>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-start gap-3">
-                {verificationResult.success ? (
-                  isLiveOngoing ? (
-                    <Clock className="w-6 h-6 text-blue-400 shrink-0 mt-0.5 animate-pulse" />
-                  ) : isLiveDone ? (
-                    <CheckCircle className="w-6 h-6 text-slate-400 shrink-0 mt-0.5" />
-                  ) : (
-                    <CheckCircle className="w-6 h-6 text-emerald-400 shrink-0 mt-0.5" />
-                  )
+                {isCameraStarting ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
+                    <span>Mempersiapkan Kamera...</span>
+                  </>
                 ) : (
-                  <XCircle className="w-6 h-6 text-rose-400 shrink-0 mt-0.5" />
+                  <>
+                    <Camera className="w-4 h-4 text-slate-950" />
+                    <span>📷 Aktifkan Kamera Scan Barcode</span>
+                  </>
                 )}
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h4 className="font-black text-sm tracking-tight text-white">
-                      {verificationResult.lifecycle?.isExpired
-                        ? '⛔ BARCODE TIDAK DAPAT DIGUNAKAN LAGI (EXPIRED / KUNJUNGAN SELESAI)'
-                        : verificationResult.lifecycle?.isBeforeHours
-                        ? `⏳ BELUM WAKTUNYA MASUK (${liveBooking?.jam_kunjungan || '14:00'} WITA)`
-                        : isLiveOngoing
-                        ? '✅ STATUS: SEDANG BERKUNJUNG (CHECK-IN BERHASIL)'
-                        : isLiveDone
-                        ? '✓ STATUS: KUNJUNGAN TELAH SELESAI'
-                        : isLiveApproved
-                        ? '✅ VERIFIKASI BERHASIL: Wali Santri Terdaftar & Disetujui'
-                        : isLivePending
-                        ? '⏳ STATUS: MENUNGGU APPROVAL ADMIN RI\'AYAH (Hari Kerja)'
-                        : verificationResult.message}
-                    </h4>
-                    {liveBooking && (
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold inline-flex items-center gap-1 ${
-                        liveBooking.booking_source?.includes('WHATSAPP')
-                          ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/40'
-                          : 'bg-blue-500/25 text-blue-300 border border-blue-400/40'
-                      }`}>
-                        <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                        {liveBooking.booking_source?.includes('WHATSAPP') ? 'Via WhatsApp' : 'Manual Satpam'}
-                      </span>
-                    )}
-                    {isLiveOngoing && (
-                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-400/40">
-                        Masuk: {liveBooking?.jam_masuk_aktual || liveBooking?.jam_checkin_aktual || 'WITA'}
-                      </span>
-                    )}
-                    {isLiveDone && (
-                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-700 text-slate-300 border border-slate-600">
-                        Keluar: {liveBooking?.jam_keluar_aktual || liveBooking?.jam_checkout_aktual || 'WITA'}
-                      </span>
-                    )}
-                  </div>
+              </button>
+            )}
+          </div>
+        </div>
 
-                  {liveBooking && (
-                    <div className="text-xs text-slate-200 mt-2 space-y-1">
-                      <p>
-                        Santri: <strong className="text-white">{liveBooking.nama_santri}</strong> ({liveBooking.kelas}) • Asal: <strong className="text-white">{liveBooking.asal}</strong>
-                      </p>
-                      <p>
-                        Penjenguk: <strong className="text-white">{liveBooking.nama_penjenguk}</strong> ({liveBooking.status_penjenguk}) • No WA: <strong className="font-mono text-emerald-300">{liveBooking.no_wa_penjenguk}</strong>
-                      </p>
-                      <p>
-                        📦 Titipan Barang: <strong>{liveBooking.titipan_barang || '-'}</strong> (Berat: <strong className="text-cyan-300">{liveBooking.berat_barang_kg || 0} Kg</strong>)
-                      </p>
-
-                      {/* Visual Scannable Barcode & QR Code Image for Satpam Verification */}
-                      {(() => {
-                        const tokenCode = liveBooking.barcode_token || liveBooking.id;
-                        const { qrCodeUrl, gatePassUrl } = getVisitGatePassUrls(tokenCode);
-
-                        return (
-                          <div className="mt-3 space-y-2">
-                            <div className="flex items-center gap-3 bg-black/40 p-2.5 rounded-xl border border-emerald-500/40">
-                              <img
-                                src={qrCodeUrl}
-                                alt="QR Code Gate Pass"
-                                className="w-14 h-14 bg-white p-1 rounded-lg shrink-0 object-contain shadow-xs"
-                              />
-                              <div className="min-w-0">
-                                <span className="text-[10px] font-mono font-bold text-emerald-400 block tracking-wider">
-                                  E-BARCODE GATE PASS RESMI (DIRECT LINK)
-                                </span>
-                                <span className="text-sm font-black font-mono text-white tracking-wider">
-                                  {tokenCode}
-                                </span>
-                                <span className="text-[10px] text-slate-300 block mt-0.5">
-                                  Scan kamera HP otomatis membuka halaman kupon &amp; status verifikasi
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2 pt-0.5">
-                              <button
-                                onClick={() => {
-                                  window.open(gatePassUrl, '_blank');
-                                  sound.playSuccess?.();
-                                }}
-                                className="py-1.5 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-[11px] transition shadow-xs flex items-center gap-1.5"
-                                title="Buka halaman kupon digital resmi"
-                              >
-                                <ExternalLink className="w-3.5 h-3.5" />
-                                <span>Buka Kupon Digital (.PNG)</span>
-                              </button>
-                              <button
-                                onClick={() => {
-                                  navigator.clipboard.writeText(gatePassUrl);
-                                  sound.playBeep?.();
-                                  alert('Link Kupon Kunjungan berhasil disalin ke clipboard!');
-                                }}
-                                className="py-1.5 px-2.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold transition flex items-center gap-1 border border-white/20"
-                                title="Salin link kupon WhatsApp"
-                              >
-                                <Copy className="w-3.5 h-3.5" />
-                                <span>Copy Link</span>
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Action Tombol di Banner Hasil (Sinkron Otomatis dengan Tabel) */}
-              <div className="flex items-center gap-2 self-start sm:self-center flex-wrap">
-                {verificationResult.success && liveBooking && isLiveApproved && (
-                  <button
-                    onClick={() => {
-                      const updated = checkInVisitBooking(liveBooking.id || liveBooking.barcode_token, 'BARCODE');
-                      if (updated) {
-                        setVerificationResult(prev => ({
-                          ...prev,
-                          booking: updated,
-                          message: `✅ STATUS: SEDANG BERKUNJUNG (CHECK-IN BERHASIL)`,
-                          isOngoing: true,
-                          isApproved: false
-                        }));
-                      }
-                    }}
-                    className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-md transition flex items-center gap-1.5"
-                  >
-                    <CheckCircle className="w-4 h-4" />
-                    <span>Check-In Masuk (Buka Gerbang)</span>
-                  </button>
-                )}
-                {verificationResult.success && liveBooking && isLiveOngoing && (
-                  <button
-                    onClick={() => {
-                      const updated = checkOutVisitBooking(liveBooking.id || liveBooking.barcode_token);
-                      if (updated) {
-                        setVerificationResult(prev => ({
-                          ...prev,
-                          booking: updated,
-                          message: `✓ STATUS: KUNJUNGAN TELAH SELESAI`,
-                          isDone: true,
-                          isOngoing: false
-                        }));
-                      }
-                    }}
-                    className="px-4 py-2 bg-blue-500 hover:bg-blue-400 text-white font-black text-xs rounded-xl shadow-md transition flex items-center gap-1.5"
-                  >
-                    <LogOut className="w-4 h-4" />
-                    <span>Selesai / Pulang (Check-Out)</span>
-                  </button>
-                )}
-                <button
-                  onClick={() => setVerificationResult(null)}
-                  className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs rounded-lg font-bold transition"
-                >
-                  Tutup Notifikasi
-                </button>
-              </div>
-            </div>
+        {/* Error Kamera Notice */}
+        {cameraError && (
+          <div className="p-3.5 rounded-xl bg-rose-950/80 border border-rose-500/80 text-rose-200 text-xs flex items-center gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>{cameraError}</span>
           </div>
         )}
+
+        {/* ─── KOTAK VIEWFINDER KAMERA LIVE ─── */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          
+          {/* Kolom Kiri Viewfinder Kamera (lg:col-span-7) */}
+          <div className="lg:col-span-7 bg-black/60 rounded-2xl border border-slate-800 p-3 sm:p-4 relative overflow-hidden flex flex-col items-center justify-center min-h-[280px]">
+            
+            {/* Viewfinder Video Container dari html5-qrcode (Harus Selalu Ada di DOM) */}
+            <div 
+              id="satpam-camera-viewfinder" 
+              className={`w-full max-w-sm rounded-xl overflow-hidden relative shadow-2xl ${isCameraActive ? 'block' : 'hidden'}`}
+              style={{ minHeight: '260px' }}
+            />
+
+            {/* Laser Line Scanning Effect saat Kamera Aktif */}
+            {isCameraActive && (
+              <div className="absolute inset-x-8 sm:inset-x-16 h-[2px] bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_12px_#34d399] z-20 pointer-events-none anim-camera-laser" />
+            )}
+
+            {/* Tampilan Standby saat Kamera Belum Dinyalakan */}
+            {!isCameraActive && (
+              <div className="py-12 px-4 text-center space-y-3">
+                <div className="w-16 h-16 rounded-2xl bg-slate-800/80 border border-slate-700 flex items-center justify-center mx-auto text-emerald-400 shadow-inner">
+                  <Scan className="w-8 h-8 animate-pulse" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-slate-200">Kamera Pemindai Sedang Nonaktif</h4>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1 leading-relaxed">
+                    Klik tombol <strong>"📷 Aktifkan Kamera Scan Barcode"</strong> di atas, atau gunakan opsi alternatif di samping jika menggunakan laptop.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Kolom Kanan: 2 Opsi Bantu Scanner (lg:col-span-5) */}
+          <div className="lg:col-span-5 space-y-4">
+            
+            {/* OPSI 1: SCAN DARI UPLOAD GAMBAR KUPON (.PNG) */}
+            <div className="p-4 rounded-2xl bg-slate-800/80 border border-slate-700 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-teal-400 flex items-center gap-1.5">
+                  <Upload className="w-4 h-4" />
+                  1. Scan dari Upload Gambar Kupon (.PNG)
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-teal-500/20 text-teal-300 font-mono">
+                  Demo &amp; File
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-snug">
+                Pilih file gambar kupon (.PNG) yang telah diunduh wali santri untuk membaca barcodenya secara instan:
+              </p>
+              
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleUploadImageScan}
+                className="hidden"
+                id="satpam-file-input"
+              />
+              <label
+                htmlFor="satpam-file-input"
+                className="w-full py-2.5 px-3 rounded-xl bg-teal-700 hover:bg-teal-600 active:bg-teal-800 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition shadow-sm"
+              >
+                <Upload className="w-4 h-4" />
+                <span>🖼️ Pilih File Gambar Kupon (.PNG)</span>
+              </label>
+            </div>
+
+            {/* OPSI 2: INPUT CEPAT / USB BARCODE SCANNER */}
+            <div className="p-4 rounded-2xl bg-slate-800/80 border border-slate-700 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                  <QrCode className="w-4 h-4" />
+                  2. Input Cepat / Alat Tembak Barcode USB
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono">
+                  Manual / Scanner
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-snug">
+                Scan menggunakan pistol barcode USB atau ketik kode kupon lalu tekan Enter:
+              </p>
+
+              <form onSubmit={handleManualBarcodeInput} className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Ketik kode (contoh: SR-20261108...)..."
+                  value={barcodeInput}
+                  onChange={(e) => setBarcodeInput(e.target.value)}
+                  className="flex-1 px-3 py-2 text-xs rounded-xl bg-slate-900 border border-slate-600 text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 font-mono font-bold"
+                />
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1"
+                >
+                  <span>Proses</span>
+                </button>
+              </form>
+            </div>
+
+          </div>
+
+        </div>
+
       </div>
 
-      {/* ─── BAGIAN B: FORM INPUT MANUAL SATPAM (UNTUK TAMU LUPA BOOKING WA) ─── */}
+      {/* ─────────────────────────────────────────────────────────────
+          MODAL POP-UP HASIL SCAN KAMERA SATPAM (ANIMASI CENTANG HIJAU)
+          ───────────────────────────────────────────────────────────── */}
+      {scanModalResult && scanModalResult.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-slate-900 border-2 border-emerald-500 rounded-3xl p-6 sm:p-7 max-w-lg w-full text-white shadow-2xl space-y-5 animate-scale-up">
+            
+            {/* Animasi Centang Hijau / Silang Merah */}
+            <div className="text-center space-y-3">
+              {scanModalResult.success ? (
+                <div className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 mx-auto flex items-center justify-center rounded-full bg-emerald-500/20 border-2 border-emerald-400 anim-checkmark-box shadow-xl shadow-emerald-500/30">
+                  <svg className="w-10 h-10 sm:w-12 sm:h-12 text-emerald-400" viewBox="0 0 52 52">
+                    <circle
+                      className="stroke-current text-emerald-500/30"
+                      strokeWidth="4"
+                      fill="none"
+                      cx="26"
+                      cy="26"
+                      r="23"
+                    />
+                    <path
+                      className="stroke-current text-emerald-400 anim-checkmark-stroke"
+                      strokeWidth="4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      fill="none"
+                      d="M14.1 27.2l7.1 7.2 16.7-16.8"
+                    />
+                  </svg>
+                </div>
+              ) : (
+                <div className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 mx-auto flex items-center justify-center rounded-full bg-rose-500/20 border-2 border-rose-400 shadow-xl shadow-rose-500/30">
+                  <XCircle className="w-10 h-10 text-rose-400" />
+                </div>
+              )}
+
+              <div>
+                <h3 className={`font-black text-lg sm:text-xl tracking-tight ${scanModalResult.success ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {scanModalResult.title}
+                </h3>
+                <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                  {scanModalResult.message}
+                </p>
+              </div>
+            </div>
+
+            {/* Rincian Tamu yang Berhasil Check-In */}
+            {scanModalResult.booking && (
+              <div className="bg-black/50 p-4 rounded-2xl border border-slate-800 text-xs space-y-2 font-sans">
+                <div className="grid grid-cols-2 gap-2 pb-2 border-b border-slate-800">
+                  <div>
+                    <span className="text-slate-400 block text-[10px] font-mono">NAMA SANTRI:</span>
+                    <strong className="text-sm text-white font-bold">{scanModalResult.booking.nama_santri}</strong>
+                    <span className="text-[10px] text-emerald-400 block font-mono">{scanModalResult.booking.kelas} ({scanModalResult.booking.asal || 'Surabaya'})</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] font-mono">PENJENGUK (TAMU):</span>
+                    <strong className="text-sm text-white font-bold">{scanModalResult.booking.nama_penjenguk}</strong>
+                    <span className="text-[10px] text-slate-300 block">{scanModalResult.booking.status_penjenguk || 'Wali Santri'}</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-1 text-[11px]">
+                  <div>
+                    <span className="text-slate-400 block text-[10px] font-mono">WAKTU CHECK-IN AKTUAL:</span>
+                    <strong className="text-emerald-300 font-mono font-bold text-sm">
+                      {scanModalResult.booking.jam_masuk_aktual || liveClock.jam_menit_detik} WITA
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] font-mono">BATAS JAM SELESAI:</span>
+                    <strong className="text-cyan-300 font-mono font-bold text-sm">
+                      {scanModalResult.booking.jam_selesai} WITA
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-800 text-[11px]">
+                  <span className="text-slate-400 block text-[10px] font-mono">TITIPAN BARANG:</span>
+                  <div className="flex items-center justify-between text-slate-200 mt-0.5">
+                    <span className="truncate">{scanModalResult.booking.titipan_barang || 'Tidak ada titipan khusus'}</span>
+                    <span className="font-mono font-bold text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-500/30 shrink-0 ml-2">
+                      {scanModalResult.booking.berat_barang_kg || 0} Kg
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Tombol Tutup Modal */}
+            <div className="pt-1">
+              <button
+                onClick={() => setScanModalResult(null)}
+                className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black text-xs transition shadow-lg shadow-emerald-950/50 flex items-center justify-center gap-2"
+              >
+                <Check className="w-4 h-4" />
+                <span>✓ Tutup &amp; Lanjutkan Pemantauan Pos Gerbang</span>
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          TABEL UTAMA: DAFTAR OTOMATIS WALI SANTRI YANG SEDANG BERKUNJUNG
+          (TERVERIFIKASI KAMERA / SATPAM DENGAN HITUNG MUNDUR SISA WAKTU)
+          ───────────────────────────────────────────────────────────── */}
+      <div className="bg-white rounded-3xl border-2 border-emerald-500/40 shadow-md overflow-hidden space-y-0">
+        
+        {/* Header Tabel Pengunjung Aktif */}
+        <div className="p-4 sm:p-5 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-b border-emerald-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow-xs">
+              <Users className="w-4 h-4" />
+            </div>
+            <div>
+              <h4 className="font-black text-sm text-slate-900 tracking-tight flex items-center gap-2">
+                <span>📋 Daftar Otomatis Wali Santri yang Sedang Berkunjung (Terverifikasi Kamera/Satpam)</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping inline-block" />
+              </h4>
+              <p className="text-[11px] text-slate-500">
+                Tamu yang berhasil di-scan otomatis muncul di baris teratas dengan hitung mundur sisa waktu kunjungan.
+              </p>
+            </div>
+          </div>
+
+          <span className="px-3 py-1 rounded-full bg-emerald-600 text-white text-xs font-mono font-black shadow-xs">
+            {activeVisitingGuests.length} Tamu Aktif di Pondok
+          </span>
+        </div>
+
+        {/* Tabel Pengunjung Aktif */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-wider font-mono">
+                <th className="py-3 px-3">No</th>
+                <th className="py-3 px-3">Santri &amp; Kelas</th>
+                <th className="py-3 px-3">Penjenguk (Wali)</th>
+                <th className="py-3 px-3">Jam Masuk (Check-In)</th>
+                <th className="py-3 px-3">Sisa Waktu Kunjungan</th>
+                <th className="py-3 px-3">Titipan Barang &amp; Berat</th>
+                <th className="py-3 px-3">Status</th>
+                <th className="py-3 px-3 text-center">Aksi Satpam</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {activeVisitingGuests.length === 0 ? (
+                <tr>
+                  <td colSpan="8" className="py-8 text-center text-slate-400">
+                    <p className="font-semibold text-slate-600 text-xs">
+                      Saat ini belum ada tamu yang sedang berkunjung di dalam area pondok.
+                    </p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Silakan arahkan kamera scan ke kupon wali santri untuk mencatat check-in otomatis.
+                    </p>
+                  </td>
+                </tr>
+              ) : (
+                activeVisitingGuests.map((item, idx) => {
+                  const cd = calculateVisitCountdown(item.jam_selesai, item.tanggal_kunjungan);
+
+                  return (
+                    <tr key={item.id} className="hover:bg-emerald-50/40 transition">
+                      <td className="py-3 px-3 font-mono font-bold text-slate-500">
+                        {idx + 1}.
+                      </td>
+                      <td className="py-3 px-3">
+                        <div className="font-bold text-slate-900">{item.nama_santri}</div>
+                        <div className="text-[10px] text-emerald-700 font-semibold">{item.kelas}</div>
+                      </td>
+                      <td className="py-3 px-3">
+                        <div className="font-bold text-slate-800">{item.nama_penjenguk}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">{item.status_penjenguk} • {item.no_wa_penjenguk}</div>
+                      </td>
+                      <td className="py-3 px-3 font-mono">
+                        <div className="text-emerald-700 font-bold">
+                          {item.jam_masuk_aktual || item.jam_checkin_aktual || item.jam_kunjungan} WITA
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          Batas: {item.jam_selesai} WITA
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 font-mono">
+                        {cd && cd.isOverstay ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 animate-pulse">
+                            <AlertTriangle className="w-3 h-3 text-rose-600" />
+                            Overstay ({cd.remainingText})
+                          </span>
+                        ) : cd ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-300">
+                            <Clock className="w-3 h-3 text-blue-600 animate-spin" />
+                            ⏳ {cd.remainingText}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-400">-</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3">
+                        <div className="text-slate-700 truncate max-w-[140px]">{item.titipan_barang || '-'}</div>
+                        <span className="text-[10px] font-mono font-bold text-cyan-800 bg-cyan-100 px-1.5 py-0.2 rounded mt-0.5 inline-block">
+                          {item.berat_barang_kg || 0} Kg
+                        </span>
+                      </td>
+                      <td className="py-3 px-3">
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 inline-flex items-center gap-1 shadow-2xs">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          <span>Sudah Scan &amp; Sedang Berkunjung</span>
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        <button
+                          onClick={() => {
+                            if (confirm(`Konfirmasi kepulangan tamu ${item.nama_penjenguk} (Wali ${item.nama_santri})? Barcode akan dihanguskan.`)) {
+                              checkOutVisitBooking(item.id);
+                              sound.playSuccess?.();
+                            }
+                          }}
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black transition shadow-xs flex items-center gap-1 mx-auto"
+                        >
+                          <LogOut className="w-3.5 h-3.5" />
+                          <span>🏁 Selesai Berkunjung (Check-Out)</span>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+
+      {/* ─── FORM INPUT WALK-IN MANUAL SATPAM (MODAL TOGGLE) ─── */}
       {isManualFormOpen && (
         <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4 animate-fade-in">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -618,37 +934,36 @@ export default function SecurityVisitGateModule() {
               onClick={() => setIsManualFormOpen(false)}
               className="text-slate-400 hover:text-slate-600 text-xs font-bold"
             >
-              ✕ Tutup Form
+              ✕ Tutup
             </button>
           </div>
 
-          <form onSubmit={handleSatpamSubmit} className="space-y-4 text-xs">
-            {/* 1. Pilih Santri Auto-Complete */}
+          <form onSubmit={handleSatpamSubmit} className="space-y-3 text-xs">
+            {/* Quick Auto-fill dari Santri Terdaftar */}
             <div>
               <label className="font-bold text-slate-700 block mb-1">
-                1. Cari Santri (Otomatis Mengisi Kelas &amp; Asal Daerah):
+                Pilih Cepat dari Data Santri Terdaftar:
               </label>
               <select
                 onChange={(e) => handleSelectSantri(e.target.value)}
-                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-semibold focus:ring-1 focus:ring-emerald-500"
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-semibold"
               >
-                <option value="">-- Pilih Nama Santri yang Dijenguk --</option>
+                <option value="">-- Pilih Santri Terdaftar (Opsional) --</option>
                 {santriList.map(s => (
                   <option key={s.id} value={s.id}>
-                    {s.nama} • {s.kelas} • {s.kamar} • Wali: {s.wali?.nama || '-'}
+                    {s.nama} ({s.kelas} - {s.kamar})
                   </option>
                 ))}
               </select>
             </div>
 
-            {/* 9 Field Lengkap */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Nama Santri / Santriwati *</label>
+                <label className="font-bold text-slate-700 block mb-1">Nama Santri *</label>
                 <input
                   type="text"
                   required
-                  placeholder="Nama lengkap santri"
+                  placeholder="Nama Lengkap Santri"
                   value={satpamForm.nama_santri}
                   onChange={(e) => setSatpamForm(prev => ({ ...prev, nama_santri: e.target.value }))}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-bold"
@@ -656,10 +971,10 @@ export default function SecurityVisitGateModule() {
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Kelas &amp; Kamar Asrama</label>
+                <label className="font-bold text-slate-700 block mb-1">Kelas &amp; Kamar</label>
                 <input
                   type="text"
-                  placeholder="Contoh: 10-A (Umar 204)"
+                  placeholder="Misal: 10-A (Umar 204)"
                   value={satpamForm.kelas}
                   onChange={(e) => setSatpamForm(prev => ({ ...prev, kelas: e.target.value }))}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
@@ -667,10 +982,10 @@ export default function SecurityVisitGateModule() {
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Asal Daerah (Kota/Kab)</label>
+                <label className="font-bold text-slate-700 block mb-1">Asal Daerah</label>
                 <input
                   type="text"
-                  placeholder="Contoh: Surabaya / Gresik"
+                  placeholder="Misal: Surabaya"
                   value={satpamForm.asal}
                   onChange={(e) => setSatpamForm(prev => ({ ...prev, asal: e.target.value }))}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
@@ -680,11 +995,11 @@ export default function SecurityVisitGateModule() {
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Nama Lengkap Penjenguk *</label>
+                <label className="font-bold text-slate-700 block mb-1">Nama Penjenguk (Wali) *</label>
                 <input
                   type="text"
                   required
-                  placeholder="Nama orang tua / wali"
+                  placeholder="Nama Lengkap Penjenguk"
                   value={satpamForm.nama_penjenguk}
                   onChange={(e) => setSatpamForm(prev => ({ ...prev, nama_penjenguk: e.target.value }))}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-bold"
@@ -692,11 +1007,11 @@ export default function SecurityVisitGateModule() {
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Status Hubungan Penjenguk</label>
+                <label className="font-bold text-slate-700 block mb-1">Hubungan</label>
                 <select
                   value={satpamForm.status_penjenguk}
                   onChange={(e) => setSatpamForm(prev => ({ ...prev, status_penjenguk: e.target.value }))}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-semibold"
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
                 >
                   <option value="Wali (Ayah/Ibu)">Wali (Ayah/Ibu Kandung)</option>
                   <option value="Keluarga (Kakak/Adik/Kakek/Nenek)">Keluarga (Kakak/Adik/Kakek/Nenek)</option>
@@ -716,32 +1031,6 @@ export default function SecurityVisitGateModule() {
                 />
               </div>
             </div>
-
-            {/* Input Spesifik jika memilih status 'Lainnya' di Pos Satpam */}
-            {satpamForm.status_penjenguk === 'Lainnya' && (
-              <div className="bg-amber-50/80 border border-amber-300/80 rounded-2xl p-3 animate-fade-in space-y-1.5 shadow-xs">
-                <div className="flex items-center justify-between">
-                  <label className="font-bold text-amber-900 text-xs flex items-center gap-1.5">
-                    <span>Ketik Status Hubungan Lainnya *</span>
-                  </label>
-                  <span className="text-[10px] font-medium text-amber-700 bg-amber-100/70 px-2 py-0.5 rounded-full">
-                    Wajib diisi spesifik
-                  </span>
-                </div>
-                <input
-                  type="text"
-                  required
-                  placeholder="Contoh: Paman, Alumni, Tetangga Asal, Sopir Jemputan, dll"
-                  value={satpamForm.status_penjenguk_lainnya || ''}
-                  onChange={(e) => setSatpamForm(prev => ({ ...prev, status_penjenguk_lainnya: e.target.value }))}
-                  className="w-full px-3 py-2 rounded-xl border border-amber-300 bg-white font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-xs shadow-xs"
-                  autoFocus
-                />
-                <p className="text-[10px] text-amber-700">
-                  💡 Status ini akan langsung tersinkron ke log gerbang dan dashboard Admin Ri'ayah.
-                </p>
-              </div>
-            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
               <div>
@@ -790,7 +1079,7 @@ export default function SecurityVisitGateModule() {
               <label className="font-bold text-slate-700 block mb-1">Daftar / Deskripsi Barang Titipan:</label>
               <input
                 type="text"
-                placeholder="Misal: Pakaian ganti, Vitamin, Uang saku Rp 100.000, Makanan ringan..."
+                placeholder="Misal: Pakaian ganti, Vitamin, Makanan ringan..."
                 value={satpamForm.titipan_barang}
                 onChange={(e) => setSatpamForm(prev => ({ ...prev, titipan_barang: e.target.value }))}
                 className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
@@ -810,22 +1099,24 @@ export default function SecurityVisitGateModule() {
                 className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition shadow-sm flex items-center gap-2"
               >
                 <Send className="w-4 h-4" />
-                <span>Simpan &amp; Kirim ke Admin Ri'ayah</span>
+                <span>Simpan &amp; Check-In Langsung</span>
               </button>
             </div>
           </form>
         </div>
       )}
 
-      {/* ─── BAGIAN C: TABEL OPERASIONAL HARIAN SATPAM (LENGKAP & INTERAKTIF) ─── */}
+      {/* ─────────────────────────────────────────────────────────────
+          TABEL ARSIP LOG SELURUH KUNJUNGAN POS JAGA
+          ───────────────────────────────────────────────────────────── */}
       <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden space-y-0">
         <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <h4 className="font-black text-sm text-slate-900 tracking-tight">
-              Tabel Operasional Kunjungan Pos Jaga Keamanan
+              Arsip Seluruh Log Kunjungan Pos Jaga Keamanan
             </h4>
             <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
-              {filteredList.length} Tamu
+              {filteredList.length} Catatan
             </span>
           </div>
 
@@ -862,7 +1153,6 @@ export default function SecurityVisitGateModule() {
           </div>
         </div>
 
-        {/* 9 Kolom Spesifikasi Lengkap Tabel Satpam */}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
@@ -874,8 +1164,8 @@ export default function SecurityVisitGateModule() {
                 <th className="py-3 px-3">Jam Masuk</th>
                 <th className="py-3 px-3">Jam Selesai</th>
                 <th className="py-3 px-3">Titipan Barang &amp; Berat</th>
-                <th className="py-3 px-3">Nama Penjenguk &amp; Hubungan</th>
-                <th className="py-3 px-3 text-center">Aksi Satpam</th>
+                <th className="py-3 px-3">Nama Penjenguk</th>
+                <th className="py-3 px-3 text-center">Status / Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -898,44 +1188,21 @@ export default function SecurityVisitGateModule() {
                         {index + 1}. {item.id.replace('VST-', '#')}
                       </td>
                       <td className="py-3 px-3">
-                        <div className="space-y-1">
-                          <span className={`px-2 py-0.5 rounded text-[9px] font-bold inline-flex items-center gap-1 ${
-                            item.booking_source?.includes('WHATSAPP') || item.barcode_token
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                              : 'bg-blue-100 text-blue-800 border border-blue-200'
-                          }`}>
-                            <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                            {item.booking_source?.includes('WHATSAPP') || item.barcode_token ? 'Via WhatsApp' : 'Manual Satpam'}
-                          </span>
-                          {(item.created_at || item.waktu_chat_masuk) && (() => {
-                            const ts = new Date(item.created_at || item.waktu_chat_masuk).getTime();
-                            const diffMs = Date.now() - ts;
-                            if (diffMs < 5 * 60 * 1000 && diffMs >= 0) {
-                              const timeStr = new Date(ts).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace('.', ':');
-                              return (
-                                <span className="block text-[8px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-1 py-0.2 rounded font-mono animate-pulse">
-                                  Baru saja • {timeStr}
-                                </span>
-                              );
-                            }
-                            return null;
-                          })()}
-                        </div>
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold inline-flex items-center gap-1 ${
+                          item.booking_source?.includes('WHATSAPP') || item.barcode_token
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                            : 'bg-blue-100 text-blue-800 border border-blue-200'
+                        }`}>
+                          <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                          {item.booking_source?.includes('WHATSAPP') || item.barcode_token ? 'Via WhatsApp' : 'Manual Satpam'}
+                        </span>
                       </td>
                       <td className="py-3 px-3">
                         <div className="font-bold text-slate-900">{item.nama_santri}</div>
                         {item.barcode_token && (
-                          <div className="flex items-center gap-1.5 mt-1">
-                            <img
-                              src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(item.barcode_token)}&format=png`}
-                              alt="QR"
-                              className="w-5 h-5 bg-white border border-slate-200 rounded shrink-0 object-contain shadow-2xs"
-                              loading="lazy"
-                            />
-                            <span className="text-[9px] font-mono font-bold text-emerald-800 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
-                              {item.barcode_token}
-                            </span>
-                          </div>
+                          <span className="text-[9px] font-mono font-bold text-emerald-800 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200 mt-0.5 inline-block">
+                            {item.barcode_token}
+                          </span>
                         )}
                       </td>
                       <td className="py-3 px-3">
@@ -952,34 +1219,9 @@ export default function SecurityVisitGateModule() {
                       </td>
                       <td className="py-3 px-3 font-mono text-slate-600">
                         <div>{item.jam_selesai} WIB</div>
-                        {isOngoing && (() => {
-                          const cd = calculateVisitCountdown(item.jam_selesai, item.tanggal_kunjungan);
-                          if (!cd) return null;
-                          if (cd.isOverstay) {
-                            return (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-100 text-rose-800 border border-rose-300 animate-pulse mt-0.5">
-                                <AlertTriangle className="w-2.5 h-2.5 text-rose-600" />
-                                ⚠️ Overstay ({cd.remainingText})
-                              </span>
-                            );
-                          }
-                          return (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-100 text-blue-800 border border-blue-300 mt-0.5">
-                              <Clock className="w-2.5 h-2.5 text-blue-600 animate-spin" />
-                              ⏳ Sisa: {cd.remainingText}
-                            </span>
-                          );
-                        })()}
-                        {item.jam_keluar_aktual && (
-                          <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                            Keluar: {item.jam_keluar_aktual}
-                          </div>
-                        )}
                       </td>
                       <td className="py-3 px-3">
-                        <div className="text-slate-700 max-w-[150px] truncate" title={item.titipan_barang}>
-                          {item.titipan_barang || '-'}
-                        </div>
+                        <div className="text-slate-700 max-w-[140px] truncate">{item.titipan_barang || '-'}</div>
                         <span className="text-[10px] font-mono font-bold text-cyan-800 bg-cyan-100 px-1.5 py-0.2 rounded mt-0.5 inline-block">
                           {item.berat_barang_kg || 0} Kg
                         </span>
@@ -990,58 +1232,30 @@ export default function SecurityVisitGateModule() {
                       </td>
                       <td className="py-3 px-3 text-center">
                         <div className="flex items-center justify-center gap-1 flex-wrap">
-                          {isApproved && (
+                          {isOngoing ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 inline-flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              Sedang Berkunjung
+                            </span>
+                          ) : isDone ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                              ✓ Selesai
+                            </span>
+                          ) : isApproved ? (
                             <button
-                              onClick={() => {
-                                const updated = checkInVisitBooking(item.id, 'MANUAL_SATPAM');
-                                if (updated && verificationResult?.booking && (verificationResult.booking.id === item.id || verificationResult.booking.barcode_token === item.barcode_token)) {
-                                  setVerificationResult(prev => ({
-                                    ...prev,
-                                    booking: updated,
-                                    message: `✅ STATUS: SEDANG BERKUNJUNG (CHECK-IN BERHASIL)`,
-                                    isOngoing: true,
-                                    isApproved: false
-                                  }));
-                                }
-                              }}
+                              onClick={() => handleProcessScannedBarcode(item.barcode_token || item.id, 'MANUAL_TABLE')}
                               className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold transition shadow-xs flex items-center gap-1"
                             >
                               <CheckCircle className="w-3 h-3" />
                               <span>Check-In</span>
                             </button>
-                          )}
-                          {isOngoing && (
-                            <button
-                              onClick={() => {
-                                const updated = checkOutVisitBooking(item.id);
-                                if (updated && verificationResult?.booking && (verificationResult.booking.id === item.id || verificationResult.booking.barcode_token === item.barcode_token)) {
-                                  setVerificationResult(prev => ({
-                                    ...prev,
-                                    booking: updated,
-                                    message: `✓ STATUS: KUNJUNGAN TELAH SELESAI`,
-                                    isDone: true,
-                                    isOngoing: false
-                                  }));
-                                }
-                              }}
-                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-bold transition shadow-xs flex items-center gap-1"
-                            >
-                              <LogOut className="w-3 h-3" />
-                              <span>Selesai</span>
-                            </button>
-                          )}
-                          {isPending && (
-                            <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded inline-block">
-                              Menunggu Approval
-                            </span>
-                          )}
-                          {isDone && (
-                            <span className="text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded inline-flex items-center gap-1">
-                              ✓ Selesai
+                          ) : (
+                            <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                              Menunggu
                             </span>
                           )}
 
-                          {/* Tombol Cepat Buka Kupon */}
+                          {/* Tombol Lihat Kupon */}
                           <button
                             onClick={() => {
                               const token = item.barcode_token || item.id;
@@ -1050,7 +1264,7 @@ export default function SecurityVisitGateModule() {
                               sound.playSuccess?.();
                             }}
                             className="px-1.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-bold transition border border-slate-200 flex items-center gap-0.5"
-                            title="Buka Halaman Kupon (Simulasi Scan Link)"
+                            title="Buka Halaman Kupon (.PNG)"
                           >
                             <ExternalLink className="w-3 h-3 text-emerald-600" />
                             <span className="hidden sm:inline">Kupon</span>
@@ -1065,7 +1279,7 @@ export default function SecurityVisitGateModule() {
           </table>
         </div>
       </div>
+
     </div>
   );
 }
-
