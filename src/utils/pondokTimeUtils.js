@@ -208,10 +208,12 @@ export function checkVisitingHoursValidity(hariName, jamKunjunganStr) {
 }
 
 /**
- * Validasi Siklus Hidup Barcode Tiket Kunjungan Secara Ketat (Strict Barcode Lifecycle)
- * 1. Sebelum Jam Kunjungan -> BEFORE_HOURS (Belum waktunya masuk)
- * 2. Selama Jam Kunjungan -> ACTIVE_VALID (Sah digunakan)
- * 3. Melebihi Jam Selesai atau Setelah Check-Out -> EXPIRED (Hangus & diblokir penggunaan ulang)
+ * Validasi Siklus Hidup & Kepatuhan Jadwal Barcode Tiket Kunjungan Secara Mutlak
+ * (Strict Schedule & Day-Lock Validation)
+ * 1. Validasi Kecocokan Kategori Hari (Hari Kerja Senin–Kamis vs Akhir Pekan Jumat–Minggu)
+ * 2. Validasi Tanggal Kalender Mutlak (tanggal_kunjungan === today_YYYY_MM_DD)
+ * 3. Validasi Rentang Jam Kunjungan (Toleransi 15 menit sebelum jam_kunjungan s/d jam_selesai)
+ * 4. Status Selesai / Check-Out / Kadaluarsa -> EXPIRED (Hangus & diblokir penggunaan ulang)
  */
 export function checkBarcodeLifecycle(booking, clock = getRealtimePondokClock()) {
   if (!booking) {
@@ -259,20 +261,60 @@ export function checkBarcodeLifecycle(booking, clock = getRealtimePondokClock())
     };
   }
 
-  // 3. Validasi Tanggal (Bila ada tanggal_kunjungan format YYYY-MM-DD)
+  // 3. VALIDASI KEBIJAKAN KATEGORI HARI (HARI KERJA SENIN-KAMIS VS AKHIR PEKAN JUMAT-MINGGU)
+  const bookingDayLower = (booking.hari_kunjungan || '').trim().toLowerCase();
+  const isTicketWeekday = 
+    booking.is_weekday === true || 
+    booking.approval_type === 'MANUAL_WEEKDAY' ||
+    ['senin', 'selasa', 'rabu', 'kamis'].includes(bookingDayLower);
+
+  const isTicketWeekend = 
+    booking.is_weekday === false || 
+    booking.approval_type === 'AUTO_WEEKEND' ||
+    ['jumat', 'sabtu', 'minggu'].includes(bookingDayLower);
+
+  // KASUS A: Tiket Hari Kerja (Senin–Kamis), tetapi datang/scan pada hari Akhir Pekan (Jumat–Minggu)
+  if (isTicketWeekday && clock.is_weekend_now) {
+    return {
+      status: 'REJECTED_WEEKDAY_ON_WEEKEND',
+      isValidForScan: false,
+      isExpired: true,
+      canCheckIn: false,
+      badgeLabel: '⛔ AKSES DITOLAK — PELANGGARAN JADWAL HARI KUNJUNGAN!',
+      alertType: 'danger',
+      message: `Tiket ini terdaftar untuk kunjungan HARI KERJA (${booking.hari_kunjungan || 'Senin–Kamis'}${booking.tanggal_kunjungan ? ' • ' + booking.tanggal_kunjungan : ''}), sehingga TIDAK DAPAT digunakan pada hari AKHIR PEKAN (Weekend) hari ini (${clock.nama_hari}${clock.tanggal_ymd ? ' • ' + clock.tanggal_ymd : ''}).`
+    };
+  }
+
+  // KASUS B: Tiket Akhir Pekan (Jumat–Minggu), tetapi datang/scan pada Hari Kerja (Senin–Kamis)
+  if (isTicketWeekend && clock.is_weekday) {
+    return {
+      status: 'REJECTED_WEEKEND_ON_WEEKDAY',
+      isValidForScan: false,
+      isExpired: true,
+      canCheckIn: false,
+      badgeLabel: '⛔ AKSES DITOLAK — KETIDAKSESUAIAN JADWAL!',
+      alertType: 'danger',
+      message: `Tiket khusus Akhir Pekan (Weekend) tidak berlaku pada Hari Kerja (Senin–Kamis). Jadwal tiket: ${booking.hari_kunjungan || 'Akhir Pekan'}${booking.tanggal_kunjungan ? ' • ' + booking.tanggal_kunjungan : ''}, sedangkan hari ini adalah hari ${clock.nama_hari}.`
+    };
+  }
+
+  // 4. VALIDASI TANGGAL KALENDER MUTLAK (tanggal_kunjungan === today_YYYY_MM_DD)
   if (booking.tanggal_kunjungan && /^\d{4}-\d{2}-\d{2}$/.test(booking.tanggal_kunjungan)) {
+    // Tanggal telah lewat (Expired)
     if (clock.tanggal_ymd > booking.tanggal_kunjungan) {
       return {
         status: 'EXPIRED_DATE_PAST',
         isValidForScan: false,
         isExpired: true,
         canCheckIn: false,
-        badgeLabel: '⛔ KEDALUWARSA (TANGGAL LEWAT)',
+        badgeLabel: '⛔ KUPON HANGUS (TANGGAL KUNJUNGAN TELAH LEWAT)',
         alertType: 'danger',
-        message: `Jadwal kunjungan pada ${booking.hari_kunjungan || ''} (${booking.tanggal_kunjungan}) telah lewat. Barcode tiket otomatis hangus.`
+        message: `Jadwal kunjungan pada ${booking.hari_kunjungan || ''} (${booking.tanggal_kunjungan}) telah berakhir. Barcode tiket otomatis hangus.`
       };
     }
 
+    // Tanggal masa depan / datang terlalu cepat (Beda Tanggal)
     if (clock.tanggal_ymd < booking.tanggal_kunjungan) {
       return {
         status: 'FUTURE_DATE',
@@ -280,14 +322,26 @@ export function checkBarcodeLifecycle(booking, clock = getRealtimePondokClock())
         isExpired: false,
         isFuture: true,
         canCheckIn: false,
-        badgeLabel: `⏳ BELUM WAKTUNYA (${booking.hari_kunjungan || 'Mendatang'}, ${booking.tanggal_kunjungan})`,
+        badgeLabel: '⛔ JADWAL BELUM AKTIF (BEDA TANGGAL)',
         alertType: 'warning',
-        message: `Tiket dijadwalkan untuk hari ${booking.hari_kunjungan || ''}, ${booking.tanggal_kunjungan} pukul ${booking.jam_kunjungan || '14:00'} WITA. Belum dapat digunakan untuk masuk saat ini.`
+        message: `Kupon ini hanya berlaku untuk hari ${booking.hari_kunjungan || ''} (${booking.tanggal_kunjungan}), bukan hari ini (${clock.nama_hari}, ${clock.tanggal_ymd}).`
       };
     }
 
-    // Hari H Kunjungan (clock.tanggal_ymd === booking.tanggal_kunjungan)
-    // Bandingkan jam kedatangan
+    // Tanggal sama (clock.tanggal_ymd === booking.tanggal_kunjungan): pastikan nama hari juga sinkron
+    if (bookingDayLower && clock.nama_hari.toLowerCase() !== bookingDayLower) {
+      return {
+        status: 'DAY_NAME_MISMATCH',
+        isValidForScan: false,
+        isExpired: true,
+        canCheckIn: false,
+        badgeLabel: '⛔ JADWAL HARI TIDAK COCOK',
+        alertType: 'danger',
+        message: `Kupon ini terdaftar untuk hari ${booking.hari_kunjungan}, sedangkan hari ini adalah hari ${clock.nama_hari}.`
+      };
+    }
+
+    // 5. VALIDASI RENTANG JAM KUNJUNGAN (jam_kunjungan s/d jam_selesai)
     const [clockH, clockM] = clock.jam_menit.split(':').map(v => parseInt(v, 10) || 0);
     const clockMinutes = clockH * 60 + clockM;
 
@@ -303,7 +357,7 @@ export function checkBarcodeLifecycle(booking, clock = getRealtimePondokClock())
       endMinutes = h * 60 + m;
     }
 
-    // Toleransi toleran 15 menit sebelum jam_kunjungan untuk antrian pos satpam
+    // Toleransi 15 menit sebelum jam_kunjungan untuk persiapan pos satpam
     const allowedStartMinutes = Math.max(0, startMinutes - 15);
 
     if (startMinutes > 0 && clockMinutes < allowedStartMinutes) {
@@ -315,7 +369,7 @@ export function checkBarcodeLifecycle(booking, clock = getRealtimePondokClock())
         canCheckIn: false,
         badgeLabel: `⏳ BELUM WAKTUNYA MASUK (${booking.jam_kunjungan} WITA)`,
         alertType: 'warning',
-        message: `Belum waktunya masuk. Menunggu jam kunjungan santri pukul ${booking.jam_kunjungan} WITA (Buka mulai 15 menit sebelumnya).`
+        message: `Belum waktunya masuk. Jam operasional kunjungan santri dimulai pukul ${booking.jam_kunjungan} WITA (dibuka toleransi 15 menit sebelumnya).`
       };
     }
 
@@ -327,9 +381,20 @@ export function checkBarcodeLifecycle(booking, clock = getRealtimePondokClock())
         canCheckIn: false,
         badgeLabel: '⛔ EXPIRED (JAM BERKUNJUNG SELESAI)',
         alertType: 'danger',
-        message: `Jam operasional kunjungan (${booking.jam_kunjungan || '14:00'} - ${booking.jam_selesai} WITA) telah berakhir. Tiket barcode telah hangus.`
+        message: `Jam operasional kunjungan (${booking.jam_kunjungan || '14:00'} s/d ${booking.jam_selesai} WITA) telah berakhir. Tiket barcode telah hangus.`
       };
     }
+  } else if (bookingDayLower && clock.nama_hari.toLowerCase() !== bookingDayLower) {
+    // Jika tidak ada format tanggal YYYY-MM-DD, wajib cocok nama hari
+    return {
+      status: 'DAY_NAME_MISMATCH',
+      isValidForScan: false,
+      isExpired: true,
+      canCheckIn: false,
+      badgeLabel: '⛔ JADWAL HARI TIDAK COCOK',
+      alertType: 'danger',
+      message: `Kupon ini terdaftar untuk hari ${booking.hari_kunjungan}, sedangkan hari ini adalah hari ${clock.nama_hari}.`
+    };
   }
 
   // 4. Jika Sedang Berkunjung

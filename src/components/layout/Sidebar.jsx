@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   Users,
+  Shield,
   ShieldCheck,
   Radio,
   HeartPulse,
@@ -110,6 +111,16 @@ const ROLE_CONFIG = {
     badge: 'bg-yellow-950 text-yellow-300 border border-yellow-800',
     isLight: false,
   },
+  osis: {
+    label: 'Pengurus OSIS',
+    accent: '#14b8a6',
+    headerBg: 'bg-teal-950',
+    activeBg: 'bg-teal-500/15 text-teal-300 border-teal-500/40',
+    activeIcon: 'bg-teal-500 text-white',
+    hoverBg: 'hover:bg-slate-800/70 hover:text-slate-200',
+    badge: 'bg-teal-950 text-teal-300 border border-teal-800',
+    isLight: false,
+  },
 };
 
 /* ─────────────────────────────────────────────
@@ -137,6 +148,7 @@ function getMenuItems(role, { permits, rooms, santriList, blacklistedUids, gateL
         { id: 'rfid_pairing', label: 'Scanner RFID', icon: Radio, badge: 'Scan' },
         { id: 'express_kiosk', label: 'Kiosk Izin', icon: Zap, badge: 'Cepat' },
         { id: 'visit_bookings', label: 'Kunjungan Tamu', icon: Calendar, badge: pendingVisitsCount > 0 ? `${pendingVisitsCount} Menunggu` : 'QR Pass', urgent: pendingVisitsCount > 0 },
+        { id: 'osis_verification', label: 'Verifikasi OSIS', icon: Shield, badge: pendingOsisCount > 0 ? `${pendingOsisCount} Baru` : null, urgent: pendingOsisCount > 0 },
         { id: 'gate_logs', label: 'Log Gerbang', icon: ClipboardList, badge: `${gateLogs.length}` },
         { id: 'whatsapp_manager', label: 'WhatsApp', icon: Smartphone, badge: manualReplyNeededCount > 0 ? `${manualReplyNeededCount}` : null, urgent: manualReplyNeededCount > 0 },
         { id: 'ai_analytics', label: 'AI Evaluasi', icon: Sparkles, badge: 'AI', highlight: true },
@@ -181,6 +193,12 @@ function getMenuItems(role, { permits, rooms, santriList, blacklistedUids, gateL
         { id: 'rapor_adab', label: 'Rapor Adab', icon: Award, badge: 'Nilai' },
         { id: 'ai_executive', label: 'AI Holistik', icon: Sparkles, badge: 'AI', highlight: true },
       ];
+    case 'osis':
+      return [
+        { id: 'osis_posko', label: 'Posko OSIS', icon: Shield, badge: 'Posko' },
+        { id: 'osis_input', label: 'Input Kelakuan', icon: UserPlus, badge: 'Input' },
+        { id: 'osis_riwayat', label: 'Riwayat Laporan', icon: ClipboardList, badge: `${osisReportsCount || 0}` },
+      ];
     default:
       return [];
   }
@@ -194,6 +212,7 @@ const ROLES_LIST = [
   { id: 'security', name: 'Satpam Gate', emoji: '🛡️' },
   { id: 'poskestren', name: 'Poskestren', emoji: '🏥' },
   { id: 'kyai', name: 'Pimpinan Mudir', emoji: '👳' },
+  { id: 'osis', name: 'Pengurus OSIS', emoji: '👮' },
 ];
 
 /* ─────────────────────────────────────────────
@@ -244,7 +263,8 @@ export default function Sidebar({ onOpenFlutterModal }) {
     setUnreadWaCount,
     isFonnteEnabled,
     visitBookings,
-    manualReplyNeededCount
+    manualReplyNeededCount,
+    osisReports
   } = useApp();
 
   const [showDevSwitcher, setShowDevSwitcher] = useState(false);
@@ -256,6 +276,10 @@ export default function Sidebar({ onOpenFlutterModal }) {
   const pendingVisitsCount = Array.isArray(visitBookings) 
     ? visitBookings.filter(b => b.status_kunjungan === 'Menunggu Approval').length 
     : 0;
+  const pendingOsisCount = Array.isArray(osisReports)
+    ? osisReports.filter(r => r.status === 'PENDING_ADMIN').length
+    : 0;
+  const osisReportsCount = Array.isArray(osisReports) ? osisReports.length : 0;
   const now = Date.now();
   const warningPermitsCount = permits.filter(p => {
     if (p.status !== 'ACTIVE') return false;
@@ -269,7 +293,7 @@ export default function Sidebar({ onOpenFlutterModal }) {
   const menuItems = getMenuItems(role, {
     permits, rooms, santriList, blacklistedUids, gateLogs, medicalRecords,
     pendingPermitsCount, warningPermitsCount, santriDiLuar, pendingVisitsCount,
-    manualReplyNeededCount
+    manualReplyNeededCount, pendingOsisCount, osisReportsCount
   });
 
   const handleMenuClick = (id) => {

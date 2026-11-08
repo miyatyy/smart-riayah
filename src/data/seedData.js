@@ -620,6 +620,57 @@ export const INITIAL_ACCOUNTS = [
     avatar: "/images/avatar_santri_putra.jpg",
     badge: "Executive Analytics",
     description: "Pengambilan keputusan strategis, analisis tren perizinan, dan rapor kepribadian."
+  },
+  {
+    id: "ACC-08",
+    role: "osis",
+    roleName: "Pengurus OSIS (Kamtib & Ubudiyah)",
+    email: "osis@darululum.sch.id",
+    password: "osis01",
+    nama: "M. Farhan & Nur Laila (Presidium OSIS)",
+    jabatan: "Kamtib & Ubudiyah Putra/Putri",
+    avatar: "/images/avatar_santri_putra.jpg",
+    badge: "Posko OSIS",
+    description: "Input harian perilaku, kedisiplinan & catatan ibadah santri/wati se-pondok untuk diverifikasi Admin Ri'ayah."
+  }
+];
+
+export const INITIAL_OSIS_REPORTS = [
+  {
+    id: "OSIS-2026-001",
+    santriId: "S-104",
+    santriNama: "Fajar Ramadhan",
+    gender: "L",
+    kelas: "12-IPS",
+    kamar: "Ali bin Abi Thalib 301",
+    bidangOsis: "OSIS Keamanan & Ketertiban (Putra / Banin)",
+    kategori: "PELANGGARAN",
+    subKategori: "Terlambat Jamaah/Halaqah (-5)",
+    poin: -5,
+    catatanMentah: "Terlambat tiba di serambi masjid saat iqamah Shalat Ashar sudah berkumandang.",
+    tindakanPembinaan: "Ta'zir membaca Al-Waqi'ah di teras masjid.",
+    pelaporOsis: "Farhan (Kamtib Banin)",
+    status: "PENDING_ADMIN", // PENDING_ADMIN | APPROVED | REJECTED
+    createdAt: "2026-11-08T08:30:00.000Z",
+    waktuLaporan: "08:30 WITA"
+  },
+  {
+    id: "OSIS-2026-002",
+    santriId: "S-103",
+    santriNama: "Siti Nurhaliza",
+    gender: "P",
+    kelas: "10-B (Putri)",
+    kamar: "Khadijah 105",
+    bidangOsis: "OSIS Bagian Ubudiyah / Ibadah",
+    kategori: "PRESTASI",
+    subKategori: "Hafalan Ziyadah Lancar (+15)",
+    poin: 15,
+    catatanMentah: "Menyetorkan hafalan Surah Al-Kahfi ayat 1-50 lancar dan mutqin dalam satu majelis.",
+    tindakanPembinaan: "Apresiasi bintang adab & motivasi halaqah.",
+    pelaporOsis: "Nur Laila (Ubudiyah Banat)",
+    status: "PENDING_ADMIN",
+    createdAt: "2026-11-08T09:15:00.000Z",
+    waktuLaporan: "09:15 WITA"
   }
 ];
 

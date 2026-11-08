@@ -8,6 +8,7 @@ import {
   Wrench, 
   ShieldAlert, 
   ShieldCheck, 
+  Shield, 
   CheckCircle2, 
   AlertTriangle, 
   Info,
@@ -86,11 +87,17 @@ export default function AdminRiayahDashboard() {
     visitBookings,
     approveVisitBooking,
     rejectVisitBooking,
-    bulkImportSantri
+    bulkImportSantri,
+    osisReports,
+    verifyOsisReport
   } = useApp();
 
   const pendingVisits = Array.isArray(visitBookings) 
     ? visitBookings.filter(b => b.status_kunjungan === 'Menunggu Approval') 
+    : [];
+
+  const pendingOsisReports = Array.isArray(osisReports)
+    ? osisReports.filter(r => r.status === 'PENDING_ADMIN')
     : [];
 
   const [isBulkImportSantriModalOpen, setIsBulkImportSantriModalOpen] = useState(false);
@@ -380,9 +387,14 @@ export default function AdminRiayahDashboard() {
       });
 
       if (!insertRes.success && insertRes.error) {
-        if (insertRes.duplicateUid) {
-          const ownerName = insertRes.existingSantri?.nama_lengkap || 'santri lain di sistem';
-          const ownerNis = insertRes.existingSantri?.nis ? ` (NIS: ${insertRes.existingSantri.nis})` : '';
+        const isDuplicateKey = insertRes.duplicateUid || 
+          insertRes.error?.code === '23505' || 
+          insertRes.error?.message?.includes('santri_rfid_uid_key') ||
+          insertRes.error?.message?.toLowerCase().includes('duplicate key');
+
+        if (isDuplicateKey) {
+          const ownerName = insertRes.existingSantri?.nama_lengkap || registeredSantriWithUid?.nama || 'santri lain di sistem';
+          const ownerNis = (insertRes.existingSantri?.nis || registeredSantriWithUid?.nis) ? ` (NIS: ${insertRes.existingSantri?.nis || registeredSantriWithUid?.nis})` : '';
           alert(
             `⚠️ KARTU SUDAH DIGUNAKAN DI DATABASE!\n\nKartu RFID [${payload.rfid_uid}] sudah terdaftar atas nama "${ownerName}"${ownerNis}.\n\nSaran Tindakan:\n1. Klik "🎲 Acak UID Baru" untuk membuat nomor UID kartu baru yang unik, ATAU\n2. Centang "🔄 Alihkan / Daur Ulang Kartu ke Santri Ini" lalu klik simpan kembali.`
           );
@@ -751,6 +763,27 @@ export default function AdminRiayahDashboard() {
         </button>
 
         <button
+          onClick={() => { setActiveTab('osis_verification'); setActiveScanMode && setActiveScanMode(null); }}
+          className={`flex items-center gap-2 py-2.5 px-3.5 font-bold transition rounded-t-xl shrink-0 ${
+            activeTab === 'osis_verification'
+              ? 'border-b-2 border-teal-600 text-teal-800 bg-teal-50/70 font-black'
+              : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+          }`}
+        >
+          <Shield className="w-4 h-4 text-teal-600" />
+          <span>9. Verifikasi Laporan OSIS</span>
+          {pendingOsisReports.length > 0 ? (
+            <span className="px-2 py-0.5 bg-teal-600 text-white rounded-full text-[10px] font-black font-mono animate-pulse shadow-xs">
+              {pendingOsisReports.length} Baru
+            </span>
+          ) : (
+            <span className="px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded-full text-[9px] font-mono">
+              {Array.isArray(osisReports) ? osisReports.length : 0}
+            </span>
+          )}
+        </button>
+
+        <button
           onClick={() => { setActiveTab('gate_logs'); setActiveScanMode(null); }}
           className={`flex items-center gap-2 py-2.5 px-3.5 font-bold transition rounded-t-xl shrink-0 ${
             activeTab === 'gate_logs'
@@ -759,7 +792,7 @@ export default function AdminRiayahDashboard() {
           }`}
         >
           <ClipboardList className="w-4 h-4 text-emerald-600" />
-          <span>9. Log &amp; Cetak ({gateLogs.length})</span>
+          <span>10. Log &amp; Cetak ({gateLogs.length})</span>
         </button>
 
         <button
@@ -771,7 +804,7 @@ export default function AdminRiayahDashboard() {
           }`}
         >
           <Smartphone className="w-4 h-4 text-emerald-600" />
-          <span>10. WhatsApp Gateway</span>
+          <span>11. WhatsApp Gateway</span>
         </button>
 
         <button
@@ -783,7 +816,7 @@ export default function AdminRiayahDashboard() {
           }`}
         >
           <Sparkles className="w-4 h-4 text-indigo-600" />
-          <span>11. AI Evaluasi Santri</span>
+          <span>12. AI Evaluasi Santri</span>
         </button>
       </div>
       )}
@@ -1917,6 +1950,13 @@ export default function AdminRiayahDashboard() {
         </div>
       )}
 
+      {/* BUILDER 8.5: 🛡️ VERIFIKASI & OTORISASI LAPORAN KEDISIPLINAN OSIS */}
+      {activeTab === 'osis_verification' && (
+        <div className="space-y-6 animate-fade-in">
+          <OsisVerificationManager />
+        </div>
+      )}
+
       {/* BUILDER 9: LOG AKTIVITAS KELUAR MASUK SANTRI REAL-TIME & CETAK PDF */}
       {activeTab === 'gate_logs' && (
         <div className="space-y-6 animate-fade-in">
@@ -2156,3 +2196,433 @@ export default function AdminRiayahDashboard() {
     </div>
   );
 }
+
+// ─── KOMPONEN MODUL VERIFIKASI LAPORAN KEDISIPLINAN OSIS (ADMIN RI'AYAH) ───
+function OsisVerificationManager() {
+  const { osisReports, verifyOsisReport, santriList } = useApp();
+  const [filterMode, setFilterMode] = useState('PENDING'); // 'PENDING' | 'BANAT' | 'BANIN' | 'APPROVED' | 'REJECTED' | 'ALL'
+  const [searchQuery, setSearchQuery] = useState('');
+  const [editingDrafts, setEditingDrafts] = useState({});
+
+  const allReports = Array.isArray(osisReports) ? osisReports : [];
+  const pendingCount = allReports.filter(r => r.status === 'PENDING_ADMIN').length;
+  const banatPendingCount = allReports.filter(r => r.status === 'PENDING_ADMIN' && r.gender === 'P').length;
+  const baninPendingCount = allReports.filter(r => r.status === 'PENDING_ADMIN' && r.gender === 'L').length;
+  const approvedCount = allReports.filter(r => r.status === 'APPROVED').length;
+  const rejectedCount = allReports.filter(r => r.status === 'REJECTED').length;
+
+  const filteredReports = allReports.filter(r => {
+    if (filterMode === 'PENDING' && r.status !== 'PENDING_ADMIN') return false;
+    if (filterMode === 'BANAT' && (r.status !== 'PENDING_ADMIN' || r.gender !== 'P')) return false;
+    if (filterMode === 'BANIN' && (r.status !== 'PENDING_ADMIN' || r.gender !== 'L')) return false;
+    if (filterMode === 'APPROVED' && r.status !== 'APPROVED') return false;
+    if (filterMode === 'REJECTED' && r.status !== 'REJECTED') return false;
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      const nama = (r.santriNama || '').toLowerCase();
+      const jenis = (r.jenis || '').toLowerCase();
+      const bidang = (r.bidangOsis || '').toLowerCase();
+      const id = (r.id || '').toLowerCase();
+      return nama.includes(q) || jenis.includes(q) || bidang.includes(q) || id.includes(q);
+    }
+    return true;
+  });
+
+  const getDraft = (rep) => {
+    return editingDrafts[rep.id] || {
+      poin: rep.poin,
+      jenis: rep.jenis,
+      keterangan: rep.keterangan,
+      tazir: rep.tazir || '',
+      adminNote: ''
+    };
+  };
+
+  const updateDraft = (repId, field, val) => {
+    setEditingDrafts(prev => {
+      const current = prev[repId] || {
+        poin: allReports.find(r => r.id === repId)?.poin ?? 0,
+        jenis: allReports.find(r => r.id === repId)?.jenis ?? '',
+        keterangan: allReports.find(r => r.id === repId)?.keterangan ?? '',
+        tazir: allReports.find(r => r.id === repId)?.tazir ?? '',
+        adminNote: ''
+      };
+      return {
+        ...prev,
+        [repId]: { ...current, [field]: val }
+      };
+    });
+  };
+
+  const handleApprove = (rep) => {
+    const draft = getDraft(rep);
+    const confirmed = window.confirm(
+      `✅ KONFIRMASI OTORISASI & VERIFIKASI LAPORAN OSIS\n\nSantri: ${rep.santriNama} (${rep.kelas || '-'})\nPerihal: ${draft.jenis || rep.jenis}\nPenyesuaian Poin: ${draft.poin !== undefined ? draft.poin : rep.poin} Poin\n\nApakah Anda yakin ingin mengesahkan laporan ini? Data akan disimpan permanen ke Catatan Disiplin Supabase, poin santri disinkronkan, dan notifikasi WhatsApp resmi dikirim ke wali santri.`
+    );
+    if (!confirmed) return;
+
+    verifyOsisReport(rep.id, 'APPROVE', draft);
+    sound.playSuccess?.();
+    alert(`✅ Laporan untuk ananda ${rep.santriNama} BERHASIL DISETUJUI & DISINKRONKAN KE WHATSAPP GATEWAY!`);
+  };
+
+  const handleReject = (rep) => {
+    const reason = window.prompt(
+      `❌ PENOLAKAN LAPORAN OSIS\n\nMasukkan alasan pembatalan/penolakan untuk ananda ${rep.santriNama}:`,
+      'Data sudah diklarifikasi dengan musyrif kamar / pembinaan internal selesai.'
+    );
+    if (reason === null) return;
+
+    verifyOsisReport(rep.id, 'REJECT', { adminNote: reason });
+    sound.playBeep?.();
+    alert(`ℹ️ Laporan [${rep.id}] telah ditolak.`);
+  };
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      {/* Header Panel */}
+      <div className="bg-gradient-to-r from-teal-900 via-emerald-900 to-slate-900 rounded-3xl p-6 sm:p-7 text-white shadow-xl relative overflow-hidden">
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1.5">
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-teal-500/20 border border-teal-400/30 rounded-full text-[11px] font-bold text-teal-300">
+              <Shield className="w-3.5 h-3.5 text-teal-400" />
+              <span>OTORISASI &amp; VERIFIKASI KEDISIPLINAN OSIS</span>
+            </div>
+            <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
+              <span>🛡️ Verifikasi Laporan Kelakuan Santri/Wati dari Pengurus OSIS</span>
+            </h2>
+            <p className="text-xs text-teal-100/80 max-w-2xl leading-relaxed">
+              Review, selaraskan redaksi, dan sesuaikan poin laporan dari pengurus OSIS (Kamtib Banin/Banat, Ubudiyah, dsb.) sebelum disahkan ke database pondok &amp; diteruskan via WhatsApp wali santri.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <div className="bg-white/10 px-4 py-2.5 rounded-2xl border border-white/15 text-center">
+              <span className="text-[10px] text-teal-200 block uppercase font-bold tracking-wider">Menunggu ACC</span>
+              <span className="text-2xl font-black font-mono text-amber-400">{pendingCount}</span>
+            </div>
+            <div className="bg-white/10 px-4 py-2.5 rounded-2xl border border-white/15 text-center">
+              <span className="text-[10px] text-teal-200 block uppercase font-bold tracking-wider">Telah Disetujui</span>
+              <span className="text-2xl font-black font-mono text-emerald-400">{approvedCount}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Filter Tabs & Search */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 scroll-row">
+          <button
+            onClick={() => setFilterMode('PENDING')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
+              filterMode === 'PENDING'
+                ? 'bg-amber-500 text-white shadow-xs'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <Clock className="w-3.5 h-3.5" />
+            <span>Menunggu ACC ({pendingCount})</span>
+          </button>
+
+          <button
+            onClick={() => setFilterMode('BANAT')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
+              filterMode === 'BANAT'
+                ? 'bg-rose-600 text-white shadow-xs'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <span>🧕 Asrama Putri ({banatPendingCount})</span>
+          </button>
+
+          <button
+            onClick={() => setFilterMode('BANIN')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
+              filterMode === 'BANIN'
+                ? 'bg-teal-600 text-white shadow-xs'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <span>👳 Asrama Putra ({baninPendingCount})</span>
+          </button>
+
+          <button
+            onClick={() => setFilterMode('APPROVED')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
+              filterMode === 'APPROVED'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>Disetujui ({approvedCount})</span>
+          </button>
+
+          <button
+            onClick={() => setFilterMode('REJECTED')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
+              filterMode === 'REJECTED'
+                ? 'bg-rose-600 text-white shadow-xs'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <XCircle className="w-3.5 h-3.5" />
+            <span>Ditolak ({rejectedCount})</span>
+          </button>
+
+          <button
+            onClick={() => setFilterMode('ALL')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition shrink-0 ${
+              filterMode === 'ALL'
+                ? 'bg-slate-800 text-white shadow-xs'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            Semua ({allReports.length})
+          </button>
+        </div>
+
+        <div className="relative min-w-[240px]">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+          <input
+            type="text"
+            placeholder="Cari santri / perihal / bidang OSIS..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:border-teal-500 font-medium"
+          />
+        </div>
+      </div>
+
+      {/* Daftar Antrean Verifikasi Laporan */}
+      <div className="space-y-4">
+        {filteredReports.length === 0 ? (
+          <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center text-slate-400 space-y-2">
+            <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto opacity-70" />
+            <h4 className="font-bold text-slate-700 text-sm">Tidak ada laporan pada kategori ini</h4>
+            <p className="text-xs text-slate-400">Semua laporan kelakuan santri telah diverifikasi dengan tuntas.</p>
+          </div>
+        ) : (
+          filteredReports.map((rep) => {
+            const draft = getDraft(rep);
+            const isPending = rep.status === 'PENDING_ADMIN';
+            const isApproved = rep.status === 'APPROVED';
+            const isRejected = rep.status === 'REJECTED';
+            const targetSantri = santriList.find(s => s.id === rep.santriId);
+            const currentPoints = targetSantri ? (targetSantri.poinDisiplin ?? 100) : 100;
+
+            return (
+              <div
+                key={rep.id}
+                className={`bg-white rounded-3xl border-2 shadow-sm transition p-5 space-y-4 ${
+                  isPending
+                    ? 'border-amber-400/80 ring-1 ring-amber-200'
+                    : isApproved
+                    ? 'border-emerald-200'
+                    : 'border-rose-200'
+                }`}
+              >
+                {/* Header Card */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <span className="font-mono text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg">
+                      {rep.id}
+                    </span>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                      rep.gender === 'P'
+                        ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                        : 'bg-teal-100 text-teal-800 border border-teal-200'
+                    }`}>
+                      {rep.bidangOsis}
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      • {rep.tanggal} ({rep.waktu} WITA)
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-slate-500">
+                      Pelapor: <strong className="text-slate-800">{rep.pelaporNama}</strong>
+                    </span>
+                    {isPending && (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
+                        Menunggu Verifikasi
+                      </span>
+                    )}
+                    {isApproved && (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        ✓ Disetujui
+                      </span>
+                    )}
+                    {isRejected && (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-300">
+                        ✕ Ditolak
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Profile Santri & Isi Laporan */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                  {/* Kolom Profil Santri (4 Kolom) */}
+                  <div className="lg:col-span-4 bg-slate-50 rounded-2xl p-4 border border-slate-200/80 space-y-2.5">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-11 h-11 rounded-2xl flex items-center justify-center text-xl shrink-0 ${
+                        rep.gender === 'P' ? 'bg-rose-200 text-rose-800' : 'bg-teal-200 text-teal-900'
+                      }`}>
+                        {rep.gender === 'P' ? '🧕' : '👳'}
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="font-black text-sm text-slate-900 truncate">
+                          {rep.santriNama}
+                        </h4>
+                        <p className="text-[11px] text-slate-500 font-medium">
+                          NIS: {targetSantri?.nis || '-'} • {rep.kelas || targetSantri?.kelas || '-'}
+                        </p>
+                        <p className="text-[11px] text-slate-400">
+                          {rep.kamar || targetSantri?.kamar || 'Kamar asrama'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between text-xs">
+                      <span className="text-slate-500">Poin Saat Ini:</span>
+                      <span className="font-mono font-black text-slate-800 text-sm">
+                        {currentPoints} / 100
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-500">Wali Santri:</span>
+                      <span className="font-medium text-slate-700 text-right truncate max-w-[140px]">
+                        {targetSantri?.wali?.nama || targetSantri?.nama_wali || 'Wali Santri'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Kolom Isi Laporan & Form Penyesuaian Admin (8 Kolom) */}
+                  <div className="lg:col-span-8 space-y-3">
+                    <div className="space-y-1">
+                      <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                        Perihal Kejadian:
+                      </div>
+                      {isPending ? (
+                        <input
+                          type="text"
+                          value={draft.jenis}
+                          onChange={(e) => updateDraft(rep.id, 'jenis', e.target.value)}
+                          className="w-full px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-50 border border-slate-300 focus:outline-none focus:border-teal-500 text-slate-900"
+                        />
+                      ) : (
+                        <div className="text-xs font-black text-slate-900">{rep.jenis}</div>
+                      )}
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                        Kronologi Kejadian (Keterangan OSIS):
+                      </div>
+                      {isPending ? (
+                        <textarea
+                          rows={2}
+                          value={draft.keterangan}
+                          onChange={(e) => updateDraft(rep.id, 'keterangan', e.target.value)}
+                          className="w-full px-3 py-1.5 text-xs rounded-xl bg-slate-50 border border-slate-300 focus:outline-none focus:border-teal-500 text-slate-700 leading-relaxed"
+                        />
+                      ) : (
+                        <p className="text-xs text-slate-700 leading-relaxed bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                          {rep.keterangan}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                          Penyesuaian Poin:
+                        </div>
+                        {isPending ? (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              value={draft.poin}
+                              onChange={(e) => updateDraft(rep.id, 'poin', parseInt(e.target.value) || 0)}
+                              className={`w-24 px-3 py-1.5 text-xs font-mono font-black text-center rounded-xl border focus:outline-none ${
+                                Number(draft.poin) < 0
+                                  ? 'bg-rose-50 border-rose-300 text-rose-700'
+                                  : 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                              }`}
+                            />
+                            <span className="text-[11px] text-slate-500 font-bold">
+                              (Est. Hasil: {Math.max(0, Math.min(100, currentPoints + Number(draft.poin || 0)))} Poin)
+                            </span>
+                          </div>
+                        ) : (
+                          <span className={`px-2.5 py-1 rounded-lg text-xs font-mono font-black inline-block ${
+                            Number(rep.poin) < 0 ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
+                          }`}>
+                            {Number(rep.poin) > 0 ? `+${rep.poin}` : rep.poin} Poin
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                          Tindakan / Ta'zir Pembinaan:
+                        </div>
+                        {isPending ? (
+                          <input
+                            type="text"
+                            value={draft.tazir}
+                            onChange={(e) => updateDraft(rep.id, 'tazir', e.target.value)}
+                            placeholder="Contoh: Membaca Al-Qur'an 1 juz..."
+                            className="w-full px-3 py-1.5 text-xs rounded-xl bg-slate-50 border border-slate-300 focus:outline-none focus:border-teal-500 text-slate-800"
+                          />
+                        ) : (
+                          <div className="text-xs text-slate-700 font-medium">
+                            {rep.tazir || '-'}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {rep.adminNote && (
+                      <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+                        <strong>Catatan Admin Ri'ayah:</strong> {rep.adminNote}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Action Bar (Hanya tampil jika PENDING_ADMIN) */}
+                {isPending && (
+                  <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-end gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => handleReject(rep)}
+                      className="px-4 py-2 bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700 rounded-xl text-xs font-bold transition border border-slate-200 flex items-center justify-center gap-1.5"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      <span>Tolak Laporan</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleApprove(rep)}
+                      className="px-5 py-2 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-xl text-xs font-black transition shadow-md shadow-emerald-200 flex items-center justify-center gap-2"
+                    >
+                      <Check className="w-4 h-4" />
+                      <span>✅ Approve &amp; Sinkronkan ke WhatsApp Gateway</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+

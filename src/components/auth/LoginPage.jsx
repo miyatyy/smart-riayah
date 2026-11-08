@@ -97,7 +97,8 @@ export default function LoginPage() {
     musyrif: ShieldCheck,
     security: Radio,
     poskestren: HeartPulse,
-    kyai: TrendingUp
+    kyai: TrendingUp,
+    osis: Shield
   };
 
   return (
@@ -575,7 +576,7 @@ export default function LoginPage() {
             >
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-amber-500" />
-                <span>Pilih Akun Demo (7 Role Akses)</span>
+                <span>Pilih Akun Demo ({accounts?.length || 8} Role Akses Terpadu)</span>
               </div>
               <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
                 <span>{isDemoPanelOpen ? 'Tutup' : 'Lihat'}</span>

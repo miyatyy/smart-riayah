@@ -167,41 +167,15 @@ export default function SecurityVisitGateModule() {
     const clock = getRealtimePondokClock();
     const lc = checkBarcodeLifecycle(booking, clock);
 
-    // Cek apakah tiket sudah kadaluarsa atau sudah selesai (Check-Out)
-    if (lc.isExpired || booking.status_kunjungan === 'Selesai') {
+    // KUNCI KETAT JADWAL: Tolak jika kategori hari salah, tanggal lewat/belum aktif, jam belum/sudah lewat, dsb.
+    if (!lc.isValidForScan) {
       sound.playAccessDenied?.();
       setScanModalResult({
         isOpen: true,
         success: false,
-        isExpired: true,
-        title: '⛔ BARCODE HANGUS / MASA KUNJUNGAN TELAH BERAKHIR',
-        message: 'Kupon ini sudah tidak berlaku karena telah melewati jam operasional kunjungan atau tamu telah check-out sebelumnya. Tiket hangus demi keamanan pondok.',
-        booking
-      });
-      return;
-    }
-
-    // Cek apakah masih menunggu approval hari kerja
-    if (booking.status_kunjungan === 'Menunggu Approval') {
-      sound.playAccessDenied?.();
-      setScanModalResult({
-        isOpen: true,
-        success: false,
-        title: '⏳ MENUNGGU APPROVAL ADMIN RI\'AYAH',
-        message: `Permohonan kunjungan ananda ${booking.nama_santri} pada hari kerja masih menunggu verifikasi pengasuhan pondok.`,
-        booking
-      });
-      return;
-    }
-
-    // Cek apakah ditolak
-    if (booking.status_kunjungan === 'Ditolak') {
-      sound.playAccessDenied?.();
-      setScanModalResult({
-        isOpen: true,
-        success: false,
-        title: '⛔ PERMOHONAN KUNJUNGAN DITOLAK',
-        message: 'Permohonan kunjungan ini telah ditolak oleh Pengasuhan Pondok.',
+        isExpired: lc.isExpired,
+        title: lc.badgeLabel,
+        message: lc.message,
         booking
       });
       return;

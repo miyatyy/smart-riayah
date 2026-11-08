@@ -7,6 +7,7 @@ import {
   Volume2,
   Radio,
   Users,
+  Shield,
   ShieldCheck,
   HeartPulse,
   TrendingUp,
@@ -43,6 +44,7 @@ const ROLE_META = {
   security:     { label: 'Keamanan',    icon: Radio,       color: 'text-cyan-400',    bg: 'bg-slate-900',  ring: 'ring-cyan-500' },
   poskestren:   { label: 'Klinik',       icon: HeartPulse,  color: 'text-rose-700',   bg: 'bg-rose-50',    ring: 'ring-rose-300' },
   kyai:         { label: 'Pimpinan',     icon: TrendingUp,  color: 'text-amber-700',  bg: 'bg-amber-50',   ring: 'ring-amber-300' },
+  osis:         { label: 'Posko OSIS',   icon: Shield,      color: 'text-teal-300',   bg: 'bg-teal-950',   ring: 'ring-teal-700' },
 };
 
 // ─── Simple Tooltip wrapper ──────────────────────────────────────────────────
@@ -130,6 +132,7 @@ export default function Navbar({ onOpenFlutterModal }) {
     lastChatPurgeSummary,
     isFonnteEnabled,
     disciplineRecords,
+    osisReports,
   } = useApp();
 
   const [time, setTime] = useState('');
@@ -190,11 +193,14 @@ export default function Navbar({ onOpenFlutterModal }) {
   const pendingChats = Array.isArray(chatLogs) 
     ? chatLogs.filter(c => c.needs_manual_reply === true) 
     : [];
+  const pendingOsisReports = Array.isArray(osisReports)
+    ? osisReports.filter(r => r.status === 'PENDING_ADMIN')
+    : [];
   const recentOsisReports = Array.isArray(disciplineRecords) 
     ? disciplineRecords.slice(0, 2) 
     : [];
 
-  const totalActionableCount = isDismissedAll ? 0 : (pendingVisits.length + pendingChats.length);
+  const totalActionableCount = isDismissedAll ? 0 : (pendingVisits.length + pendingChats.length + pendingOsisReports.length);
 
 
   return (
@@ -474,40 +480,47 @@ export default function Navbar({ onOpenFlutterModal }) {
                       )}
                     </div>
 
-                    {/* SEKSI C: LAPORAN PERILAKU OSIS BARU */}
+                    {/* SEKSI C: LAPORAN KELAKUAN OSIS MENUNGGU VERIFIKASI */}
                     <div>
                       <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 mb-1.5">
-                        <span className="flex items-center gap-1.5 text-indigo-700">
-                          <ShieldAlert className="w-3.5 h-3.5" />
-                          Laporan Kedisiplinan &amp; OSIS
+                        <span className="flex items-center gap-1.5 text-teal-800">
+                          <ShieldAlert className="w-3.5 h-3.5 text-teal-600" />
+                          Laporan Kelakuan OSIS ({pendingOsisReports.length})
                         </span>
-                        <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-indigo-100 text-indigo-800 font-bold">
-                          Terbaru
-                        </span>
+                        {pendingOsisReports.length > 0 && (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-teal-100 text-teal-800 font-bold animate-pulse">
+                            Perlu Verifikasi
+                          </span>
+                        )}
                       </div>
                       <div className="space-y-1.5">
-                        {recentOsisReports.length > 0 ? (
-                          recentOsisReports.map((v, i) => (
-                            <div key={v.id || i} className="p-2 rounded-xl bg-indigo-50/60 border border-indigo-100 text-[11px] flex items-center justify-between gap-2">
+                        {pendingOsisReports.length > 0 ? (
+                          pendingOsisReports.map((v) => (
+                            <div key={v.id} className="p-2 rounded-xl bg-teal-50/70 border border-teal-200 text-[11px] flex items-center justify-between gap-2">
                               <div className="min-w-0">
-                                <div className="font-bold text-indigo-950 truncate">{v.namaSantri || v.santri || 'Santri'}</div>
-                                <div className="text-[10px] text-indigo-700 truncate">{v.keterangan || v.pelanggaran || 'Catatan kedisiplinan asrama'} ({v.poin || '-5'} Poin)</div>
+                                <div className="font-bold text-teal-950 truncate flex items-center gap-1">
+                                  <span>{v.gender === 'P' ? '🧕' : '👳'}</span>
+                                  <span>{v.santriNama} ({v.kelas})</span>
+                                </div>
+                                <div className="text-[10px] text-teal-800 truncate">
+                                  [{v.bidangOsis}] {v.jenis} ({v.poin > 0 ? `+${v.poin}` : v.poin} Poin)
+                                </div>
                               </div>
                               <button
                                 onClick={() => {
                                   setShowNotifications(false);
-                                  setActiveRoleTab('rooms');
+                                  setActiveRoleTab('osis_verification');
                                   sound.playBeep?.();
                                 }}
-                                className="shrink-0 px-2 py-0.5 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-800 font-bold text-[10px] transition"
+                                className="shrink-0 px-2 py-0.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold text-[10px] transition shadow-xs"
                               >
-                                Review
+                                Verifikasi
                               </button>
                             </div>
                           ))
                         ) : (
                           <div className="p-2 rounded-xl bg-slate-50 text-[11px] text-slate-500 text-center font-medium">
-                            🌿 Tidak ada laporan pelanggaran baru hari ini.
+                            🌿 Tidak ada laporan OSIS yang menunggu verifikasi.
                           </div>
                         )}
                       </div>

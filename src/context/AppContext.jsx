@@ -54,7 +54,8 @@ import {
   INITIAL_ACCOUNTS,
   INITIAL_BLACKLIST,
   INITIAL_VISIT_BOOKINGS,
-  INITIAL_VISIT_SETTINGS
+  INITIAL_VISIT_SETTINGS,
+  INITIAL_OSIS_REPORTS
 } from '../data/seedData';
 import {
   INITIAL_KNOWLEDGE_BASE,
@@ -234,6 +235,7 @@ export const AppProvider = ({ children }) => {
       case 'security': return 'gate';
       case 'poskestren': return 'rekam_medis';
       case 'kyai': return 'ringkasan';
+      case 'osis': return 'osis_posko';
       default: return 'rooms';
     }
   };
@@ -4462,6 +4464,145 @@ export const AppProvider = ({ children }) => {
     });
   };
 
+  // ─── PENGURUS OSIS: SISTEM PELAPORAN KELAKUAN SANTRI/WATI SE-PONDOK ───
+  const [osisReports, setOsisReports] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sr_osis_reports');
+      return saved ? JSON.parse(saved) : INITIAL_OSIS_REPORTS;
+    } catch {
+      return INITIAL_OSIS_REPORTS;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sr_osis_reports', JSON.stringify(osisReports));
+    } catch (e) {}
+  }, [osisReports]);
+
+  const submitOsisReport = (reportData) => {
+    const clock = getRealtimePondokClock();
+    const newReport = {
+      id: `OSIS-${Date.now().toString().slice(-6)}`,
+      santriId: reportData.santriId,
+      santriNama: reportData.santriNama,
+      gender: reportData.gender || 'L',
+      kelas: reportData.kelas || '',
+      kamar: reportData.kamar || '',
+      bidangOsis: reportData.bidangOsis || 'OSIS Kamtib',
+      pelaporNama: reportData.pelaporNama || (currentUser?.nama || 'Pengurus OSIS'),
+      kategori: reportData.kategori || 'PELANGGARAN', // 'PELANGGARAN' | 'PRESTASI' | 'IBADAH'
+      jenis: reportData.jenis || 'Catatan Kedisiplinan',
+      keterangan: reportData.keterangan || '',
+      poin: Number(reportData.poin || 0),
+      tazir: reportData.tazir || reportData.tindakan || '',
+      status: 'PENDING_ADMIN',
+      tanggal: reportData.tanggal || clock.tanggal_ymd,
+      waktu: reportData.waktu || clock.jam_menit,
+      created_at: new Date().toISOString()
+    };
+
+    setOsisReports(prev => [newReport, ...prev]);
+
+    // Lonceng Notifikasi ke Admin Ri'ayah
+    setNotifications(prev => [
+      {
+        id: `NOTIF-OSIS-${Date.now()}`,
+        type: 'OSIS_REPORT_NEW',
+        title: '📋 Laporan Kelakuan Santri dari OSIS',
+        message: `[${newReport.bidangOsis}] melaporkan ananda ${newReport.santriNama} (${newReport.kelas}): "${newReport.jenis}". Menunggu verifikasi Admin Ri'ayah.`,
+        time: clock.jam_menit_detik,
+        read: false,
+        reportId: newReport.id
+      },
+      ...prev
+    ]);
+
+    sound.playSuccess?.();
+    return newReport;
+  };
+
+  const verifyOsisReport = (reportId, action = 'APPROVE', refinedData = {}) => {
+    const clock = getRealtimePondokClock();
+    let targetReport = null;
+
+    setOsisReports(prev => prev.map(rep => {
+      if (rep.id === reportId) {
+        targetReport = {
+          ...rep,
+          status: action === 'APPROVE' ? 'APPROVED' : 'REJECTED',
+          jenis: refinedData.jenis !== undefined ? refinedData.jenis : rep.jenis,
+          keterangan: refinedData.keterangan !== undefined ? refinedData.keterangan : rep.keterangan,
+          poin: refinedData.poin !== undefined ? Number(refinedData.poin) : rep.poin,
+          tazir: refinedData.tazir !== undefined ? refinedData.tazir : rep.tazir,
+          adminNote: refinedData.adminNote || (action === 'APPROVE' ? 'Disetujui resmi oleh Admin Ri\'ayah' : 'Ditolak oleh Admin Ri\'ayah'),
+          verified_at: new Date().toISOString(),
+          verified_by: currentUser?.nama || 'Admin Ri\'ayah'
+        };
+        return targetReport;
+      }
+      return rep;
+    }));
+
+    if (action === 'APPROVE' && targetReport) {
+      // 1. Masukkan ke catatan disiplin resmi pondok
+      const poinValue = Number(targetReport.poin || 0);
+      const categoryLabel = poinValue < 0 ? 'Pelanggaran' : 'Prestasi';
+      
+      const officialDiscipline = {
+        id: `DISC-${Date.now().toString().slice(-4)}`,
+        santriId: targetReport.santriId,
+        santriNama: targetReport.santriNama,
+        tanggal: clock.tanggal_ymd,
+        waktu: clock.jam_menit,
+        jenis: targetReport.jenis,
+        kategori: categoryLabel,
+        poin: poinValue,
+        deskripsi: targetReport.keterangan,
+        tindakan: targetReport.tazir || 'Pembinaan Asrama',
+        pencatat: `Pengurus ${targetReport.bidangOsis} (${targetReport.pelaporNama || 'Kamtib'}) • Verifikasi Admin Ri'ayah`
+      };
+
+      setDisciplineRecords(prev => [officialDiscipline, ...prev]);
+      syncDisciplineToSupabase(officialDiscipline);
+
+      // 2. Update poin disiplin santri di state & Supabase
+      const targetSantri = santriList.find(s => s.id === targetReport.santriId);
+      if (targetSantri) {
+        const updatedPoints = Math.max(0, Math.min(100, (targetSantri.poinDisiplin ?? 100) + poinValue));
+        syncSantriToSupabase({
+          ...targetSantri,
+          poinDisiplin: updatedPoints
+        });
+
+        setSantriList(prev => prev.map(s => {
+          if (s.id === targetReport.santriId) {
+            return { ...s, poinDisiplin: updatedPoints };
+          }
+          return s;
+        }));
+
+        // 3. Notifikasi WhatsApp ke Wali Santri jika disetujui
+        if (targetSantri.wali?.telepon || targetSantri.waliTelepon) {
+          const noWa = targetSantri.wali?.telepon || targetSantri.waliTelepon;
+          const statusIcon = poinValue < 0 ? '⚠️' : '🌟';
+          sendWhatsAppNotification(
+            `${targetSantri.wali?.nama || 'Wali Santri'} (Wali ${targetReport.santriNama})`,
+            noWa,
+            'DISCIPLINE_NOTICE',
+            `${statusIcon} *[CATATAN RESMI KEDISIPLINAN & PERILAKU SANTRI]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu Wali dari *${targetReport.santriNama}* (${targetReport.kelas || targetSantri.kelas}).\n\nTercatat laporan ${categoryLabel.toLowerCase()} santri oleh *${targetReport.bidangOsis}* yang telah diverifikasi resmi oleh Biro Pengasuhan Santri (Admin Ri'ayah):\n\n• *Perihal:* ${targetReport.jenis}\n• *Keterangan:* ${targetReport.keterangan}\n• *Penyesuaian Poin:* ${poinValue > 0 ? '+' : ''}${poinValue} Poin\n• *Sisa Poin Disiplin:* ${updatedPoints}/100 Poin\n${targetReport.tazir ? `• *Arahan / Tindakan:* ${targetReport.tazir}\n` : ''}\nMohon dukungan dan doa dari Bapak/Ibu agar ananda senantiasa istiqomah dalam menuntut ilmu dan berakhlak mulia di pondok.`
+          );
+        }
+      }
+
+      sound.playSuccess?.();
+    } else {
+      sound.playBeep?.();
+    }
+
+    return targetReport;
+  };
+
   // Reset to seed data
   const resetAllDataToDefault = () => {
     localStorage.clear();
@@ -4479,6 +4620,7 @@ export const AppProvider = ({ children }) => {
     setVisitBookings(INITIAL_VISIT_BOOKINGS);
     setVisitSettings(INITIAL_VISIT_SETTINGS);
     setKnowledgeList(INITIAL_KNOWLEDGE_BASE);
+    setOsisReports(INITIAL_OSIS_REPORTS);
     setActiveSantriId('S-101');
     sound.playSuccess();
   };
@@ -4673,7 +4815,13 @@ export const AppProvider = ({ children }) => {
         bulkImportRfid,
         bulkImportCustomers,
         OFFICIAL_TOPIC_GROUPS,
-        buildVisitingHoursAndRulesReply
+        buildVisitingHoursAndRulesReply,
+
+        // 16. OSIS Discipline Reports Engine
+        osisReports,
+        setOsisReports,
+        submitOsisReport,
+        verifyOsisReport
       }}
     >
       {children}

@@ -11,6 +11,7 @@ import MusyrifDashboard from './components/roles/MusyrifDashboard';
 import SecurityCommandCenter from './components/roles/SecurityCommandCenter';
 import PoskestrenClinic from './components/roles/PoskestrenClinic';
 import ExecutiveAnalytics from './components/roles/ExecutiveAnalytics';
+import OsisDashboard from './components/roles/OsisDashboard';
 import WhatsAppDrawer from './components/common/WhatsAppDrawer';
 import RfidEcosystemModal from './components/modules/RfidEcosystemModal';
 import RfidCardManager from './components/modules/RfidCardManager';
@@ -33,6 +34,7 @@ function MainContent() {
       {role === 'security' && <SecurityCommandCenter />}
       {role === 'poskestren' && <PoskestrenClinic />}
       {role === 'kyai' && <ExecutiveAnalytics />}
+      {role === 'osis' && <OsisDashboard />}
     </main>
   );
 }

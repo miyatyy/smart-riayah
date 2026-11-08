@@ -78,7 +78,7 @@ export async function insertSantriToSupabase(santriData, options = {}) {
       const { data: matchRows, error: checkUidErr } = await supabase
         .from('santri')
         .select('*')
-        .ilike('rfid_uid', cleanUid)
+        .or(`rfid_uid.eq.${cleanUid},rfid_uid.ilike.${cleanUid}`)
         .limit(1);
 
       if (!checkUidErr && matchRows && matchRows.length > 0) {
@@ -209,13 +209,18 @@ export async function insertSantriToSupabase(santriData, options = {}) {
       .select();
 
     if (insertError) {
-      // Jika terjadi race condition atau constraint violation tak terduga
-      if (insertError.code === '23505' || insertError.message?.includes('santri_rfid_uid_key')) {
+      // Jika terjadi race condition atau constraint violation tak terduga (code 23505 / santri_rfid_uid_key / duplicate key)
+      if (
+        insertError.code === '23505' ||
+        insertError.message?.includes('santri_rfid_uid_key') ||
+        insertError.message?.toLowerCase().includes('duplicate key')
+      ) {
         console.warn('⚠️ [Supabase insertSantri] Terdeteksi constraint unik rfid_uid, mencoba pemulihan otomatis...');
+        
         const { data: conflictRows } = await supabase
           .from('santri')
           .select('*')
-          .ilike('rfid_uid', cleanUid)
+          .or(`rfid_uid.eq.${cleanUid},rfid_uid.ilike.${cleanUid}`)
           .limit(1);
 
         const conflictRow = (conflictRows && conflictRows.length > 0) ? conflictRows[0] : null;
@@ -223,7 +228,7 @@ export async function insertSantriToSupabase(santriData, options = {}) {
         if (conflictRow) {
           const namesMatch = isNameSimilar(cleanNama, conflictRow.nama_lengkap);
 
-          if (namesMatch) {
+          if (namesMatch || options.forceUpdate) {
             const { data: recoverData } = await supabase
               .from('santri')
               .update({ ...payload, id: conflictRow.id })
@@ -238,6 +243,26 @@ export async function insertSantriToSupabase(santriData, options = {}) {
             };
           }
 
+          if (options.reassignCard) {
+            await supabase
+              .from('santri')
+              .update({ rfid_uid: null, updated_at: new Date().toISOString() })
+              .eq('id', conflictRow.id);
+
+            const { data: retryData } = await supabase
+              .from('santri')
+              .insert([payload])
+              .select();
+
+            return {
+              success: true,
+              isReassigned: true,
+              reassignedFrom: conflictRow.nama_lengkap,
+              data: retryData?.[0] || payload,
+              message: `Kartu RFID [${cleanUid}] berhasil dialihkan ke "${cleanNama}".`
+            };
+          }
+
           return {
             success: false,
             duplicateUid: true,
@@ -249,11 +274,27 @@ export async function insertSantriToSupabase(santriData, options = {}) {
           };
         }
 
-        // Jika conflictRow tidak ditemukan (misal pembatasan read/RLS), tetap return duplicateUid: true agar tidak throw raw alert
+        // Jika conflictRow tidak terbaca dari SELECT, tetapi nama santri cocok / santri update
+        const { data: directUpdate, error: directUpdateErr } = await supabase
+          .from('santri')
+          .update(payload)
+          .ilike('rfid_uid', cleanUid)
+          .select();
+
+        if (!directUpdateErr && directUpdate && directUpdate.length > 0) {
+          return {
+            success: true,
+            isUpdated: true,
+            data: directUpdate[0],
+            message: `Data santri dengan kartu [${cleanUid}] berhasil diperbarui di Supabase!`
+          };
+        }
+
+        // Tetap kembalikan duplicateUid: true agar tidak memicu alert error mentah
         return {
           success: false,
           duplicateUid: true,
-          existingSantri: { nama_lengkap: 'Santri Lain (Database)', rfid_uid: cleanUid },
+          existingSantri: { nama_lengkap: 'Santri Terdaftar di Database', rfid_uid: cleanUid },
           error: {
             code: '23505',
             message: `Kartu RFID [${cleanUid}] sudah terdaftar di database Supabase.`
