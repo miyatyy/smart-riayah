@@ -391,7 +391,17 @@ export async function syncSantriToSupabase(santri) {
     const payload = santriToDb(santri);
     if (!payload) return;
     const { error } = await supabase.from('santri').upsert([payload], { onConflict: 'id' });
-    if (error) console.warn('⚠️ [Supabase Sync Santri]:', error.message);
+    if (error) {
+      if ((error.code === '23505' || error.message?.includes('santri_rfid_uid_key')) && payload.rfid_uid) {
+        const { error: fallbackErr } = await supabase
+          .from('santri')
+          .update(payload)
+          .eq('rfid_uid', payload.rfid_uid);
+        if (fallbackErr) console.warn('⚠️ [Supabase Sync Santri Fallback]:', fallbackErr.message);
+      } else {
+        console.warn('⚠️ [Supabase Sync Santri]:', error.message);
+      }
+    }
   } catch (err) {
     console.warn('⚠️ [Supabase Sync Santri Error]:', err);
   }
@@ -694,16 +704,12 @@ export async function syncBookingStatusToSupabase(booking, reaction = 'VISIT_APP
 }
 
 export async function fetchAllDataFromSupabase() {
-  console.log('🔄 [Supabase] Mengambil seluruh kategori data dari Supabase...');
+  console.log('🔄 [Supabase] Mengambil data utama dari Supabase...');
 
   const results = await Promise.allSettled([
     supabase.from('santri').select('*').order('created_at', { ascending: false }),
     supabase.from('rooms').select('*').order('created_at', { ascending: true }),
     supabase.from('permits').select('*').order('created_at', { ascending: false }),
-    supabase.from('gate_logs').select('*').order('created_at', { ascending: false }).limit(50),
-    supabase.from('pelanggaran').select('*').order('created_at', { ascending: false }).limit(50),
-    supabase.from('rekam_medis').select('*').order('created_at', { ascending: false }).limit(50),
-    supabase.from('rfid_transactions').select('*').order('created_at', { ascending: false }).limit(50),
     supabase.from('evaluasi_harian').select('*').order('tanggal', { ascending: false }).limit(50),
     supabase.from('messages').select('*').neq('room_id', 'visit_bookings_log').order('created_at', { ascending: true }).limit(100),
     fetchVisitBookingsFromSupabase()
@@ -721,25 +727,13 @@ export async function fetchAllDataFromSupabase() {
     output.permits = results[2].value.data.map(dbToPermit);
   }
   if (results[3].status === 'fulfilled' && !results[3].value.error && results[3].value.data?.length > 0) {
-    output.gateLogs = results[3].value.data.map(dbToGateLog);
+    output.mutabaahList = results[3].value.data.map(dbToMutabaah);
   }
   if (results[4].status === 'fulfilled' && !results[4].value.error && results[4].value.data?.length > 0) {
-    output.disciplineRecords = results[4].value.data.map(dbToDiscipline);
+    output.messages = results[4].value.data.map(dbToMessage);
   }
-  if (results[5].status === 'fulfilled' && !results[5].value.error && results[5].value.data?.length > 0) {
-    output.medicalRecords = results[5].value.data.map(dbToMedical);
-  }
-  if (results[6].status === 'fulfilled' && !results[6].value.error && results[6].value.data?.length > 0) {
-    output.rfidTransactions = results[6].value.data.map(dbToRfidTransaction);
-  }
-  if (results[7].status === 'fulfilled' && !results[7].value.error && results[7].value.data?.length > 0) {
-    output.mutabaahList = results[7].value.data.map(dbToMutabaah);
-  }
-  if (results[8].status === 'fulfilled' && !results[8].value.error && results[8].value.data?.length > 0) {
-    output.messages = results[8].value.data.map(dbToMessage);
-  }
-  if (results[9].status === 'fulfilled' && Array.isArray(results[9].value) && results[9].value.length > 0) {
-    output.visitBookings = results[9].value;
+  if (results[5].status === 'fulfilled' && Array.isArray(results[5].value) && results[5].value.length > 0) {
+    output.visitBookings = results[5].value;
   }
 
   console.log('✅ [Supabase] Selesai sinkronisasi awal data:', Object.keys(output));

@@ -2396,7 +2396,31 @@ export const AppProvider = ({ children }) => {
       penyakitKhusus: '-'
     };
 
-    setSantriList(prev => [newSantri, ...prev]);
+    setSantriList(prev => {
+      // Jika kartu dialihkan dari santri lama, lepas rfidUid dari santri lama
+      let cleaned = prev;
+      if (santriData.isReassigned || santriData.reassignedFromUid) {
+        cleaned = cleaned.map(s => {
+          if (s.id !== newId && (s.rfidUid === formattedUid || s.rfid_uid === formattedUid)) {
+            return { ...s, rfidUid: '', statusKartu: 'NONAKTIF' };
+          }
+          return s;
+        });
+      }
+
+      // Cek apakah santri sudah ada (by ID atau nama yang sama)
+      const existingIdx = cleaned.findIndex(s => 
+        s.id === newId || 
+        (s.nama && newSantri.nama && s.nama.trim().toLowerCase() === newSantri.nama.trim().toLowerCase())
+      );
+      if (existingIdx !== -1) {
+        const copy = [...cleaned];
+        copy[existingIdx] = { ...copy[existingIdx], ...newSantri };
+        return copy;
+      }
+      return [newSantri, ...cleaned];
+    });
+
     setLastScannedUid(formattedUid);
     syncSantriToSupabase(newSantri);
 
@@ -3175,7 +3199,31 @@ export const AppProvider = ({ children }) => {
       penyakitKhusus: santriData.penyakitKhusus || '-'
     };
 
-    setSantriList(prev => [newSantri, ...prev]);
+    setSantriList(prev => {
+      // Jika kartu dialihkan dari santri lama, lepas rfidUid dari santri lama
+      let cleaned = prev;
+      if (santriData.isReassigned || santriData.reassignedFromUid) {
+        cleaned = cleaned.map(s => {
+          if (s.id !== newId && (s.rfidUid === formattedUid || s.rfid_uid === formattedUid)) {
+            return { ...s, rfidUid: '', statusKartu: 'NONAKTIF' };
+          }
+          return s;
+        });
+      }
+
+      // Cek apakah santri sudah ada (by ID atau nama yang sama)
+      const existingIdx = cleaned.findIndex(s => 
+        s.id === newId || 
+        (s.nama && newSantri.nama && s.nama.trim().toLowerCase() === newSantri.nama.trim().toLowerCase())
+      );
+      if (existingIdx !== -1) {
+        const copy = [...cleaned];
+        copy[existingIdx] = { ...copy[existingIdx], ...newSantri };
+        return copy;
+      }
+      return [newSantri, ...cleaned];
+    });
+
     setLastScannedUid(formattedUid);
     syncSantriToSupabase(newSantri);
 

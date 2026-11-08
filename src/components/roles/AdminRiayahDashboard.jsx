@@ -10,6 +10,7 @@ import {
   ShieldCheck, 
   CheckCircle2, 
   AlertTriangle, 
+  Info,
   Radio, 
   Search, 
   Edit3, 
@@ -256,6 +257,43 @@ export default function AdminRiayahDashboard() {
     }
   };
 
+  // Deteksi kartu RFID duplikat di daftar santri
+  const registeredSantriWithUid = React.useMemo(() => {
+    if (!onboardingForm.rfidUid || !onboardingForm.rfidUid.trim()) return null;
+    const clean = onboardingForm.rfidUid.trim().toUpperCase();
+    return santriList.find(s => (s.rfidUid || s.rfid_uid || '').trim().toUpperCase() === clean) || null;
+  }, [onboardingForm.rfidUid, santriList]);
+
+  // Cek apakah kartu milik santri yang sama (misal Nurmiyaty memperbarui kamar)
+  const isSameSantri = React.useMemo(() => {
+    if (!registeredSantriWithUid) return false;
+    const formName = (onboardingForm.nama || '').trim().toLowerCase();
+    const existingName = (registeredSantriWithUid.nama || registeredSantriWithUid.nama_lengkap || '').trim().toLowerCase();
+    if (!formName) return true;
+    return formName === existingName || formName.includes(existingName) || existingName.includes(formName);
+  }, [registeredSantriWithUid, onboardingForm.nama]);
+
+  const [allowReassignCard, setAllowReassignCard] = useState(false);
+
+  // Generate UID unik yang terjamin belum pernah digunakan
+  const handleGenerateUniqueUid = () => {
+    let newUid = '';
+    let attempts = 0;
+    do {
+      newUid = [
+        Math.floor(10 + Math.random() * 240).toString(16).padStart(2, '0'),
+        Math.floor(10 + Math.random() * 240).toString(16).padStart(2, '0'),
+        Math.floor(10 + Math.random() * 240).toString(16).padStart(2, '0'),
+        Math.floor(10 + Math.random() * 240).toString(16).padStart(2, '0')
+      ].join(':').toUpperCase();
+      attempts++;
+    } while (santriList.some(s => (s.rfidUid || s.rfid_uid || '').toUpperCase() === newUid) && attempts < 25);
+
+    setOnboardingForm(prev => ({ ...prev, rfidUid: newUid }));
+    setAllowReassignCard(false);
+    sound.playSuccess();
+  };
+
   // Filtered rooms
   const filteredRooms = rooms.filter(r => {
     if (selectedGenderFilter === 'ALL') return true;
@@ -297,33 +335,32 @@ export default function AdminRiayahDashboard() {
       return;
     }
 
-    // Payload insert disesuaikan dengan skema kolom tabel santri di Supabase:
-    // - id (string, misal 'S-123')
-    // - nama_lengkap (string)
-    // - nis (string/number)
-    // - gender (string)
-    // - kelas (string)
-    // - kamar (string nama kamar asrama)
-    // - rfid_uid (string)
-    // - nama_wali (string)
-    // - no_wali (string)
-    // - saldo_rfid (number)
-    // - limit_jajan_harian (number)
-    // - poin_disiplin (number)
-    // - status_asrama (string)
-    const generatedId = `S-${Date.now().toString().slice(-4)}`;
+    // Jika UID terdaftar pada santri lain dan belum disetujui untuk dialihkan:
+    if (registeredSantriWithUid && !isSameSantri && !allowReassignCard) {
+      alert(
+        `⚠️ KARTU SUDAH TERDAFTAR!\n\nKartu UID [${onboardingForm.rfidUid}] saat ini masih terdaftar atas nama "${registeredSantriWithUid.nama}" (NIS: ${registeredSantriWithUid.nis || '-'}).\n\nSilakan klik tombol "🎲 Acak UID Baru" atau aktifkan "🔄 Alihkan / Daur Ulang Kartu" pada kotak peringatan di bawah input UID.`
+      );
+      return;
+    }
+
+    const cleanUid = onboardingForm.rfidUid.trim().toUpperCase();
     const selectedRoom = availableRoomsForOnboarding.find(r => String(r.id) === String(onboardingForm.kamarId));
     const roomLabel = onboardingForm.kamar || (selectedRoom ? `${selectedRoom.namaGedung} - ${selectedRoom.nomorKamar}` : 'Kamar Santri');
     const cleanNoWali = (onboardingForm.waliTelepon || '').replace(/[^0-9]/g, '');
 
+    // Tentukan ID santri: jika santri yang sama, pakai ID lama untuk UPDATE di Supabase
+    const targetId = (registeredSantriWithUid && isSameSantri)
+      ? registeredSantriWithUid.id
+      : (onboardingForm.id || `S-${Date.now().toString().slice(-4)}`);
+
     const payload = {
-      id: generatedId,
+      id: targetId,
       nama_lengkap: onboardingForm.nama.trim(),
-      nis: onboardingForm.nis ? String(onboardingForm.nis).trim() : `${Math.floor(125500 + Math.random() * 900)}`,
+      nis: onboardingForm.nis ? String(onboardingForm.nis).trim() : (registeredSantriWithUid?.nis || `${Math.floor(125500 + Math.random() * 900)}`),
       gender: onboardingForm.gender || 'L',
       kelas: onboardingForm.gender === 'P' ? '10-B (Putri)' : '10-A (Putra)',
       kamar: roomLabel,
-      rfid_uid: onboardingForm.rfidUid.trim().toUpperCase(),
+      rfid_uid: cleanUid,
       nama_wali: onboardingForm.waliNama.trim(),
       no_wali: cleanNoWali,
       saldo_rfid: Number(onboardingForm.saldoAwal) || 0,
@@ -337,15 +374,25 @@ export default function AdminRiayahDashboard() {
     try {
       console.log('📡 [Supabase] Mengirim payload pendaftaran santri baru via insertSantriToSupabase:', payload);
 
-      const insertRes = await insertSantriToSupabase(payload);
+      const insertRes = await insertSantriToSupabase(payload, {
+        reassignCard: allowReassignCard,
+        forceUpdate: (registeredSantriWithUid && isSameSantri)
+      });
 
       if (!insertRes.success && insertRes.error) {
+        if (insertRes.duplicateUid && insertRes.existingSantri) {
+          alert(
+            `⚠️ KARTU SUDAH DIGUNAKAN DI DATABASE!\n\nKartu RFID [${payload.rfid_uid}] sudah terdaftar atas nama "${insertRes.existingSantri.nama_lengkap}" (NIS: ${insertRes.existingSantri.nis || '-'}).\n\nSaran Tindakan:\n1. Klik "🎲 Acak UID Baru", ATAU\n2. Centang "🔄 Alihkan / Daur Ulang Kartu ke Santri Ini" lalu klik simpan kembali.`
+          );
+          return;
+        }
+
         console.error('❌ [Supabase] Gagal menyimpan data santri ke tabel santri:', insertRes.error);
         alert(`❌ Gagal menyimpan santri ke database Supabase!\n\nDetail Error: ${insertRes.error.message || JSON.stringify(insertRes.error)}`);
         return;
       }
 
-      console.log('✅ [Supabase] Berhasil menyimpan santri baru ke tabel santri:', insertRes.data);
+      console.log('✅ [Supabase] Berhasil menyimpan santri ke tabel santri:', insertRes);
 
       // Sinkronkan ke context lokal (update state list santri, kamar terisi, confetti, notifikasi WA)
       addNewSantri({
@@ -358,10 +405,18 @@ export default function AdminRiayahDashboard() {
         rfidUid: payload.rfid_uid,
         saldoAwal: payload.saldo_rfid,
         saldoRfid: payload.saldo_rfid,
-        waliTelepon: payload.no_wali
+        waliTelepon: payload.no_wali,
+        isReassigned: insertRes.isReassigned,
+        reassignedFromUid: insertRes.isReassigned ? payload.rfid_uid : null
       });
 
-      alert(`✅ Pendaftaran santri baru "${payload.nama_lengkap}" BERHASIL!\nData telah tersimpan di Supabase, kartu RFID aktif, dan kamar asrama telah tersinkron.`);
+      if (insertRes.isUpdated) {
+        alert(`✅ Data santri "${payload.nama_lengkap}" BERHASIL DIPERBARUI!\nKamar asrama telah disinkronkan ke "${payload.kamar}", kartu RFID [${payload.rfid_uid}] tetap aktif.`);
+      } else if (insertRes.isReassigned) {
+        alert(`✅ Kartu RFID [${payload.rfid_uid}] BERHASIL DIALIHKAN!\nKartu santri lama (${insertRes.reassignedFrom}) telah dinonaktifkan dan dialihkan resmi ke santri baru "${payload.nama_lengkap}".`);
+      } else {
+        alert(`✅ Pendaftaran santri baru "${payload.nama_lengkap}" BERHASIL!\nData telah tersimpan di Supabase, kartu RFID aktif, dan kamar asrama telah tersinkron.`);
+      }
 
       // Reset formulir pendaftaran
       setOnboardingForm({
@@ -379,6 +434,7 @@ export default function AdminRiayahDashboard() {
         tahfidzAwal: 1,
         penyakitKhusus: '-'
       });
+      setAllowReassignCard(false);
     } catch (err) {
       console.error('❌ [Supabase] Exception saat menyimpan data santri ke tabel santri:', err);
       alert(`❌ Terjadi kesalahan pada sistem saat menyimpan data santri:\n${err?.message || err}`);
@@ -1105,26 +1161,137 @@ export default function AdminRiayahDashboard() {
 
               {/* Status Banner */}
               {onboardingForm.rfidUid ? (
-                <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs flex items-center justify-between shadow-xs">
-                  <div className="flex items-center gap-2.5">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                    <div>
-                      <div className="font-bold text-sm text-emerald-950">
-                        KARTU RFID TERDETEKSI: <span className="font-mono text-emerald-700 tracking-wider font-black">{onboardingForm.rfidUid}</span>
+                registeredSantriWithUid ? (
+                  isSameSantri ? (
+                    /* Kasus 1: Kartu milik santri yang sama (update data aman tanpa duplikasi) */
+                    <div className="p-4 rounded-xl bg-blue-50 border-2 border-blue-400 text-blue-950 text-xs shadow-xs space-y-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-2.5">
+                          <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+                          <div>
+                            <div className="font-bold text-sm text-blue-950 flex flex-wrap items-center gap-2">
+                              <span>KARTU TERDAFTAR ATAS NAMA:</span>
+                              <span className="font-black text-blue-700 uppercase bg-blue-100/90 px-2 py-0.5 rounded tracking-wide">
+                                {registeredSantriWithUid.nama}
+                              </span>
+                              <span className="font-mono text-xs text-blue-800">
+                                (NIS: {registeredSantriWithUid.nis || '-'})
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-blue-800 mt-1 leading-relaxed">
+                              Kartu UID <strong className="font-mono">{onboardingForm.rfidUid}</strong> sudah terdaftar di sistem. Menyimpan formulir ini akan <strong>memperbarui (update) data santri & kamar asrama</strong> secara otomatis di Supabase tanpa duplikasi.
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOnboardingForm(prev => ({
+                              ...prev,
+                              nama: registeredSantriWithUid.nama,
+                              nis: registeredSantriWithUid.nis || prev.nis,
+                              gender: registeredSantriWithUid.gender || prev.gender,
+                              kamar: registeredSantriWithUid.kamar || prev.kamar,
+                              waliNama: registeredSantriWithUid.wali?.nama || prev.waliNama,
+                              waliTelepon: registeredSantriWithUid.wali?.telepon || prev.waliTelepon,
+                              waliHubungan: registeredSantriWithUid.wali?.hubungan || prev.waliHubungan,
+                              saldoAwal: registeredSantriWithUid.saldoRfid ?? prev.saldoAwal
+                            }));
+                            sound.playSuccess();
+                          }}
+                          className="shrink-0 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs transition"
+                        >
+                          Muat Data Lengkap
+                        </button>
                       </div>
-                      <p className="text-[11px] text-emerald-800 mt-0.5">
-                        Kartu fisik 13.56 MHz terverifikasi dan siap diaktivasi menjadi kartu identitas resmi santri/wati.
-                      </p>
                     </div>
+                  ) : (
+                    /* Kasus 2: Kartu sudah dipakai oleh santri LAIN (warning duplikasi) */
+                    <div className="p-4 rounded-xl bg-amber-50 border-2 border-amber-400 text-amber-950 text-xs shadow-sm space-y-3">
+                      <div className="flex items-start gap-2.5">
+                        <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                          <div className="font-bold text-sm text-amber-950 flex items-center gap-2">
+                            <span>PERINGATAN: KARTU SUDAH TERDAFTAR ATAS NAMA SANTRI LAIN</span>
+                          </div>
+                          <p className="text-[12px] text-amber-900 mt-1 leading-relaxed">
+                            UID <strong className="font-mono bg-amber-200/90 px-1.5 py-0.5 rounded font-black">{onboardingForm.rfidUid}</strong> saat ini masih terdaftar atas nama <strong className="font-bold uppercase text-amber-950">"{registeredSantriWithUid.nama}"</strong> (NIS: {registeredSantriWithUid.nis || '-'}).
+                          </p>
+                          {allowReassignCard ? (
+                            <div className="mt-2 p-2 bg-emerald-100 border border-emerald-400 rounded-lg text-emerald-900 font-semibold text-[11px] flex items-center gap-2">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                              <span>Mode Alih Kartu Aktif: Kartu ini akan dialihkan resmi ke "{onboardingForm.nama || 'Santri Baru'}", dan kartu santri lama dinonaktifkan.</span>
+                            </div>
+                          ) : (
+                            <p className="text-[11px] text-amber-800 mt-1">
+                              Silakan pilih salah satu tombol di bawah agar formulir tersimpan tanpa error duplikasi unik:
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-amber-200 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleGenerateUniqueUid}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>🎲 Acak UID Baru yang Belum Terpakai</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAllowReassignCard(!allowReassignCard);
+                            sound.playSuccess();
+                          }}
+                          className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 border transition ${
+                            allowReassignCard
+                              ? 'bg-amber-700 text-white border-amber-800 shadow-xs'
+                              : 'bg-white text-amber-800 border-amber-300 hover:bg-amber-100'
+                          }`}
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          <span>{allowReassignCard ? '✓ Siap Dialihkan (Klik Lagi untuk Batal)' : '🔄 Alihkan / Daur Ulang Kartu ke Santri Ini'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOnboardingForm(prev => ({ ...prev, rfidUid: '' }));
+                            setAllowReassignCard(false);
+                          }}
+                          className="text-xs text-rose-600 hover:text-rose-800 font-bold ml-auto underline"
+                        >
+                          Kosongkan UID
+                        </button>
+                      </div>
+                    </div>
+                  )
+                ) : (
+                  /* Kasus 3: Kartu Baru Unik (Normal) */
+                  <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs flex items-center justify-between shadow-xs">
+                    <div className="flex items-center gap-2.5">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                      <div>
+                        <div className="font-bold text-sm text-emerald-950">
+                          KARTU RFID TERDETEKSI: <span className="font-mono text-emerald-700 tracking-wider font-black">{onboardingForm.rfidUid}</span>
+                        </div>
+                        <p className="text-[11px] text-emerald-800 mt-0.5">
+                          Kartu fisik 13.56 MHz terverifikasi dan siap diaktivasi menjadi kartu identitas resmi santri/wati.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setOnboardingForm(prev => ({ ...prev, rfidUid: '' }))}
+                      className="text-xs text-rose-600 hover:text-rose-800 font-bold underline ml-2"
+                    >
+                      Ganti Kartu
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setOnboardingForm(prev => ({ ...prev, rfidUid: '' }))}
-                    className="text-xs text-rose-600 hover:text-rose-800 font-bold underline ml-2"
-                  >
-                    Ganti Kartu
-                  </button>
-                </div>
+                )
               ) : (
                 <div className="p-3.5 rounded-xl bg-white border border-slate-200 text-slate-600 text-xs flex items-center gap-2.5 shadow-xs">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping shrink-0" />
@@ -1271,7 +1438,13 @@ export default function AdminRiayahDashboard() {
               <button
                 type="submit"
                 disabled={isSubmittingOnboarding}
-                className="px-7 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 disabled:cursor-not-allowed text-white rounded-xl font-bold text-xs shadow-xs flex items-center gap-2 transition"
+                className={`px-7 py-3 text-white rounded-xl font-bold text-xs shadow-xs flex items-center gap-2 transition disabled:cursor-not-allowed ${
+                  registeredSantriWithUid && isSameSantri
+                    ? 'bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400'
+                    : allowReassignCard
+                    ? 'bg-amber-600 hover:bg-amber-700 disabled:bg-amber-400'
+                    : 'bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400'
+                }`}
               >
                 {isSubmittingOnboarding ? (
                   <>
@@ -1281,7 +1454,13 @@ export default function AdminRiayahDashboard() {
                 ) : (
                   <>
                     <Check className="w-4 h-4" />
-                    <span>Simpan & Daftarkan Santri Baru</span>
+                    <span>
+                      {registeredSantriWithUid && isSameSantri
+                        ? '🔄 Simpan & Perbarui Data Santri'
+                        : allowReassignCard
+                        ? '🔄 Alihkan Kartu & Daftarkan Santri'
+                        : 'Simpan & Daftarkan Santri Baru'}
+                    </span>
                   </>
                 )}
               </button>
