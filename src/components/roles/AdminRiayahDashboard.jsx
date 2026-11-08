@@ -631,8 +631,8 @@ export default function AdminRiayahDashboard() {
         </div>
       )}
       
-      {/* 1. Header Admin Ri'ayah (Disembunyikan saat membuka WhatsApp Gateway agar tampilan luas & tidak bertumpuk) */}
-      {activeTab !== 'whatsapp_manager' && (
+      {/* 1. Header Admin Ri'ayah (Disembunyikan saat membuka WhatsApp Gateway & Verifikasi OSIS agar tampilan luas & tidak bertumpuk) */}
+      {activeTab !== 'whatsapp_manager' && activeTab !== 'osis_verification' && (
         <div className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4 no-print">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shadow-xs">

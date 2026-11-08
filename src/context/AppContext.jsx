@@ -907,6 +907,8 @@ export const AppProvider = ({ children }) => {
       if (Array.isArray(payload.rfidTransactions)) setRfidTransactions(payload.rfidTransactions);
       if (Array.isArray(payload.whatsappLogs)) setWhatsappLogs(payload.whatsappLogs);
       if (Array.isArray(payload.blacklistedUids)) setBlacklistedUids(payload.blacklistedUids);
+      if (Array.isArray(payload.osisReports)) setOsisReports(payload.osisReports);
+      if (Array.isArray(payload.visitBookings)) setVisitBookings(payload.visitBookings);
       if (payload.reminderThresholdMinutes) setReminderThresholdMinutes(payload.reminderThresholdMinutes);
       if (payload.version) syncVersionRef.current = payload.version;
     } finally {
@@ -1242,6 +1244,41 @@ export const AppProvider = ({ children }) => {
           return updated;
         });
       })
+      .on('broadcast', { event: 'osis.report_created' }, ({ payload }) => {
+        if (!isMounted || !payload?.id) return;
+        sound.playSuccess?.();
+        setOsisReports(prev => {
+          const exists = prev.some(r => r.id === payload.id);
+          if (exists) return prev;
+          const updated = [payload, ...prev];
+          try {
+            localStorage.setItem('sr_osis_reports', JSON.stringify(updated));
+          } catch (e) {}
+          return updated;
+        });
+        setNotifications(prev => [
+          {
+            id: `NOTIF-OSIS-${Date.now()}`,
+            type: 'OSIS_REPORT_NEW',
+            title: '📋 Laporan Kelakuan Santri dari OSIS',
+            message: `[${payload.bidangOsis}] melaporkan ananda ${payload.santriNama} (${payload.kelas}): "${payload.jenis}". Menunggu verifikasi Admin Ri'ayah.`,
+            time: payload.waktu || 'Baru saja',
+            read: false,
+            reportId: payload.id
+          },
+          ...prev
+        ]);
+      })
+      .on('broadcast', { event: 'osis.report_verified' }, ({ payload }) => {
+        if (!isMounted || !payload?.id) return;
+        setOsisReports(prev => {
+          const updated = prev.map(r => r.id === payload.id ? { ...r, ...payload } : r);
+          try {
+            localStorage.setItem('sr_osis_reports', JSON.stringify(updated));
+          } catch (e) {}
+          return updated;
+        });
+      })
       .subscribe((status) => {
         console.log('📡 [AppContext Supabase Realtime whatsapp-room] Status:', status);
       });
@@ -1398,6 +1435,8 @@ export const AppProvider = ({ children }) => {
         whatsappLogs,
         setWhatsappLogs,
         blacklistedUids,
+        osisReports,
+        visitBookings,
         reminderThresholdMinutes
       };
       const newVer = Date.now();
@@ -1434,6 +1473,8 @@ export const AppProvider = ({ children }) => {
     rfidTransactions,
     whatsappLogs,
     blacklistedUids,
+    osisReports,
+    visitBookings,
     reminderThresholdMinutes
   ]);
 
@@ -4522,6 +4563,30 @@ export const AppProvider = ({ children }) => {
 
     setOsisReports(prev => [newReport, ...prev]);
 
+    // Siarkan ke seluruh tab & perangkat via Supabase Realtime & BroadcastChannel
+    try {
+      const waChannel = supabase.channel('whatsapp-room');
+      waChannel.send({
+        type: 'broadcast',
+        event: 'osis.report_created',
+        payload: newReport
+      });
+    } catch (e) {
+      console.warn('Realtime broadcast osis.report_created error:', e);
+    }
+
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const bc = new BroadcastChannel('smart_riayah_sync_channel');
+        bc.postMessage({
+          type: 'STATE_UPDATE',
+          version: Date.now(),
+          payload: { osisReports: [newReport, ...osisReports] }
+        });
+        bc.close();
+      }
+    } catch (e) {}
+
     // Lonceng Notifikasi ke Admin Ri'ayah
     setNotifications(prev => [
       {
@@ -4561,6 +4626,32 @@ export const AppProvider = ({ children }) => {
       }
       return rep;
     }));
+
+    // Siarkan status verifikasi ke seluruh tab & perangkat
+    if (targetReport) {
+      try {
+        const waChannel = supabase.channel('whatsapp-room');
+        waChannel.send({
+          type: 'broadcast',
+          event: 'osis.report_verified',
+          payload: targetReport
+        });
+      } catch (e) {}
+
+      try {
+        if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+          const bc = new BroadcastChannel('smart_riayah_sync_channel');
+          bc.postMessage({
+            type: 'STATE_UPDATE',
+            version: Date.now(),
+            payload: {
+              osisReports: osisReports.map(r => r.id === targetReport.id ? targetReport : r)
+            }
+          });
+          bc.close();
+        }
+      } catch (e) {}
+    }
 
     if (action === 'APPROVE' && targetReport) {
       // 1. Masukkan ke catatan disiplin resmi pondok

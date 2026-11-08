@@ -16,7 +16,8 @@ import {
   Filter,
   CheckCircle,
   XCircle,
-  HeartHandshake
+  HeartHandshake,
+  Loader2
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
 import { getRealtimePondokClock } from '../../utils/pondokTimeUtils';
@@ -90,16 +91,19 @@ export default function OsisDashboard() {
     e.preventDefault();
 
     if (!selectedSantri) {
-      alert('Pilih santri atau santriwati yang akan dilaporkan terlebih dahulu dari daftar di sebelah kiri!');
+      sound.playBeep?.();
+      alert('⚠️ Harap pilih santri atau santriwati yang akan dilaporkan terlebih dahulu dari daftar di sebelah kiri!');
       return;
     }
 
     if (!jenis.trim()) {
+      sound.playBeep?.();
       alert('Harap isi Perihal / Jenis Pelanggaran atau Prestasi!');
       return;
     }
 
     if (!keterangan.trim()) {
+      sound.playBeep?.();
       alert('Harap isi Deskripsi / Kronologi Kejadian!');
       return;
     }
@@ -121,20 +125,23 @@ export default function OsisDashboard() {
       tazir: tazir.trim()
     };
 
-    const newReport = submitOsisReport(reportPayload);
+    // Instant optimistic response dengan transisi halus 200ms
+    setTimeout(() => {
+      const newReport = submitOsisReport(reportPayload);
 
-    setIsSubmitting(false);
-    setSuccessAlert(`✅ Laporan untuk ananda ${reportPayload.santriNama} berhasil dikirim ke Admin Ri'ayah dengan ID [${newReport.id}].`);
-    sound.playSuccess?.();
+      setIsSubmitting(false);
+      setSuccessAlert(`✅ Laporan untuk ananda ${reportPayload.santriNama} berhasil dikirim ke Admin Ri'ayah dengan ID [${newReport.id}].`);
+      sound.playSuccess?.();
 
-    // Reset Form
-    setJenis('');
-    setKeterangan('');
-    setTazir('');
-    setPoin(-10);
-    setKategori('PELANGGARAN');
+      // Reset Form
+      setJenis('');
+      setKeterangan('');
+      setTazir('');
+      setPoin(-10);
+      setKategori('PELANGGARAN');
 
-    setTimeout(() => setSuccessAlert(null), 7000);
+      setTimeout(() => setSuccessAlert(null), 7000);
+    }, 200);
   };
 
   // Filtered History
@@ -536,19 +543,34 @@ export default function OsisDashboard() {
               />
             </div>
 
+            {/* Submit Action Button */}
             <button
               type="submit"
-              disabled={isSubmitting || !selectedSantri}
-              className={`w-full py-3 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition shadow-md ${
+              disabled={isSubmitting}
+              className={`w-full py-3.5 px-4 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all duration-200 shadow-md ${
                 !selectedSantri
-                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-2 border-dashed border-amber-300 shadow-none cursor-pointer'
                   : isSubmitting
-                  ? 'bg-emerald-700 text-white cursor-wait opacity-80'
-                  : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-emerald-200'
+                  ? 'bg-teal-700 text-white cursor-wait opacity-90'
+                  : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-emerald-200 active:scale-[0.99] cursor-pointer'
               }`}
             >
-              <Send className="w-4 h-4" />
-              <span>{isSubmitting ? 'Mengirim Laporan...' : '📤 Kirim Laporan ke Admin Ri\'ayah'}</span>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  <span>⚡ Mengirim Laporan ke Admin Ri'ayah...</span>
+                </>
+              ) : !selectedSantri ? (
+                <>
+                  <AlertTriangle className="w-4 h-4 text-amber-600 animate-pulse" />
+                  <span>👈 1. Pilih Santri / Santriwati di Kolom Kiri Terlebih Dahulu</span>
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4 text-white" />
+                  <span>🚀 2. Kirim Laporan Kedisiplinan [{selectedSantri.nama || selectedSantri.nama_lengkap}] ke Admin Ri'ayah</span>
+                </>
+              )}
             </button>
           </form>
         </div>
