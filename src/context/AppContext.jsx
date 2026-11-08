@@ -332,6 +332,33 @@ export const AppProvider = ({ children }) => {
     return saved ? JSON.parse(saved) : INITIAL_WHATSAPP_LOGS;
   });
 
+  // ─── 14. MANAJEMEN KUNJUNGAN, TITIPAN BARANG & BOOKING WHATSAPP (QR GATE PASS) ───
+  const [visitBookings, setVisitBookings] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sr_visit_bookings');
+      if (saved) return JSON.parse(saved);
+      return INITIAL_VISIT_BOOKINGS;
+    } catch {
+      return INITIAL_VISIT_BOOKINGS;
+    }
+  });
+
+  // ─── PENGURUS OSIS: SISTEM PELAPORAN KELAKUAN SANTRI/WATI SE-PONDOK ───
+  const [osisReports, setOsisReports] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sr_osis_reports');
+      return saved ? JSON.parse(saved) : INITIAL_OSIS_REPORTS;
+    } catch {
+      return INITIAL_OSIS_REPORTS;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sr_osis_reports', JSON.stringify(osisReports));
+    } catch (e) {}
+  }, [osisReports]);
+
   // ─── RIWAYAT CHAT INBOX WHATSAPP & AUTO-DELETE RETENSI 24 JAM (03.00 WITA) ───
   const [chatLogs, setChatLogs] = useState(() => {
     try {
@@ -3450,16 +3477,6 @@ export const AppProvider = ({ children }) => {
   };
 
   // ─── 14. MANAJEMEN KUNJUNGAN, TITIPAN BARANG & BOOKING WHATSAPP (QR GATE PASS) ───
-  const [visitBookings, setVisitBookings] = useState(() => {
-    try {
-      const saved = localStorage.getItem('sr_visit_bookings');
-      if (saved) return JSON.parse(saved);
-      return INITIAL_VISIT_BOOKINGS;
-    } catch {
-      return INITIAL_VISIT_BOOKINGS;
-    }
-  });
-
   const [visitSettings, setVisitSettings] = useState(() => {
     try {
       const saved = localStorage.getItem('sr_visit_settings');
@@ -4524,21 +4541,6 @@ export const AppProvider = ({ children }) => {
   };
 
   // ─── PENGURUS OSIS: SISTEM PELAPORAN KELAKUAN SANTRI/WATI SE-PONDOK ───
-  const [osisReports, setOsisReports] = useState(() => {
-    try {
-      const saved = localStorage.getItem('sr_osis_reports');
-      return saved ? JSON.parse(saved) : INITIAL_OSIS_REPORTS;
-    } catch {
-      return INITIAL_OSIS_REPORTS;
-    }
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('sr_osis_reports', JSON.stringify(osisReports));
-    } catch (e) {}
-  }, [osisReports]);
-
   const submitOsisReport = (reportData) => {
     const clock = getRealtimePondokClock();
     const newReport = {
