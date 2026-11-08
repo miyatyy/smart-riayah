@@ -104,7 +104,20 @@ export default function AdminRiayahDashboard() {
 
   const [isBulkImportSantriModalOpen, setIsBulkImportSantriModalOpen] = useState(false);
 
-  const activeTab = (activeRoleTab === 'rooms' || activeRoleTab === 'onboarding' || activeRoleTab === 'lost_card' || activeRoleTab === 'blacklist' || activeRoleTab === 'rfid_cards' || activeRoleTab === 'rfid_pairing' || activeRoleTab === 'express_kiosk' || activeRoleTab === 'visit_bookings' || activeRoleTab === 'gate_logs' || activeRoleTab === 'whatsapp_manager' || activeRoleTab === 'ai_analytics') ? activeRoleTab : 'rooms';
+  const activeTab = (
+    activeRoleTab === 'rooms' || 
+    activeRoleTab === 'onboarding' || 
+    activeRoleTab === 'lost_card' || 
+    activeRoleTab === 'blacklist' || 
+    activeRoleTab === 'rfid_cards' || 
+    activeRoleTab === 'rfid_pairing' || 
+    activeRoleTab === 'express_kiosk' || 
+    activeRoleTab === 'visit_bookings' || 
+    activeRoleTab === 'osis_verification' || 
+    activeRoleTab === 'gate_logs' || 
+    activeRoleTab === 'whatsapp_manager' || 
+    activeRoleTab === 'ai_analytics'
+  ) ? activeRoleTab : 'rooms';
   const setActiveTab = setActiveRoleTab;
   const [selectedGenderFilter, setSelectedGenderFilter] = useState('ALL'); // 'ALL' | 'PUTRA' | 'PUTRI'
   
@@ -672,21 +685,6 @@ export default function AdminRiayahDashboard() {
             <div className="text-left">
               <span className="text-[10px] block leading-tight font-bold">WA GATEWAY</span>
               <span className="font-bold text-[11px]">{isFonnteEnabled ? 'GATEWAY LIVE' : 'SIMULASI'}</span>
-            </div>
-          </button>
-
-          <button
-            onClick={() => {
-              sound.playSuccess();
-              setRole('osis');
-            }}
-            className="px-3.5 py-2 rounded-xl border border-teal-300 bg-teal-50 hover:bg-teal-100 text-teal-900 text-xs font-mono flex items-center gap-2 transition shadow-xs cursor-pointer"
-            title="Buka Portal Posko Pengurus OSIS (Input Kelakuan & Disiplin Santri/Wati)"
-          >
-            <Shield className="w-4 h-4 text-teal-600" />
-            <div className="text-left">
-              <span className="text-[10px] block leading-tight font-bold text-teal-700">PORTAL OSIS</span>
-              <span className="font-bold text-[11px] text-teal-900">INPUT KELAKUAN</span>
             </div>
           </button>
         </div>
@@ -2336,26 +2334,18 @@ function OsisVerificationManager() {
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
-            <button
-              onClick={() => {
-                sound.playSuccess();
-                setRole('osis');
-              }}
-              className="px-4 py-2.5 bg-teal-400 hover:bg-teal-300 active:scale-95 text-slate-950 font-black rounded-2xl text-xs transition shadow-lg flex items-center gap-2 shrink-0 border border-teal-200 cursor-pointer"
-              title="Buka Portal Posko Pengurus OSIS untuk input kelakuan santri baru"
-            >
-              <ExternalLink className="w-4 h-4" />
-              <span>Buka Posko OSIS (Input)</span>
-            </button>
-
-            <div className="bg-white/10 px-4 py-2 rounded-2xl border border-white/15 text-center">
+          <div className="flex items-center gap-2.5">
+            <div className="bg-white/10 px-4 py-2.5 rounded-2xl border border-white/15 text-center">
               <span className="text-[10px] text-teal-200 block uppercase font-bold tracking-wider">Menunggu ACC</span>
               <span className="text-xl font-black font-mono text-amber-400">{pendingCount}</span>
             </div>
-            <div className="bg-white/10 px-4 py-2 rounded-2xl border border-white/15 text-center">
+            <div className="bg-white/10 px-4 py-2.5 rounded-2xl border border-white/15 text-center">
               <span className="text-[10px] text-teal-200 block uppercase font-bold tracking-wider">Telah Disetujui</span>
               <span className="text-xl font-black font-mono text-emerald-400">{approvedCount}</span>
+            </div>
+            <div className="bg-white/10 px-4 py-2.5 rounded-2xl border border-white/15 text-center">
+              <span className="text-[10px] text-rose-200 block uppercase font-bold tracking-wider">Ditolak</span>
+              <span className="text-xl font-black font-mono text-rose-400">{rejectedCount}</span>
             </div>
           </div>
         </div>

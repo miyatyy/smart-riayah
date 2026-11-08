@@ -553,71 +553,8 @@ export default function Sidebar({ onOpenFlutterModal }) {
             )
           )}
 
-          {/* Posko Pengurus OSIS Button in Sidebar (Khusus Admin Ri'ayah & Super Admin) */}
-          {(role === 'admin_riayah' || role === 'superadmin') && (
-            !isCollapsed ? (
-              <button
-                onClick={() => {
-                  sound.playSuccess();
-                  setRole('osis');
-                  if (window.innerWidth < 1024) setIsMobileSidebarOpen(false);
-                }}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition group ${
-                  isLight
-                    ? 'bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 shadow-sm'
-                    : 'bg-teal-950/60 hover:bg-teal-900/70 text-teal-300 border border-teal-800/60 shadow-sm'
-                }`}
-                title="Buka Posko Pengurus OSIS (Input Kelakuan Santri/Wati)"
-              >
-                <div className="flex items-center gap-2">
-                  <Shield className="w-3.5 h-3.5 text-teal-400 group-hover:scale-110 transition" />
-                  <span>Posko Pengurus OSIS</span>
-                </div>
-                <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold ${
-                  isLight ? 'bg-teal-200/70 text-teal-800' : 'bg-teal-500/20 text-teal-300'
-                }`}>
-                  Baru
-                </span>
-              </button>
-            ) : (
-              <div className="flex justify-center">
-                <button
-                  onClick={() => {
-                    sound.playSuccess();
-                    setRole('osis');
-                  }}
-                  className={`p-2 rounded-xl transition relative ${
-                    isLight ? 'bg-teal-50 hover:bg-teal-100 text-teal-700' : 'bg-teal-950/60 hover:bg-teal-900/70 text-teal-400'
-                  }`}
-                  title="Buka Posko Pengurus OSIS"
-                >
-                  <Shield className="w-4 h-4" />
-                </button>
-              </div>
-            )
-          )}
-
-          {/* Quick Back to Admin Ri'ayah if currently in OSIS role */}
-          {role === 'osis' && !isCollapsed && (
-            <button
-              onClick={() => {
-                sound.playSuccess();
-                setRole('admin_riayah');
-                if (window.innerWidth < 1024) setIsMobileSidebarOpen(false);
-              }}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-700 shadow-sm cursor-pointer"
-              title="Kembali ke Dashboard Admin Ri'ayah"
-            >
-              <div className="flex items-center gap-2">
-                <Building2 className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Kembali ke Admin Ri'ayah</span>
-              </div>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          {/* Dev Role Switcher */}
-          {(currentUser?.role === 'superadmin' || currentUser?.role === 'admin_riayah' || !currentUser) && !isCollapsed && (
+          {/* Dev Role Switcher: HANYA untuk Super Admin (Developer Privilege) */}
+          {currentUser?.role === 'superadmin' && !isCollapsed && (
             <div>
               <button
                 onClick={() => setShowDevSwitcher(!showDevSwitcher)}
@@ -629,7 +566,7 @@ export default function Sidebar({ onOpenFlutterModal }) {
               >
                 <div className="flex items-center gap-2">
                   <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Ganti / Preview Role (8 Role)</span>
+                  <span>Preview Role (Super Admin)</span>
                 </div>
                 <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showDevSwitcher ? 'rotate-180' : ''}`} />
               </button>

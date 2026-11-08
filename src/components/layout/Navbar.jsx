@@ -238,90 +238,73 @@ export default function Navbar({ onOpenFlutterModal }) {
             <Menu className="w-5 h-5" />
           </button>
 
-          {/* Role pill — interactive quick role switcher dropdown */}
-          <div className="relative" ref={roleSwitcherRef}>
-            <button
-              onClick={() => setShowRoleSwitcher(prev => !prev)}
-              className={`flex items-center gap-1.5 px-2 py-1 sm:px-2.5 rounded-xl ring-1 ${meta.bg} ${meta.ring} hover:brightness-125 transition cursor-pointer select-none`}
-              title="Klik untuk memilih dan berganti ke 8 Role Sistem (termasuk Pengurus OSIS)"
-            >
-              <RoleIcon className={`w-3.5 h-3.5 ${meta.color} shrink-0`} />
-              <span className={`text-[11px] sm:text-xs font-bold ${meta.color}`}>
-                {meta.label}
-              </span>
-              <ChevronDown className={`w-3 h-3 ${meta.color} opacity-70 transition-transform ${showRoleSwitcher ? 'rotate-180' : ''}`} />
-            </button>
+          {/* Role pill — Statis & Terisolasi (RBAC Wall). Hanya Super Admin yang memiliki Dev Quick Switcher */}
+          {currentUser?.role === 'superadmin' ? (
+            <div className="relative" ref={roleSwitcherRef}>
+              <button
+                onClick={() => setShowRoleSwitcher(prev => !prev)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl ring-1 ${meta.bg} ${meta.ring} hover:brightness-125 transition cursor-pointer select-none`}
+                title="Super Admin: Klik untuk preview ke 8 Role Sistem"
+              >
+                <RoleIcon className={`w-3.5 h-3.5 ${meta.color} shrink-0`} />
+                <span className={`text-[11px] sm:text-xs font-bold ${meta.color}`}>
+                  {meta.label}
+                </span>
+                <ChevronDown className={`w-3 h-3 ${meta.color} opacity-70 transition-transform ${showRoleSwitcher ? 'rotate-180' : ''}`} />
+              </button>
 
-            {/* Dropdown Menu listing all 8 Roles */}
-            {showRoleSwitcher && (
-              <div className="absolute left-0 top-full mt-2 w-72 bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl p-2 z-50 animate-fade-in backdrop-blur-xl">
-                <div className="px-3 py-2 border-b border-slate-800 flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-slate-300">Pilih Role Akses Sistem (8 Role)</span>
-                  <span className="text-[9px] bg-emerald-950 text-emerald-300 px-1.5 py-0.5 rounded font-mono font-bold border border-emerald-700">Quick Switch</span>
-                </div>
-                <div className="mt-1 space-y-1 max-h-80 overflow-y-auto dark-scroll">
-                  {ALL_ROLES_NAV.map(r => (
-                    <button
-                      key={r.id}
-                      onClick={() => {
-                        setRole(r.id);
-                        sound.playSuccess();
-                        setShowRoleSwitcher(false);
-                      }}
-                      className={`w-full flex items-center justify-between p-2 rounded-xl text-left transition ${
-                        role === r.id
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold'
-                          : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="text-base shrink-0">{r.emoji}</span>
-                        <div className="truncate">
-                          <div className="text-xs font-bold flex items-center gap-1.5">
-                            <span className="truncate">{r.name}</span>
-                            {r.isNew && (
-                              <span className="text-[9px] bg-teal-500/30 text-teal-300 px-1.5 py-0.2 rounded-full font-bold shrink-0">Baru</span>
-                            )}
+              {/* Dropdown Menu listing all 8 Roles (Super Admin Privilege Only) */}
+              {showRoleSwitcher && (
+                <div className="absolute left-0 top-full mt-2 w-72 bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl p-2 z-50 animate-fade-in backdrop-blur-xl">
+                  <div className="px-3 py-2 border-b border-slate-800 flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-300">Pilih Role Akses Sistem (8 Role)</span>
+                    <span className="text-[9px] bg-cyan-950 text-cyan-300 px-1.5 py-0.5 rounded font-mono font-bold border border-cyan-700">Root Dev</span>
+                  </div>
+                  <div className="mt-1 space-y-1 max-h-80 overflow-y-auto dark-scroll">
+                    {ALL_ROLES_NAV.map(r => (
+                      <button
+                        key={r.id}
+                        onClick={() => {
+                          setRole(r.id);
+                          sound.playSuccess();
+                          setShowRoleSwitcher(false);
+                        }}
+                        className={`w-full flex items-center justify-between p-2 rounded-xl text-left transition ${
+                          role === r.id
+                            ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold'
+                            : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="text-base shrink-0">{r.emoji}</span>
+                          <div className="truncate">
+                            <div className="text-xs font-bold flex items-center gap-1.5">
+                              <span className="truncate">{r.name}</span>
+                              {r.isNew && (
+                                <span className="text-[9px] bg-teal-500/30 text-teal-300 px-1.5 py-0.2 rounded-full font-bold shrink-0">Baru</span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-400 truncate">{r.desc}</div>
                           </div>
-                          <div className="text-[10px] text-slate-400 truncate">{r.desc}</div>
                         </div>
-                      </div>
-                      {role === r.id && (
-                        <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0 ml-1" />
-                      )}
-                    </button>
-                  ))}
+                        {role === r.id && (
+                          <Check className="w-3.5 h-3.5 text-cyan-400 shrink-0 ml-1" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-
-          {/* Quick Toggle Button: Langsung Lompat ke OSIS / Kembali ke Admin */}
-          {role !== 'osis' ? (
-            <button
-              onClick={() => {
-                sound.playSuccess();
-                setRole('osis');
-              }}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/40 text-teal-300 text-xs font-bold transition shadow-xs cursor-pointer"
-              title="Buka Portal Posko Pengurus OSIS (Input Kelakuan Santri/Wati Se-Pondok)"
-            >
-              <Shield className="w-3.5 h-3.5 text-teal-400" />
-              <span>Posko OSIS</span>
-              <span className="text-[9px] bg-teal-400/20 text-teal-200 px-1 rounded font-mono font-bold">Input</span>
-            </button>
+              )}
+            </div>
           ) : (
-            <button
-              onClick={() => {
-                sound.playSuccess();
-                setRole('admin_riayah');
-              }}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold transition shadow-xs cursor-pointer"
-              title="Kembali ke Dashboard Admin Ri'ayah"
-            >
-              <Building2 className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Ke Admin Ri'ayah</span>
-            </button>
+            <Tip label={`Mode aktif: ${meta.label}`} side="bottom">
+              <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl ring-1 ${meta.bg} ${meta.ring} cursor-default select-none`}>
+                <RoleIcon className={`w-3.5 h-3.5 ${meta.color} shrink-0`} />
+                <span className={`text-[11px] sm:text-xs font-bold ${meta.color}`}>
+                  {meta.label}
+                </span>
+              </div>
+            </Tip>
           )}
 
           {/* Santri headcount — mini stat, desktop only */}
