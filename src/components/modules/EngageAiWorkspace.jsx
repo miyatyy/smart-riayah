@@ -708,6 +708,9 @@ function TabDashboard({ onSwitchTab, onCopy, copiedText, deviceData, onRefreshSt
               <p className="text-xs font-mono font-extrabold text-slate-700 mt-0.5">
                 {deviceData?.device || '6285960213654'}
               </p>
+              <span className="text-[10px] text-slate-500 block font-normal">
+                *Nomor gateway pengirim server. Semua izin &amp; laporan dikirim langsung ke WhatsApp wali santri terkait.
+              </span>
             </div>
           </div>
 

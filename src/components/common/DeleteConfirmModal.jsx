@@ -19,9 +19,18 @@ export default function DeleteConfirmModal({
   itemId = "",
   itemType = "Data",
   warningNote = "Tindakan ini tidak dapat dibatalkan. Data akan dihapus permanen dari basis data Supabase & Firebase Firestore.",
-  isLoading = false
+  isLoading = false,
+  withReasonSelector = false
 }) {
+  const [selectedReason, setSelectedReason] = useState('LULUS');
+
   if (!isOpen) return null;
+
+  const handleConfirmClick = () => {
+    if (typeof onConfirm === 'function') {
+      onConfirm(withReasonSelector ? selectedReason : undefined);
+    }
+  };
 
   return (
     <div 
@@ -93,6 +102,52 @@ export default function DeleteConfirmModal({
             </div>
           )}
 
+          {/* Reason Selector for Santri/Data */}
+          {withReasonSelector && (
+            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/90 space-y-2.5">
+              <span className="text-[11px] font-bold text-slate-700 block uppercase tracking-wider">
+                Pilih Alasan Penghapusan / Status Akhir Santri:
+              </span>
+              <div className="space-y-2 text-xs">
+                <label className={`flex items-center gap-2.5 p-2 rounded-xl border transition cursor-pointer ${selectedReason === 'LULUS' ? 'bg-emerald-50 border-emerald-400 text-emerald-950 font-bold' : 'bg-white border-slate-200 text-slate-700'}`}>
+                  <input
+                    type="radio"
+                    name="deleteReason"
+                    value="LULUS"
+                    checked={selectedReason === 'LULUS'}
+                    onChange={(e) => setSelectedReason(e.target.value)}
+                    className="text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <span>🎓 Santri Telah Lulus (Arsipkan sebagai Alumni)</span>
+                </label>
+
+                <label className={`flex items-center gap-2.5 p-2 rounded-xl border transition cursor-pointer ${selectedReason === 'PINDAH' ? 'bg-blue-50 border-blue-400 text-blue-950 font-bold' : 'bg-white border-slate-200 text-slate-700'}`}>
+                  <input
+                    type="radio"
+                    name="deleteReason"
+                    value="PINDAH"
+                    checked={selectedReason === 'PINDAH'}
+                    onChange={(e) => setSelectedReason(e.target.value)}
+                    className="text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>🏫 Pindah Sekolah / Pindah Pondok Pesantren</span>
+                </label>
+
+                <label className={`flex items-center gap-2.5 p-2 rounded-xl border transition cursor-pointer ${selectedReason === 'KOREKSI' ? 'bg-rose-50 border-rose-400 text-rose-950 font-bold' : 'bg-white border-slate-200 text-slate-700'}`}>
+                  <input
+                    type="radio"
+                    name="deleteReason"
+                    value="KOREKSI"
+                    checked={selectedReason === 'KOREKSI'}
+                    onChange={(e) => setSelectedReason(e.target.value)}
+                    className="text-rose-600 focus:ring-rose-500"
+                  />
+                  <span>🗑️ Koreksi Input / Hapus Permanen dari Database</span>
+                </label>
+              </div>
+            </div>
+          )}
+
           {/* Warning Callout */}
           <div className="flex items-start gap-2.5 p-3.5 bg-amber-50 border border-amber-200/80 rounded-2xl text-xs text-amber-900">
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
@@ -115,7 +170,7 @@ export default function DeleteConfirmModal({
 
           <button
             type="button"
-            onClick={onConfirm}
+            onClick={handleConfirmClick}
             disabled={isLoading}
             className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-bold text-xs shadow-md shadow-rose-600/20 flex items-center gap-2 transition disabled:opacity-60"
           >

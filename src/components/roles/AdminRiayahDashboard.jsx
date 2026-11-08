@@ -65,6 +65,7 @@ export default function AdminRiayahDashboard() {
     addBuilding, 
     santriList, 
     addNewSantri, 
+    deleteSantri,
     replaceLostCard, 
     blacklistedUids, 
     unblockCard, 
@@ -142,6 +143,31 @@ export default function AdminRiayahDashboard() {
   // State untuk modal konfirmasi hapus kamar
   const [deletingRoom, setDeletingRoom] = useState(null);
   const [isDeletingRoom, setIsDeletingRoom] = useState(false);
+
+  // State untuk modal konfirmasi hapus / lulus / pindah santri
+  const [deletingSantri, setDeletingSantri] = useState(null);
+  const [isDeletingSantri, setIsDeletingSantri] = useState(false);
+  const [viewingRoomOccupants, setViewingRoomOccupants] = useState(null);
+  const [searchOnboardingSantri, setSearchOnboardingSantri] = useState('');
+
+  const handleDeleteSantriConfirm = async (reason = 'LULUS') => {
+    if (!deletingSantri) return;
+    setIsDeletingSantri(true);
+    try {
+      const res = await deleteSantri(deletingSantri.id, deletingSantri.nama, true);
+      if (res?.success) {
+        const reasonLabel = reason === 'LULUS' ? 'Lulus / Alumni' : reason === 'PINDAH' ? 'Pindah Sekolah' : 'Hapus Permanen';
+        alert(`🗑️ Data santri "${deletingSantri.nama}" berhasil diproses (${reasonLabel}) dan dihapus permanen dari database Supabase.`);
+        setDeletingSantri(null);
+      } else {
+        alert(`❌ Gagal menghapus santri: ${res?.error?.message || 'Terjadi kesalahan basis data'}`);
+      }
+    } catch (err) {
+      alert(`❌ Terjadi kesalahan: ${err.message}`);
+    } finally {
+      setIsDeletingSantri(false);
+    }
+  };
 
   const handleDeleteRoomConfirm = async () => {
     if (!deletingRoom) return;
@@ -309,20 +335,17 @@ export default function AdminRiayahDashboard() {
     setIsSubmittingOnboarding(true);
 
     try {
-      console.log('📡 [Supabase] Mengirim payload pendaftaran santri baru ke tabel santri:', payload);
+      console.log('📡 [Supabase] Mengirim payload pendaftaran santri baru via insertSantriToSupabase:', payload);
 
-      const { data, error } = await supabase
-        .from('santri')
-        .insert([payload])
-        .select();
+      const insertRes = await insertSantriToSupabase(payload);
 
-      if (error) {
-        console.error('❌ [Supabase] Gagal menyimpan data santri ke tabel santri:', error);
-        alert(`❌ Gagal menyimpan santri ke database Supabase!\n\nDetail Error: ${error.message || JSON.stringify(error)}`);
+      if (!insertRes.success && insertRes.error) {
+        console.error('❌ [Supabase] Gagal menyimpan data santri ke tabel santri:', insertRes.error);
+        alert(`❌ Gagal menyimpan santri ke database Supabase!\n\nDetail Error: ${insertRes.error.message || JSON.stringify(insertRes.error)}`);
         return;
       }
 
-      console.log('✅ [Supabase] Berhasil menyimpan santri baru ke tabel santri:', data);
+      console.log('✅ [Supabase] Berhasil menyimpan santri baru ke tabel santri:', insertRes.data);
 
       // Sinkronkan ke context lokal (update state list santri, kamar terisi, confetti, notifikasi WA)
       addNewSantri({
@@ -861,6 +884,19 @@ export default function AdminRiayahDashboard() {
                     <span className="text-slate-800 font-bold block mb-0.5">Catatan Inspeksi:</span>
                     <p className="line-clamp-2 text-slate-500">{room.catatanInspeksi}</p>
                   </div>
+
+                  {/* Tombol Lihat & Kelola Penghuni Kamar */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const occupants = santriList.filter(s => s.kamar.toLowerCase().includes(room.nomorKamar.toLowerCase()) || room.nomorKamar.toLowerCase().includes(s.kamar.toLowerCase()));
+                      setViewingRoomOccupants({ room, occupants });
+                    }}
+                    className="w-full py-2 px-3 rounded-xl bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 text-xs font-bold transition flex items-center justify-center gap-1.5 border border-slate-200 hover:border-emerald-300"
+                  >
+                    <Users className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Daftar Penghuni ({occupied} Santri)</span>
+                  </button>
                 </div>
               );
             })}
@@ -1252,6 +1288,111 @@ export default function AdminRiayahDashboard() {
             </div>
 
           </form>
+
+          {/* Daftar Santri Terdaftar & Pengelolaan Kelulusan / Pindah */}
+          <div className="mt-8 pt-6 border-t border-slate-200 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  <Users className="w-4 h-4 text-emerald-600" />
+                  <span>Daftar Santri &amp; Santriwati Terdaftar ({santriList.length})</span>
+                </h4>
+                <p className="text-[11px] text-slate-500">
+                  Data tersimpan permanen di Supabase. Klik tombol hapus untuk memproses kelulusan alumni atau kepindahan santri.
+                </p>
+              </div>
+
+              <div className="relative w-full sm:w-64">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Cari nama, NIS, atau kamar..."
+                  value={searchOnboardingSantri}
+                  onChange={(e) => setSearchOnboardingSantri(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+              </div>
+            </div>
+
+            <div className="overflow-x-auto rounded-2xl border border-slate-200">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-wider font-mono">
+                  <tr>
+                    <th className="py-2.5 px-3">Santri</th>
+                    <th className="py-2.5 px-3">NIS &amp; Kelas</th>
+                    <th className="py-2.5 px-3">Kamar Asrama</th>
+                    <th className="py-2.5 px-3">Kartu RFID</th>
+                    <th className="py-2.5 px-3">Data Wali</th>
+                    <th className="py-2.5 px-3 text-center">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {santriList
+                    .filter(s => {
+                      if (!searchOnboardingSantri.trim()) return true;
+                      const q = searchOnboardingSantri.toLowerCase();
+                      return (
+                        s.nama?.toLowerCase().includes(q) ||
+                        String(s.nis || '').includes(q) ||
+                        s.kamar?.toLowerCase().includes(q) ||
+                        s.wali?.nama?.toLowerCase().includes(q) ||
+                        s.rfidUid?.toLowerCase().includes(q)
+                      );
+                    })
+                    .slice(0, 10)
+                    .map((s) => (
+                      <tr key={s.id} className="hover:bg-slate-50/70 transition">
+                        <td className="py-2.5 px-3">
+                          <div className="flex items-center gap-2">
+                            <img
+                              src={s.foto || (s.gender === 'P' ? '/images/avatar_santri_putri.jpg' : '/images/avatar_santri_putra.jpg')}
+                              alt={s.nama}
+                              className="w-7 h-7 rounded-full object-cover border border-slate-200 shrink-0"
+                            />
+                            <div>
+                              <span className="font-bold text-slate-900 block">{s.nama}</span>
+                              <span className="text-[10px] text-slate-400 font-mono">{s.gender === 'P' ? 'Santriwati (P)' : 'Santri (L)'}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span className="font-mono font-bold text-slate-700">{s.nis}</span>
+                          <span className="block text-[10px] text-slate-500">{s.kelas}</span>
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span className="text-slate-800 font-medium">{s.kamar || '-'}</span>
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span className="font-mono text-[10px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                            {s.rfidUid || 'Belum Ada'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span className="text-slate-800 font-medium block truncate max-w-[130px]">{s.wali?.nama || s.nama_wali || '-'}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">{s.wali?.telepon || s.no_wali || '-'}</span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => setDeletingSantri(s)}
+                            className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[10px] font-bold transition flex items-center gap-1 mx-auto"
+                            title="Hapus / Lulus / Pindah Santri"
+                          >
+                            <Trash2 className="w-3 h-3 text-rose-600" />
+                            <span>Hapus / Lulus</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+            {santriList.length > 10 && (
+              <p className="text-[10px] text-slate-400 text-center font-mono">
+                Menampilkan 10 dari total {santriList.length} santri. Gunakan pencarian untuk menemukan santri spesifik.
+              </p>
+            )}
+          </div>
 
           {/* Modal Bulk Import CSV Santri (3-in-1 Sync) */}
           <BulkCsvImportModal
@@ -1740,6 +1881,95 @@ export default function AdminRiayahDashboard() {
         itemType="Data Kamar Asrama"
         warningNote="Data kamar akan dihapus permanen dari Supabase & Firebase. Santri yang saat ini terdaftar di kamar ini tidak akan terhapus, namun status penempatan kamar mereka perlu disesuaikan ulang."
         isLoading={isDeletingRoom}
+      />
+
+      {/* MODAL LIHAT PENGHUNI KAMAR */}
+      {viewingRoomOccupants && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden my-auto max-h-[90vh] flex flex-col">
+            <div className="bg-emerald-50 border-b border-emerald-100 p-4 sm:p-5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    Penghuni {viewingRoomOccupants.room.nomorKamar} ({viewingRoomOccupants.room.namaGedung})
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Kapasitas: {viewingRoomOccupants.occupants.length} / {viewingRoomOccupants.room.kapasitas} Kasur Terisi
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingRoomOccupants(null)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-white transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-3 flex-1">
+              {viewingRoomOccupants.occupants.length === 0 ? (
+                <div className="text-center py-8 text-slate-400 text-xs">
+                  Belum ada santri yang ditempatkan di kamar ini.
+                </div>
+              ) : (
+                viewingRoomOccupants.occupants.map(s => (
+                  <div key={s.id} className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <img
+                        src={s.foto || (s.gender === 'P' ? '/images/avatar_santri_putri.jpg' : '/images/avatar_santri_putra.jpg')}
+                        alt={s.nama}
+                        className="w-10 h-10 rounded-full object-cover border border-slate-200 shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <div className="font-bold text-xs text-slate-900 truncate">{s.nama}</div>
+                        <div className="text-[10px] text-slate-500 font-mono">NIS: {s.nis} • Kelas: {s.kelas} • UID: [{s.rfidUid}]</div>
+                        <div className="text-[10px] text-slate-600">Wali: {s.wali?.nama || s.nama_wali || '-'} ({s.wali?.telepon || s.no_wali || '-'})</div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setDeletingSantri(s)}
+                      className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0"
+                      title="Hapus / Lulus / Pindah Santri"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Hapus / Lulus</span>
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setViewingRoomOccupants(null)}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-xl transition"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL KONFIRMASI HAPUS / LULUS / PINDAH SANTRI */}
+      <DeleteConfirmModal
+        isOpen={!!deletingSantri}
+        onClose={() => setDeletingSantri(null)}
+        onConfirm={handleDeleteSantriConfirm}
+        title="Hapus / Pindah / Luluskan Santri"
+        message="Apakah Anda yakin ingin memproses data santri ini? Data profil santri, kepemilikan kartu RFID, dan alokasi kasur asrama akan diperbarui di Supabase."
+        itemName={deletingSantri?.nama}
+        itemId={deletingSantri?.id}
+        itemType="Data Induk Santri"
+        warningNote="Data yang dihapus akan dibersihkan dari database Supabase secara permanen dan kuota kamar asrama akan otomatis berkurang 1 kasur."
+        isLoading={isDeletingSantri}
+        withReasonSelector={true}
       />
 
     </div>

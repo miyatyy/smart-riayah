@@ -170,9 +170,23 @@ export default function Navbar({ onOpenFlutterModal }) {
   const santriDiLuar = santriList.filter(s => s.statusAsrama === 'DI_LUAR' || s.statusAsrama === 'TERLAMBAT').length;
   const santriDiPondok = santriList.length - santriDiLuar;
 
-  const pendingVisits = Array.isArray(visitBookings) 
-    ? visitBookings.filter(b => b.status_kunjungan === 'Menunggu Approval') 
-    : [];
+  // Deduplikasi pending visits agar 1 booking session konsisten (Anti-Doubling)
+  const pendingVisitsMap = new Map();
+  (Array.isArray(visitBookings) ? visitBookings : [])
+    .filter(b => b.status_kunjungan === 'Menunggu Approval')
+    .forEach(b => {
+      const key = b.id || `${b.nama_santri}_${b.tanggal_kunjungan}`;
+      if (!pendingVisitsMap.has(key)) {
+        pendingVisitsMap.set(key, b);
+      }
+    });
+  const pendingVisits = Array.from(pendingVisitsMap.values());
+
+  // Tamu yang sedang berkunjung / baru saja check-in di gerbang pondok
+  const recentGateArrivals = (Array.isArray(visitBookings) ? visitBookings : [])
+    .filter(b => b.status_kunjungan === 'Sedang Berkunjung' || b.status_kunjungan?.includes('Sedang Berkunjung'))
+    .slice(0, 5);
+
   const pendingChats = Array.isArray(chatLogs) 
     ? chatLogs.filter(c => c.needs_manual_reply === true) 
     : [];
@@ -374,7 +388,52 @@ export default function Navbar({ onOpenFlutterModal }) {
                       )}
                     </div>
 
-                    {/* SEKSI B: CHAT AI INBOX PERLU BALASAN MANUAL */}
+                    {/* SEKSI B: KEDATANGAN TAMU / CHECK-IN GERBANG (LIVE REALTIME) */}
+                    <div>
+                      <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 mb-1.5">
+                        <span className="flex items-center gap-1.5 text-emerald-700">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          Kedatangan Tamu di Gerbang ({recentGateArrivals.length})
+                        </span>
+                        {recentGateArrivals.length > 0 && (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 font-bold">
+                            Tiba di Pondok
+                          </span>
+                        )}
+                      </div>
+                      {recentGateArrivals.length === 0 ? (
+                        <div className="p-2 rounded-xl bg-slate-50 text-[11px] text-slate-500 text-center font-medium">
+                          Belum ada wali santri yang check-in masuk gerbang hari ini.
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {recentGateArrivals.map(v => (
+                            <div key={v.id} className="p-2.5 rounded-xl bg-emerald-50/80 border border-emerald-200/80 text-xs flex items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="font-bold text-emerald-950 truncate">
+                                  {v.nama_penjenguk} (Wali {v.nama_santri})
+                                </div>
+                                <div className="text-[10px] text-emerald-800 truncate">
+                                  Santri: {v.kelas} • Masuk: <strong className="font-mono">{v.jam_masuk_aktual || v.jam_checkin_aktual || 'WITA'}</strong> • {v.berat_barang_kg || 0} Kg
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setShowNotifications(false);
+                                  setActiveRoleTab('visit_bookings');
+                                  sound.playBeep?.();
+                                }}
+                                className="shrink-0 px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] transition shadow-xs"
+                              >
+                                Detail
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* SEKSI C: CHAT AI INBOX PERLU BALASAN MANUAL */}
                     <div>
                       <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 mb-1.5">
                         <span className="flex items-center gap-1.5 text-rose-700">

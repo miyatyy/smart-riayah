@@ -50,12 +50,47 @@ export default function SecurityVisitGateModule() {
 
   // Live Clock Ticking Engine (1000ms)
   const [liveClock, setLiveClock] = useState(() => getRealtimePondokClock());
+  const [toastCheckIn, setToastCheckIn] = useState(null);
 
   useEffect(() => {
     const timer = setInterval(() => {
       setLiveClock(getRealtimePondokClock());
     }, 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // Real-Time BroadcastChannel listener for check-ins from mobile QR scan
+  useEffect(() => {
+    let bc;
+    try {
+      bc = new BroadcastChannel('smart_riayah_visit_channel');
+      bc.onmessage = (event) => {
+        if (event.data?.type === 'VISIT_CHECKIN' && event.data?.booking) {
+          const b = event.data.booking;
+          setToastCheckIn(b);
+          sound.playSuccess?.();
+          setTimeout(() => setToastCheckIn(null), 8000);
+
+          // Jika kode tiket yang sedang diverifikasi sama, update hasilnya
+          setVerificationResult(prev => {
+            if (prev?.booking && (prev.booking.id === b.id || prev.booking.barcode_token === b.barcode_token)) {
+              return {
+                ...prev,
+                booking: b,
+                message: `✅ STATUS: SEDANG BERKUNJUNG (CHECK-IN BERHASIL)`,
+                isOngoing: true,
+                isApproved: false
+              };
+            }
+            return prev;
+          });
+        }
+      };
+    } catch (e) {}
+
+    return () => {
+      if (bc) bc.close();
+    };
   }, []);
 
   function calculateEndTime(minutesToAdd = 60) {
@@ -205,13 +240,14 @@ export default function SecurityVisitGateModule() {
     ? (bookings.find(b => b.id === verificationResult.booking.id || (b.barcode_token && b.barcode_token === verificationResult.booking.barcode_token)) || verificationResult.booking)
     : null;
 
-  const isLiveOngoing = liveBooking?.status_kunjungan === 'Sedang Berkunjung';
-  const isLiveApproved = liveBooking?.status_kunjungan === 'Disetujui (Siap Datang)' || liveBooking?.status_kunjungan?.includes('Disetujui');
+  const isLiveOngoing = liveBooking?.status_kunjungan === 'Sedang Berkunjung' || liveBooking?.status_kunjungan?.includes('Sedang Berkunjung');
+  const isLiveApproved = (liveBooking?.status_kunjungan === 'Disetujui (Siap Datang)' || liveBooking?.status_kunjungan === 'Disetujui' || liveBooking?.status_kunjungan?.includes('Disetujui')) && !isLiveOngoing;
   const isLiveDone = liveBooking?.status_kunjungan === 'Selesai';
   const isLivePending = liveBooking?.status_kunjungan === 'Menunggu Approval';
 
   const filteredList = bookings.filter(b => {
-    if (activeTabSub === 'ACTIVE' && b.status_kunjungan !== 'Sedang Berkunjung') return false;
+    const bOngoing = b.status_kunjungan === 'Sedang Berkunjung' || b.status_kunjungan?.includes('Sedang Berkunjung');
+    if (activeTabSub === 'ACTIVE' && !bOngoing) return false;
     if (activeTabSub === 'PENDING' && b.status_kunjungan !== 'Menunggu Approval') return false;
     if (activeTabSub === 'DONE' && b.status_kunjungan !== 'Selesai') return false;
 
@@ -268,6 +304,24 @@ export default function SecurityVisitGateModule() {
           )}
         </div>
       </div>
+
+      {/* Banner Notifikasi Realtime Check-In Tamu dari Kamera HP / Scanner */}
+      {toastCheckIn && (
+        <div className="bg-emerald-600 text-white p-3.5 rounded-2xl shadow-lg border border-emerald-400 flex items-center justify-between gap-3 animate-fade-in">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle className="w-5 h-5 text-emerald-200 animate-pulse shrink-0" />
+            <span className="text-xs font-bold leading-relaxed">
+              🔔 TAMU CHECK-IN: Wali dari <strong>{toastCheckIn.nama_santri}</strong> ({toastCheckIn.nama_penjenguk}) telah scan barcode &amp; masuk gerbang pukul {toastCheckIn.jam_masuk_aktual || toastCheckIn.jam_checkin_aktual || 'WITA'}.
+            </span>
+          </div>
+          <button
+            onClick={() => setToastCheckIn(null)}
+            className="text-xs text-emerald-200 hover:text-white font-bold p-1 rounded-lg hover:bg-emerald-700"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* ─── BAGIAN A: PANEL VERIFIKASI KEDATANGAN (SCAN BARCODE WA / TAP RFID) ─── */}
       <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-emerald-950 text-white rounded-3xl p-6 shadow-xl border border-slate-700 space-y-5">
@@ -498,7 +552,16 @@ export default function SecurityVisitGateModule() {
                 {verificationResult.success && liveBooking && isLiveApproved && (
                   <button
                     onClick={() => {
-                      checkInVisitBooking(liveBooking.id, 'BARCODE');
+                      const updated = checkInVisitBooking(liveBooking.id || liveBooking.barcode_token, 'BARCODE');
+                      if (updated) {
+                        setVerificationResult(prev => ({
+                          ...prev,
+                          booking: updated,
+                          message: `✅ STATUS: SEDANG BERKUNJUNG (CHECK-IN BERHASIL)`,
+                          isOngoing: true,
+                          isApproved: false
+                        }));
+                      }
                     }}
                     className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-md transition flex items-center gap-1.5"
                   >
@@ -509,7 +572,16 @@ export default function SecurityVisitGateModule() {
                 {verificationResult.success && liveBooking && isLiveOngoing && (
                   <button
                     onClick={() => {
-                      checkOutVisitBooking(liveBooking.id);
+                      const updated = checkOutVisitBooking(liveBooking.id || liveBooking.barcode_token);
+                      if (updated) {
+                        setVerificationResult(prev => ({
+                          ...prev,
+                          booking: updated,
+                          message: `✓ STATUS: KUNJUNGAN TELAH SELESAI`,
+                          isDone: true,
+                          isOngoing: false
+                        }));
+                      }
                     }}
                     className="px-4 py-2 bg-blue-500 hover:bg-blue-400 text-white font-black text-xs rounded-xl shadow-md transition flex items-center gap-1.5"
                   >
@@ -815,8 +887,8 @@ export default function SecurityVisitGateModule() {
                 </tr>
               ) : (
                 filteredList.map((item, index) => {
-                  const isOngoing = item.status_kunjungan === 'Sedang Berkunjung';
-                  const isApproved = item.status_kunjungan === 'Disetujui (Siap Datang)' || item.status_kunjungan?.includes('Disetujui');
+                  const isOngoing = item.status_kunjungan === 'Sedang Berkunjung' || item.status_kunjungan?.includes('Sedang Berkunjung');
+                  const isApproved = (item.status_kunjungan === 'Disetujui (Siap Datang)' || item.status_kunjungan === 'Disetujui' || item.status_kunjungan?.includes('Disetujui')) && !isOngoing;
                   const isPending = item.status_kunjungan === 'Menunggu Approval';
                   const isDone = item.status_kunjungan === 'Selesai';
 
@@ -828,12 +900,12 @@ export default function SecurityVisitGateModule() {
                       <td className="py-3 px-3">
                         <div className="space-y-1">
                           <span className={`px-2 py-0.5 rounded text-[9px] font-bold inline-flex items-center gap-1 ${
-                            item.booking_source?.includes('WHATSAPP')
+                            item.booking_source?.includes('WHATSAPP') || item.barcode_token
                               ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                               : 'bg-blue-100 text-blue-800 border border-blue-200'
                           }`}>
                             <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                            {item.booking_source?.includes('WHATSAPP') ? 'Via WhatsApp' : 'Manual Satpam'}
+                            {item.booking_source?.includes('WHATSAPP') || item.barcode_token ? 'Via WhatsApp' : 'Manual Satpam'}
                           </span>
                           {(item.created_at || item.waktu_chat_masuk) && (() => {
                             const ts = new Date(item.created_at || item.waktu_chat_masuk).getTime();
@@ -920,7 +992,18 @@ export default function SecurityVisitGateModule() {
                         <div className="flex items-center justify-center gap-1 flex-wrap">
                           {isApproved && (
                             <button
-                              onClick={() => checkInVisitBooking(item.id, 'MANUAL_SATPAM')}
+                              onClick={() => {
+                                const updated = checkInVisitBooking(item.id, 'MANUAL_SATPAM');
+                                if (updated && verificationResult?.booking && (verificationResult.booking.id === item.id || verificationResult.booking.barcode_token === item.barcode_token)) {
+                                  setVerificationResult(prev => ({
+                                    ...prev,
+                                    booking: updated,
+                                    message: `✅ STATUS: SEDANG BERKUNJUNG (CHECK-IN BERHASIL)`,
+                                    isOngoing: true,
+                                    isApproved: false
+                                  }));
+                                }
+                              }}
                               className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold transition shadow-xs flex items-center gap-1"
                             >
                               <CheckCircle className="w-3 h-3" />
@@ -929,7 +1012,18 @@ export default function SecurityVisitGateModule() {
                           )}
                           {isOngoing && (
                             <button
-                              onClick={() => checkOutVisitBooking(item.id)}
+                              onClick={() => {
+                                const updated = checkOutVisitBooking(item.id);
+                                if (updated && verificationResult?.booking && (verificationResult.booking.id === item.id || verificationResult.booking.barcode_token === item.barcode_token)) {
+                                  setVerificationResult(prev => ({
+                                    ...prev,
+                                    booking: updated,
+                                    message: `✓ STATUS: KUNJUNGAN TELAH SELESAI`,
+                                    isDone: true,
+                                    isOngoing: false
+                                  }));
+                                }
+                              }}
                               className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-bold transition shadow-xs flex items-center gap-1"
                             >
                               <LogOut className="w-3 h-3" />

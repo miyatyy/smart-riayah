@@ -28,6 +28,130 @@ import { sound } from '../../utils/audio';
 import { getRealtimePondokClock, calculateVisitCountdown, checkBarcodeLifecycle } from '../../utils/pondokTimeUtils';
 import { getVisitGatePassUrls, downloadBarcodeImage } from '../../utils/barcodeUtils';
 
+// Subcomponent 1: Live Clock in Header (Isolated 1s interval)
+const LiveClockHeader = React.memo(function LiveClockHeader() {
+  const [clock, setClock] = useState(() => getRealtimePondokClock());
+  useEffect(() => {
+    const timer = setInterval(() => setClock(getRealtimePondokClock()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return (
+    <div className="hidden md:flex flex-col text-right font-mono text-[11px] text-slate-400">
+      <span>{clock.nama_hari}, {clock.tanggal_lengkap}</span>
+      <span className="text-emerald-400 font-bold">{clock.jam_menit_detik} WITA</span>
+    </div>
+  );
+});
+
+// Subcomponent 2: Live Countdown Timer (Isolated 1s interval)
+const LiveCountdownBadge = React.memo(function LiveCountdownBadge({ jamSelesai, tgl }) {
+  const [countdown, setCountdown] = useState(() => calculateVisitCountdown(jamSelesai, tgl));
+  useEffect(() => {
+    const timer = setInterval(() => setCountdown(calculateVisitCountdown(jamSelesai, tgl)), 1000);
+    return () => clearInterval(timer);
+  }, [jamSelesai, tgl]);
+  if (!countdown) return null;
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold font-mono ${
+      countdown.isOverstay ? 'bg-rose-500/20 text-rose-300 border border-rose-400/30 animate-pulse' : 'bg-blue-500/20 text-blue-300 border border-blue-400/30'
+    }`}>
+      <Clock className="w-3.5 h-3.5" />
+      <span>{countdown.isOverstay ? `⚠️ Overstay: ${countdown.remainingText}` : `⏳ Sisa Waktu Kunjungan: ${countdown.remainingText}`}</span>
+    </span>
+  );
+});
+
+// Subcomponent 3: Animated Checkmark Banner on Check-In
+const AnimatedCheckmarkBanner = React.memo(function AnimatedCheckmarkBanner({ booking }) {
+  if (!booking) return null;
+  return (
+    <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-900 border-2 border-emerald-500/80 rounded-3xl p-6 sm:p-7 shadow-2xl text-white space-y-5 animate-fade-in">
+      <style>{`
+        @keyframes checkmarkStroke {
+          0% { stroke-dashoffset: 48; }
+          100% { stroke-dashoffset: 0; }
+        }
+        @keyframes checkmarkScale {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.08); }
+        }
+        .anim-checkmark-stroke {
+          stroke-dasharray: 48;
+          stroke-dashoffset: 0;
+          animation: checkmarkStroke 0.6s cubic-bezier(0.65, 0, 0.45, 1) forwards;
+        }
+        .anim-checkmark-box {
+          animation: checkmarkScale 0.6s ease-in-out;
+        }
+      `}</style>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+        {/* Animated Green Checkmark SVG */}
+        <div className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 mx-auto sm:mx-0 flex items-center justify-center rounded-full bg-emerald-500/20 border-2 border-emerald-400 anim-checkmark-box shadow-lg shadow-emerald-500/20">
+          <svg className="w-10 h-10 sm:w-12 sm:h-12 text-emerald-400" viewBox="0 0 52 52">
+            <circle
+              className="stroke-current text-emerald-500/30"
+              strokeWidth="4"
+              fill="none"
+              cx="26"
+              cy="26"
+              r="23"
+            />
+            <path
+              className="stroke-current text-emerald-400 anim-checkmark-stroke"
+              strokeWidth="4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              fill="none"
+              d="M14.1 27.2l7.1 7.2 16.7-16.8"
+            />
+          </svg>
+        </div>
+
+        <div className="text-center sm:text-left flex-1 min-w-0">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider bg-emerald-500 text-slate-950 shadow-sm">
+            <CheckCircle className="w-3.5 h-3.5" />
+            CHECK-IN BERHASIL — WALI SANTRI TELAH TIBA DI PONDOK
+          </span>
+          <h2 className="text-xl sm:text-2xl font-black text-white mt-2 tracking-tight">
+            Selamat Datang di Pondok Pesantren Modern Darul Ulum
+          </h2>
+          <p className="text-xs text-emerald-200/90 mt-1 leading-relaxed">
+            Barcode gate pass telah berhasil di-scan dan status kehadiran wali santri telah tercatat secara sah di sistem pusat.
+          </p>
+        </div>
+      </div>
+
+      {/* Rincian Kedatangan Tamu & Santri */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-black/40 p-4 rounded-2xl border border-emerald-500/30 text-xs">
+        <div>
+          <span className="text-[10px] uppercase font-bold text-slate-400 block font-mono">Nama Santri</span>
+          <span className="font-extrabold text-white text-sm block truncate mt-0.5">{booking.nama_santri}</span>
+          <span className="text-[10px] text-emerald-300 font-mono">{booking.kelas}</span>
+        </div>
+        <div>
+          <span className="text-[10px] uppercase font-bold text-slate-400 block font-mono">Wali / Penjenguk</span>
+          <span className="font-extrabold text-white text-sm block truncate mt-0.5">{booking.nama_penjenguk}</span>
+          <span className="text-[10px] text-slate-300">{booking.status_penjenguk || 'Wali Santri'}</span>
+        </div>
+        <div>
+          <span className="text-[10px] uppercase font-bold text-slate-400 block font-mono">Waktu Check-In</span>
+          <span className="font-mono font-extrabold text-emerald-400 text-sm block mt-0.5">
+            {booking.jam_masuk_aktual || booking.jam_checkin_aktual || 'WITA'}
+          </span>
+          <span className="text-[10px] text-slate-300">{booking.hari_kunjungan}, {booking.tanggal_kunjungan}</span>
+        </div>
+        <div>
+          <span className="text-[10px] uppercase font-bold text-slate-400 block font-mono">Titipan Barang &amp; Berat</span>
+          <span className="font-extrabold text-cyan-300 text-sm block mt-0.5">
+            {booking.berat_barang_kg ? `${booking.berat_barang_kg} Kg` : '0 Kg'}
+          </span>
+          <span className="text-[10px] text-slate-300 truncate block">{booking.titipan_barang && booking.titipan_barang !== '-' ? booking.titipan_barang : 'Tidak ada titipan'}</span>
+        </div>
+      </div>
+    </div>
+  );
+});
+
 export default function GatePassVerificationPage({ token, onBackToDashboard }) {
   const {
     visitBookings,
@@ -56,19 +180,11 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
   const [resendingWa, setResendingWa] = useState(false);
   const [waSentSuccess, setWaSentSuccess] = useState(false);
 
-  // Live Clock Ticking Engine (1000ms)
-  const [liveClock, setLiveClock] = useState(() => getRealtimePondokClock());
   const canvasRef = useRef(null);
+  const hasVerifiedRef = useRef(false);
+  const hasGeneratedCanvasRef = useRef(false);
 
-  // Tick clock every second
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setLiveClock(getRealtimePondokClock());
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  // 1. Trigger Otomatis "Tiket Telah Di-Scan" saat halaman terbuka
+  // 1. Trigger Otomatis "Tiket Telah Di-Scan" tepat 1 kali saat halaman pertama dibuka
   useEffect(() => {
     if (!token) {
       setVerificationState({
@@ -82,6 +198,9 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
       });
       return;
     }
+
+    if (hasVerifiedRef.current) return;
+    hasVerifiedRef.current = true;
 
     const result = verifyAndScanTicket(token);
     if (result.booking) {
@@ -113,9 +232,9 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
     }
   }, [visitBookings, token]);
 
-  // 2. Generator Gambar Kupon Kunjungan Digital (HTML5 Canvas E-Coupon Image)
+  // 2. Generator Gambar Kupon Kunjungan Digital (Dieksekusi Tepat 1 Kali & Terkunci Permanen)
   useEffect(() => {
-    if (!booking) return;
+    if (!booking || hasGeneratedCanvasRef.current) return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -256,7 +375,7 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
 
     ctx.fillStyle = '#1E293B';
     ctx.font = 'bold 15px sans-serif';
-    ctx.fillText(`${booking.hari_kunjungan || 'Sabtu'}, ${booking.tanggal_kunjungan || liveClock.tanggal_ymd}`, 370, 294);
+    ctx.fillText(`${booking.hari_kunjungan || 'Sabtu'}, ${booking.tanggal_kunjungan || new Date().toISOString().slice(0, 10)}`, 370, 294);
 
     ctx.fillStyle = '#0284C7';
     ctx.font = 'bold 14px monospace';
@@ -352,7 +471,7 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
       ctx.fillText('Otomatis Verifikasi Check-In', 840, 456);
 
       // ─── STEMPEL AIR MERAH MILIK BARCODE HANGUS (EXPIRED WATERMARK) ───
-      const currentLifecycle = checkBarcodeLifecycle(booking, liveClock);
+      const currentLifecycle = checkBarcodeLifecycle(booking, getRealtimePondokClock());
       if (currentLifecycle.isExpired) {
         ctx.save();
         ctx.translate(840, 250);
@@ -381,6 +500,7 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
       try {
         const pngUrl = canvas.toDataURL('image/png');
         setCouponImageUrl(pngUrl);
+        hasGeneratedCanvasRef.current = true;
       } catch (e) {
         console.warn('Canvas export warning:', e);
       }
@@ -399,7 +519,7 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
       ctx.fillText('SMART RIAYAH', 840, 245);
       ctx.fillText('E-GATE PASS', 840, 265);
 
-      const currentLifecycle = checkBarcodeLifecycle(booking, liveClock);
+      const currentLifecycle = checkBarcodeLifecycle(booking, getRealtimePondokClock());
       if (currentLifecycle.isExpired) {
         ctx.save();
         ctx.translate(840, 250);
@@ -423,10 +543,11 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
       try {
         const pngUrl = canvas.toDataURL('image/png');
         setCouponImageUrl(pngUrl);
+        hasGeneratedCanvasRef.current = true;
       } catch (e) {}
       setIsGeneratingCanvas(false);
     };
-  }, [booking, token, liveClock.tanggal_ymd]);
+  }, [booking, token]);
 
   // Copy Link Handler
   const handleCopyLink = () => {
@@ -522,10 +643,7 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="hidden md:flex flex-col text-right font-mono text-[11px] text-slate-400">
-              <span>{liveClock.nama_hari}, {liveClock.tanggal_lengkap}</span>
-              <span className="text-emerald-400 font-bold">{liveClock.jam_menit_detik} WITA</span>
-            </div>
+            <LiveClockHeader />
             {onBackToDashboard && (
               <button
                 onClick={onBackToDashboard}
@@ -550,7 +668,7 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
             <h3 className="font-bold text-sm text-slate-300">Memverifikasi keaslian E-Barcode &amp; mencatat scan...</h3>
           </div>
         ) : (() => {
-          const currentLifecycle = checkBarcodeLifecycle(booking, liveClock);
+          const currentLifecycle = checkBarcodeLifecycle(booking, getRealtimePondokClock());
           const isExpired = currentLifecycle.isExpired || verificationState.isDone;
           const isBeforeHours = currentLifecycle.isBeforeHours;
           const isFuture = currentLifecycle.isFuture;
@@ -558,15 +676,17 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
           const isRejected = currentLifecycle.status === 'REJECTED' || verificationState.isRejected;
           const isActiveValid = currentLifecycle.isActive || currentLifecycle.isVisiting || verificationState.success;
 
+          if (isActiveValid && !isExpired && !isPending && !isRejected) {
+            return <AnimatedCheckmarkBanner booking={booking} />;
+          }
+
           return (
             <div className={`p-5 sm:p-6 rounded-3xl border shadow-xl transition animate-fade-in ${
               isExpired
                 ? 'bg-gradient-to-r from-rose-950/95 via-rose-900/90 to-rose-950/95 border-rose-500 text-rose-100 shadow-rose-950/50'
                 : (isBeforeHours || isFuture || isPending)
                 ? 'bg-gradient-to-r from-amber-950/90 via-amber-900/80 to-amber-950/90 border-amber-500/80 text-amber-100 shadow-amber-950/40'
-                : isRejected
-                ? 'bg-gradient-to-r from-rose-950/90 via-rose-900/80 to-rose-950/90 border-rose-500/80 text-rose-100'
-                : 'bg-gradient-to-r from-emerald-950/95 via-teal-900/90 to-emerald-950/95 border-emerald-500 text-emerald-100 shadow-emerald-950/50'
+                : 'bg-gradient-to-r from-rose-950/90 via-rose-900/80 to-rose-950/90 border-rose-500/80 text-rose-100'
             }`}>
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="flex items-start gap-4">
@@ -575,10 +695,8 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
                       <AlertTriangle className="w-8 h-8 text-rose-400" />
                     ) : (isBeforeHours || isFuture || isPending) ? (
                       <Clock className="w-8 h-8 text-amber-400 animate-pulse" />
-                    ) : isRejected ? (
-                      <XCircle className="w-8 h-8 text-rose-400" />
                     ) : (
-                      <CheckCircle className="w-8 h-8 text-emerald-400" />
+                      <XCircle className="w-8 h-8 text-rose-400" />
                     )}
                   </div>
 
@@ -587,12 +705,6 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
                       <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold tracking-wider uppercase bg-white/10 border border-white/20">
                         TOKEN: {token || 'N/A'}
                       </span>
-                      {isActiveValid && !isExpired && (
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-400 text-slate-950 flex items-center gap-1">
-                          <Sparkles className="w-3 h-3" />
-                          Live Verified
-                        </span>
-                      )}
                       {isExpired && (
                         <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-500 text-white flex items-center gap-1">
                           Blocked / Expired
@@ -609,9 +721,7 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
                         ? `⏳ TIKET TERJADWAL UNTUK ${booking?.hari_kunjungan?.toUpperCase() || 'MENDATANG'}, ${booking?.tanggal_kunjungan}`
                         : isPending
                         ? '⏳ MENUNGGU APPROVAL ADMIN RI\'AYAH (KUNJUNGAN HARI KERJA)'
-                        : isRejected
-                        ? '⛔ PERMOHONAN KUNJUNGAN DITOLAK ADMIN RI\'AYAH'
-                        : '✅ TIKET KUNJUNGAN SAH & TELAH DI-SCAN'}
+                        : '⛔ PERMOHONAN KUNJUNGAN DITOLAK ADMIN RI\'AYAH'}
                     </h2>
 
                     <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-2xl">
@@ -623,7 +733,7 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
                         ? `Tiket ini berlaku untuk hari ${booking?.hari_kunjungan}, ${booking?.tanggal_kunjungan} pukul ${booking?.jam_kunjungan} - ${booking?.jam_selesai || '16:30'} WITA. Belum dapat digunakan untuk check-in saat ini.`
                         : isPending
                         ? 'Permohonan kunjungan santri pada hari kerja (Senin-Kamis) harus disetujui terlebih dahulu oleh Pengasuhan/Admin Ri\'ayah sebelum gerbang dibuka.'
-                        : `Tercatat masuk di sistem Smart Riayah pada ${booking?.waktu_scan_aktual || `${liveClock.nama_hari}, ${liveClock.tanggal_lengkap} • ${liveClock.jam_menit_detik} WITA`}. Silakan tunjukkan kupon di bawah ini kepada petugas Pos Jaga Satpam.`}
+                        : 'Permohonan kunjungan belum dapat disetujui oleh Pengasuhan Pondok. Silakan hubungi admin pondok.'}
                     </p>
                   </div>
                 </div>
@@ -633,7 +743,7 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
                   <div className="text-right font-mono text-[11px] bg-black/30 p-2.5 rounded-xl border border-white/10 space-y-0.5">
                     <div className="text-slate-400 font-sans text-[10px]">Waktu Pemindaian:</div>
                     <div className="text-emerald-300 font-bold">
-                      {booking?.waktu_scan_aktual || `${liveClock.jam_menit_detik} WITA`}
+                      {booking?.waktu_scan_aktual || 'Tercatat di sistem'}
                     </div>
                   </div>
                 </div>
@@ -826,27 +936,17 @@ export default function GatePassVerificationPage({ token, onBackToDashboard }) {
                   </div>
                   <div className="flex justify-between border-t border-slate-800/80 pt-2">
                     <span className="text-slate-400">Waktu Scan Masuk:</span>
-                    <strong className="font-mono text-emerald-400">{booking.waktu_scan_aktual || `${booking.jam_masuk_aktual || liveClock.jam_menit_detik} WITA`}</strong>
+                    <strong className="font-mono text-emerald-400">{booking.waktu_scan_aktual || (booking.jam_masuk_aktual ? `${booking.jam_masuk_aktual} WITA` : 'WITA')}</strong>
                   </div>
 
                   {/* LIVE COUNTDOWN TIMER */}
                   <div className="mt-2 p-2.5 rounded-xl bg-slate-900 border border-slate-700/80">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] text-slate-400 font-medium flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+                        <Clock className="w-3.5 h-3.5 text-amber-400" />
                         Live Sisa Waktu Kunjungan:
                       </span>
-                      {countdown?.isOverstay ? (
-                        <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-rose-500/30 text-rose-300 border border-rose-500/50 animate-pulse">
-                          ⚠️ Overstay ({countdown.remainingText})
-                        </span>
-                      ) : countdown?.remainingText ? (
-                        <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                          ⏳ {countdown.remainingText}
-                        </span>
-                      ) : (
-                        <span className="text-[11px] text-slate-400 font-mono">Batas waktu tercapai</span>
-                      )}
+                      <LiveCountdownBadge jamSelesai={booking.jam_selesai} tgl={booking.tanggal_kunjungan} />
                     </div>
                   </div>
                 </div>

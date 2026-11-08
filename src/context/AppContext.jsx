@@ -3699,6 +3699,56 @@ export const AppProvider = ({ children }) => {
     const hari = bookingData.hari_kunjungan || getDayName(tgl);
     const isWeekend = ['Jumat', 'Sabtu', 'Minggu'].includes(hari);
 
+    const cleanPhone = (bookingData.no_wa_penjenguk || '').replace(/[^0-9]/g, '');
+    const cleanSantri = (bookingData.nama_santri || '').trim().toLowerCase();
+
+    // ─── ANTI-DOUBLING: Cek sesi booking aktif pada tanggal yang sama (15-Minute Consolidation Window) ───
+    const existingIndex = visitBookings.findIndex(b => {
+      if (b.status_kunjungan === 'Selesai' || b.status_kunjungan === 'Ditolak') return false;
+      const bDate = b.tanggal_kunjungan || todayStr;
+      if (bDate !== tgl) return false;
+      const bPhone = (b.no_wa_penjenguk || '').replace(/[^0-9]/g, '');
+      const bSantri = (b.nama_santri || '').trim().toLowerCase();
+      const matchPhone = cleanPhone && bPhone && (cleanPhone === bPhone || cleanPhone.endsWith(bPhone) || bPhone.endsWith(cleanPhone));
+      const matchSantri = cleanSantri && bSantri && (cleanSantri === bSantri || cleanSantri.includes(bSantri) || bSantri.includes(cleanSantri));
+      return matchPhone || matchSantri;
+    });
+
+    if (existingIndex !== -1) {
+      const existing = visitBookings[existingIndex];
+      const mergedWeight = parseFloat(bookingData.berat_barang_kg) > 0 ? parseFloat(bookingData.berat_barang_kg) : existing.berat_barang_kg;
+      const mergedItems = (bookingData.titipan_barang && bookingData.titipan_barang !== '-') 
+        ? (existing.titipan_barang && existing.titipan_barang !== '-' ? `${existing.titipan_barang}, ${bookingData.titipan_barang}` : bookingData.titipan_barang)
+        : existing.titipan_barang;
+
+      const mergedBooking = {
+        ...existing,
+        titipan_barang: mergedItems,
+        berat_barang_kg: mergedWeight,
+        jam_kunjungan: bookingData.jam_kunjungan || existing.jam_kunjungan,
+        jam_selesai: bookingData.jam_selesai || existing.jam_selesai,
+        nama_penjenguk: bookingData.nama_penjenguk || existing.nama_penjenguk,
+        status_penjenguk: bookingData.status_penjenguk || existing.status_penjenguk,
+        no_wa_penjenguk: bookingData.no_wa_penjenguk || existing.no_wa_penjenguk,
+        asal: bookingData.asal || existing.asal,
+        kelas: bookingData.kelas || existing.kelas,
+        updated_at: clock.timestamp_iso
+      };
+
+      setVisitBookings(prev => {
+        const next = [...prev];
+        next[existingIndex] = mergedBooking;
+        try {
+          localStorage.setItem('sr_visit_bookings', JSON.stringify(next));
+        } catch (e) {}
+        return next;
+      });
+
+      syncBookingStatusToSupabase(mergedBooking, 'VISIT_UPDATED');
+      sound.playSuccess?.();
+      return mergedBooking;
+    }
+
     const bookingId = bookingData.id || `VST-${clock.tanggal_ymd.replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
     const cleanSantriName = (bookingData.nama_santri || 'Santri').replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase();
 
@@ -3875,10 +3925,13 @@ export const AppProvider = ({ children }) => {
   const checkInVisitBooking = (bookingId, method = 'BARCODE') => {
     const clock = getRealtimePondokClock();
     let updatedBooking = null;
+    const cleanId = String(bookingId || '').trim().toUpperCase();
 
     setVisitBookings(prev => {
       const next = prev.map(b => {
-        if (b.id === bookingId) {
+        const matchId = String(b.id || '').toUpperCase() === cleanId;
+        const matchToken = b.barcode_token && b.barcode_token.toUpperCase() === cleanId;
+        if (matchId || matchToken) {
           updatedBooking = {
             ...b,
             status_kunjungan: 'Sedang Berkunjung',
@@ -3900,7 +3953,14 @@ export const AppProvider = ({ children }) => {
       // 1. Simpan ke database Supabase agar tersinkron lintas device/browser
       syncBookingStatusToSupabase(updatedBooking, 'VISIT_CHECKIN');
 
-      // 2. Kirim notifikasi WA ke nomor wali santri bahwa tamu telah check-in di pos gerbang
+      // 2. Broadcast ke seluruh tab / halaman secara realtime
+      try {
+        const bc = new BroadcastChannel('smart_riayah_visit_channel');
+        bc.postMessage({ type: 'VISIT_CHECKIN', booking: updatedBooking });
+        bc.close();
+      } catch (e) {}
+
+      // 3. Kirim notifikasi WA ke nomor wali santri bahwa tamu telah check-in di pos gerbang
       if (updatedBooking.no_wa_penjenguk) {
         sendWhatsAppNotification(
           `${updatedBooking.nama_penjenguk} (Wali ${updatedBooking.nama_santri})`,
@@ -4149,7 +4209,7 @@ export const AppProvider = ({ children }) => {
     // Tiket sah dan aktif untuk scan check-in: otomatis ubah status & catat waktu scan!
     let updatedBooking = {
       ...booking,
-      status_kunjungan: 'Sedang Berkunjung (Telah Di-Scan)',
+      status_kunjungan: 'Sedang Berkunjung',
       waktu_scan_aktual: formattedScanTime,
       jam_masuk_aktual: booking.jam_masuk_aktual || clock.jam_menit_detik,
       jam_checkin_aktual: booking.jam_checkin_aktual || clock.jam_menit,
@@ -4165,6 +4225,13 @@ export const AppProvider = ({ children }) => {
     });
 
     syncBookingStatusToSupabase(updatedBooking, 'VISIT_CHECKIN');
+
+    // Broadcast realtime event ke seluruh tab & pos satpam
+    try {
+      const bc = new BroadcastChannel('smart_riayah_visit_channel');
+      bc.postMessage({ type: 'VISIT_CHECKIN', booking: updatedBooking });
+      bc.close();
+    } catch (e) {}
 
     if (updatedBooking.no_wa_penjenguk) {
       sendWhatsAppNotification(
