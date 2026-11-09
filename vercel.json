@@ -4,6 +4,18 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/api/osis/reports",
+      "destination": "/api/mongo/osis-reports"
+    },
+    {
+      "source": "/api/ai/logs",
+      "destination": "/api/mongo/ai-logs"
+    },
+    {
+      "source": "/api/mongodb/health",
+      "destination": "/api/mongo/health"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/server/index.js"
     },

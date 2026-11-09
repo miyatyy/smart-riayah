@@ -1,4 +1,4 @@
-import { getMongoConnection } from '../../server/mongo.js';
+import { getMongoConnection } from '../mongo.js';
 import pg from 'pg';
 
 const { Pool } = pg;
@@ -29,7 +29,7 @@ function parseBody(req) {
   return req.body;
 }
 
-export default async function handler(req, res) {
+export default async function osisReportsHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -97,7 +97,6 @@ export default async function handler(req, res) {
         }
       }
 
-      // Merge deduplicated rows (Mongo prioritized if present, else PG)
       const map = new Map();
       pgRows.forEach(item => map.set(item.id, item));
       mongoRows.forEach(item => map.set(item.id, item));
@@ -174,9 +173,7 @@ export default async function handler(req, res) {
             ]
           );
           savedPg = true;
-        } catch {
-          // Table might not exist in PostgreSQL yet
-        }
+        } catch {}
       }
 
       return res.status(201).json({
@@ -303,7 +300,8 @@ export default async function handler(req, res) {
 
     return res.status(405).json({ success: false, message: 'Method not allowed' });
   } catch (err) {
-    console.error('❌ [/api/osis/reports Error]:', err);
+    console.error('❌ [osisReportsHandler Error]:', err);
     return res.status(500).json({ success: false, error: err.message });
   }
 }
+

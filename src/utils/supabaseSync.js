@@ -818,9 +818,9 @@ export async function fetchOsisReportsFromSupabase() {
     }
   } catch {}
 
-  // 3. Also pull from MongoDB / PG API (/api/osis/reports)
+  // 3. Also pull from MongoDB / PG API (/api/mongo/osis-reports)
   try {
-    const apiRes = await fetchJsonWithTimeout('/api/osis/reports?limit=200', {}, 3000);
+    const apiRes = await fetchJsonWithTimeout('/api/mongo/osis-reports?limit=200', {}, 3000);
     if (apiRes?.success && Array.isArray(apiRes.data)) {
       for (const row of apiRes.data) {
         if (row?.id) {
@@ -844,9 +844,9 @@ export async function createOsisReportInDb(report) {
   let savedSupabase = false;
   let savedMongo = false;
 
-  // 1. Write to MongoDB & PostgreSQL via /api/osis/reports
+  // 1. Write to MongoDB & PostgreSQL via /api/mongo/osis-reports
   try {
-    const apiRes = await fetchJsonWithTimeout('/api/osis/reports', {
+    const apiRes = await fetchJsonWithTimeout('/api/mongo/osis-reports', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(report)
@@ -889,9 +889,9 @@ export async function updateOsisReportInDb(report) {
   let updatedSupabase = false;
   let updatedMongo = false;
 
-  // 1. Update in MongoDB & PostgreSQL via /api/osis/reports
+  // 1. Update in MongoDB & PostgreSQL via /api/mongo/osis-reports
   try {
-    const apiRes = await fetchJsonWithTimeout('/api/osis/reports', {
+    const apiRes = await fetchJsonWithTimeout('/api/mongo/osis-reports', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedRecord)
@@ -958,9 +958,9 @@ export async function deleteOsisReportFromDb(reportId) {
   let deletedSupabase = false;
   let deletedMongo = false;
 
-  // 1. Delete from MongoDB & PostgreSQL via /api/osis/reports
+  // 1. Delete from MongoDB & PostgreSQL via /api/mongo/osis-reports
   try {
-    const apiRes = await fetchJsonWithTimeout(`/api/osis/reports?id=${encodeURIComponent(reportId)}`, {
+    const apiRes = await fetchJsonWithTimeout(`/api/mongo/osis-reports?id=${encodeURIComponent(reportId)}`, {
       method: 'DELETE'
     }, 3500);
     if (apiRes?.success) deletedMongo = Boolean(apiRes.deletedMongo);

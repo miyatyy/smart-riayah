@@ -77,3 +77,4 @@ BEGIN
         WHEN duplicate_object THEN NULL;
     END;
 END $$;
+

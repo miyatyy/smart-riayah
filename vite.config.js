@@ -131,6 +131,10 @@ export default defineConfig({
         target: 'http://localhost:5000',
         changeOrigin: true
       },
+      '/api/mongo': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      },
       '/api/visits': {
         target: 'http://localhost:5000',
         changeOrigin: true

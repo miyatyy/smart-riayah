@@ -1,4 +1,4 @@
-import { getMongoConnection, saveAiDocument } from '../../server/mongo.js';
+import { getMongoConnection, saveAiDocument } from '../mongo.js';
 
 const AI_COLLECTIONS = ['ai_evaluations', 'ai_chat_logs', 'ai_whatsapp_bookings', 'ai_logs'];
 
@@ -10,7 +10,7 @@ function parseBody(req) {
   return req.body;
 }
 
-export default async function handler(req, res) {
+export default async function aiLogsHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -174,7 +174,8 @@ export default async function handler(req, res) {
 
     return res.status(405).json({ success: false, message: 'Method not allowed' });
   } catch (err) {
-    console.error('❌ [/api/ai/logs Error]:', err);
+    console.error('❌ [aiLogsHandler Error]:', err);
     return res.status(500).json({ success: false, error: err.message });
   }
 }
+
