@@ -5,15 +5,15 @@
   "rewrites": [
     {
       "source": "/api/osis/reports",
-      "destination": "/api/mongo/osis-reports"
+      "destination": "/api/mongo?entity=osis-reports"
     },
     {
       "source": "/api/ai/logs",
-      "destination": "/api/mongo/ai-logs"
+      "destination": "/api/mongo?entity=ai-logs"
     },
     {
       "source": "/api/mongodb/health",
-      "destination": "/api/mongo/health"
+      "destination": "/api/mongo?entity=health"
     },
     {
       "source": "/api/(.*)",

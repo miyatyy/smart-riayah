@@ -30,7 +30,7 @@ export async function saveAiToMongo(collection = 'ai_logs', document = {}) {
       }
     };
 
-    const res = await fetchWithTimeout('/api/mongo/ai-logs', {
+    const res = await fetchWithTimeout('/api/mongo?entity=ai-logs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -52,7 +52,7 @@ export async function fetchAiLogsFromMongo({ collection = 'ALL', santriId = '', 
     if (santriId) params.set('santriId', santriId);
     if (limit) params.set('limit', String(limit));
 
-    const res = await fetchWithTimeout(`/api/mongo/ai-logs?${params.toString()}`, {}, 4500);
+    const res = await fetchWithTimeout(`/api/mongo?entity=ai-logs&${params.toString()}`, {}, 4500);
     if (!res.ok) return { success: false, mongoConnected: false, data: [], counts: {} };
     const ct = res.headers.get('content-type') || '';
     if (!ct.includes('application/json')) return { success: false, mongoConnected: false, data: [], counts: {} };
@@ -64,7 +64,7 @@ export async function fetchAiLogsFromMongo({ collection = 'ALL', santriId = '', 
 
 export async function updateAiLogInMongo(id, collection = 'ai_logs', updates = {}) {
   try {
-    const res = await fetchWithTimeout('/api/mongo/ai-logs', {
+    const res = await fetchWithTimeout('/api/mongo?entity=ai-logs', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, collection, ...updates })
@@ -84,7 +84,7 @@ export async function deleteAiLogFromMongo(id, collection = 'ALL') {
     const params = new URLSearchParams({ id: String(id) });
     if (collection) params.set('collection', collection);
 
-    const res = await fetchWithTimeout(`/api/mongo/ai-logs?${params.toString()}`, {
+    const res = await fetchWithTimeout(`/api/mongo?entity=ai-logs&${params.toString()}`, {
       method: 'DELETE'
     }, 4500);
 
@@ -99,7 +99,7 @@ export async function deleteAiLogFromMongo(id, collection = 'ALL') {
 
 export async function checkMongoHealth() {
   try {
-    const res = await fetchWithTimeout('/api/mongo/health', {}, 4500);
+    const res = await fetchWithTimeout('/api/mongo?entity=health', {}, 4500);
     if (!res.ok) {
       return { success: false, connected: false, configured: false, mode: 'UNREACHABLE', counts: {} };
     }

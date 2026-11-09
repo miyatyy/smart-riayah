@@ -1,6 +1,6 @@
-import osisReportsHandler from '../../server/handlers/osisReportsHandler.js';
-import aiLogsHandler from '../../server/handlers/aiLogsHandler.js';
-import mongoHealthHandler from '../../server/handlers/mongoHealthHandler.js';
+import osisReportsHandler from '../server/handlers/osisReportsHandler.js';
+import aiLogsHandler from '../server/handlers/aiLogsHandler.js';
+import mongoHealthHandler from '../server/handlers/mongoHealthHandler.js';
 
 export default async function handler(req, res) {
   const rawEntity = String(req.query?.entity || req.params?.entity || '').toLowerCase();
@@ -18,9 +18,9 @@ export default async function handler(req, res) {
     return osisReportsHandler(req, res);
   }
 
-  return res.status(404).json({
+  return res.status(400).json({
     success: false,
-    message: `Endpoint Mongo entity '${rawEntity || urlPath}' tidak ditemukan.`
+    message: "Parameter query 'entity' wajib diisi: health | osis-reports | ai-logs"
   });
 }
 

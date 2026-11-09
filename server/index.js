@@ -8,6 +8,7 @@ import whatsappGatewayRouter from './whatsapp-gateway/whatsappGatewayRouter.js';
 import osisReportsHandler from './handlers/osisReportsHandler.js';
 import aiLogsHandler from './handlers/aiLogsHandler.js';
 import mongoHealthHandler from './handlers/mongoHealthHandler.js';
+import mongoRouterHandler from '../api/mongo.js';
 import aiParseBookingHandler from '../api/visits/ai-parse-booking.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -26,6 +27,7 @@ app.use(express.json());
 app.use('/api/whatsapp', whatsappGatewayRouter);
 
 // MongoDB & PostgreSQL OSIS Reports CRUD + AI Logs + Health
+app.all('/api/mongo', mongoRouterHandler);
 app.all('/api/mongo/osis-reports', osisReportsHandler);
 app.all('/api/mongo/ai-logs', aiLogsHandler);
 app.all('/api/mongo/health', mongoHealthHandler);
