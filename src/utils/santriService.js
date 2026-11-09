@@ -336,7 +336,7 @@ export async function deleteSantriData(santriId, santriNama = '', skipConfirm = 
   // Konfirmasi jika tidak skipConfirm
   if (!skipConfirm) {
     const isConfirmed = window.confirm(
-      `⚠️ KONFIRMASI PENGHAPUSAN DATA SANTRI\n\nApakah Anda yakin ingin menghapus data ${label}?\n\nSemua data terkait santri ini di Supabase & Firebase akan dihapus permanen.`
+      `⚠️ KONFIRMASI PENGHAPUSAN DATA SANTRI\n\nApakah Anda yakin ingin menghapus data ${label}?\n\nSemua data terkait santri ini di Supabase akan dihapus permanen.`
     );
     if (!isConfirmed) {
       console.log('ℹ️ [Supabase deleteSantriData]: Penghapusan dibatalkan oleh pengguna.');

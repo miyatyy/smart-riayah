@@ -5,7 +5,7 @@ import { Trash2, AlertTriangle, X, Loader2 } from 'lucide-react';
  * ============================================================================
  * SMART RI'AYAH - DELETE CONFIRMATION MODAL
  * Modal konfirmasi penghapusan data dengan perlindungan anti salah klik,
- * indikator loading, dan notifikasi bahwa data dihapus permanen dari Supabase & Firebase.
+ * indikator loading, dan notifikasi bahwa data dihapus permanen dari Supabase.
  * ============================================================================
  */
 
@@ -18,7 +18,7 @@ export default function DeleteConfirmModal({
   itemName = "",
   itemId = "",
   itemType = "Data",
-  warningNote = "Tindakan ini tidak dapat dibatalkan. Data akan dihapus permanen dari basis data Supabase & Firebase Firestore.",
+  warningNote = "Tindakan ini tidak dapat dibatalkan. Data akan dihapus permanen dari basis data Supabase.",
   isLoading = false,
   withReasonSelector = false
 }) {

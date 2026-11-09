@@ -13,7 +13,6 @@ import {
 import { deleteRoomData } from '../utils/roomService';
 import { deleteSantriData } from '../utils/santriService';
 import { supabase } from '../utils/supabaseClient';
-import { syncRoomToFirebase } from '../utils/firebaseSync';
 import { sendWhatsAppBroadcast } from '../utils/whatsappRealtime';
 import {
   fetchAllDataFromSupabase,
@@ -2725,7 +2724,7 @@ export const AppProvider = ({ children }) => {
     }));
 
     if (syncedSantri) {
-      // 1. Simpan permanen ke Supabase PostgreSQL & Firebase
+      // 1. Simpan permanen ke Supabase PostgreSQL
       syncSantriToSupabase(syncedSantri);
 
       // 2. Siarkan perubahan nomor wali baru ke seluruh sesi & WhatsApp Gateway
@@ -3240,9 +3239,6 @@ export const AppProvider = ({ children }) => {
     };
     setRooms(prev => [...prev, newRoom]);
 
-    // Simpan kamar baru ke Google Firebase Firestore
-    syncRoomToFirebase(newRoom);
-
     // Simpan kamar baru ke backend lokal (PostgreSQL / pgAdmin) jika backend aktif
     fetch('/api/rooms', {
       method: 'POST',
@@ -3299,7 +3295,7 @@ export const AppProvider = ({ children }) => {
       updated_at: new Date().toISOString()
     };
     
-    // 1. Simpan ke Supabase & Firebase
+    // 1. Simpan ke Supabase
     syncRoomToSupabase(fullRoom);
 
     // 2. Simpan ke database PostgreSQL / pgAdmin lokal
@@ -3335,7 +3331,7 @@ export const AppProvider = ({ children }) => {
       updated_at: new Date().toISOString()
     };
 
-    // 1. Simpan ke Supabase & Firebase
+    // 1. Simpan ke Supabase
     syncRoomToSupabase(fullRoom);
 
     // 2. Simpan ke database PostgreSQL / pgAdmin lokal

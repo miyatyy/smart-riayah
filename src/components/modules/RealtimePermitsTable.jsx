@@ -221,7 +221,7 @@ export default function RealtimePermitsTable() {
         itemName={deletingPermit ? `${deletingPermit.kategori} - ${deletingPermit.santriNama || 'Santri'}` : ''}
         itemId={deletingPermit?.id}
         itemType="Surat Izin (Permit)"
-        warningNote="Data izin santri ini akan dihapus permanen dari Supabase & Firebase."
+        warningNote="Data izin santri ini akan dihapus permanen dari Supabase."
         isLoading={isDeletingPermit}
       />
     </div>

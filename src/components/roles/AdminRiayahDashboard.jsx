@@ -198,7 +198,7 @@ export default function AdminRiayahDashboard() {
     try {
       const res = await deleteRoom(deletingRoom.id, deletingRoom.nomorKamar, true);
       if (res?.success) {
-        alert(`🗑️ Kamar "${deletingRoom.nomorKamar}" (${deletingRoom.namaGedung}) berhasil dihapus dari Supabase & Firebase!`);
+        alert(`🗑️ Kamar "${deletingRoom.nomorKamar}" (${deletingRoom.namaGedung}) berhasil dihapus dari Supabase!`);
         setDeletingRoom(null);
       } else {
         alert(`❌ Gagal menghapus kamar: ${res?.error?.message || 'Terjadi kesalahan sistem'}`);
@@ -2133,11 +2133,11 @@ export default function AdminRiayahDashboard() {
         onClose={() => setDeletingRoom(null)}
         onConfirm={handleDeleteRoomConfirm}
         title="Hapus Data Kamar Asrama"
-        message="Apakah Anda yakin ingin menghapus data kamar asrama ini? Kamar akan dihapus dari data gedung di Supabase dan Firebase."
+        message="Apakah Anda yakin ingin menghapus data kamar asrama ini? Kamar akan dihapus dari data gedung di Supabase."
         itemName={deletingRoom ? `${deletingRoom.nomorKamar} (${deletingRoom.namaGedung})` : ''}
         itemId={deletingRoom?.id}
         itemType="Data Kamar Asrama"
-        warningNote="Data kamar akan dihapus permanen dari Supabase & Firebase. Santri yang saat ini terdaftar di kamar ini tidak akan terhapus, namun status penempatan kamar mereka perlu disesuaikan ulang."
+        warningNote="Data kamar akan dihapus permanen dari Supabase. Santri yang saat ini terdaftar di kamar ini tidak akan terhapus, namun status penempatan kamar mereka perlu disesuaikan ulang."
         isLoading={isDeletingRoom}
       />
 

@@ -146,7 +146,7 @@ export default function RfidCardManager({ isModal = false, onClose = () => {}, d
       const res = await deleteSantri(deletingSantri.id, deletingSantri.nama, true);
       if (res?.success) {
         const reasonLabel = reason === 'LULUS' ? 'Lulus / Alumni' : reason === 'PINDAH' ? 'Pindah Sekolah' : 'Hapus Permanen';
-        showNotification(`🗑️ Data santri "${deletingSantri.nama}" berhasil diproses (${reasonLabel}) dan dihapus dari Supabase & Firebase!`);
+        showNotification(`🗑️ Data santri "${deletingSantri.nama}" berhasil diproses (${reasonLabel}) dan dihapus dari Supabase!`);
         setDeletingSantri(null);
       } else {
         alert(`❌ Gagal menghapus santri: ${res?.error?.message || 'Terjadi kesalahan basis data'}`);
@@ -1364,7 +1364,7 @@ export default function RfidCardManager({ isModal = false, onClose = () => {}, d
         itemName={deletingSantri?.nama}
         itemId={deletingSantri?.id}
         itemType="Data Induk Santri"
-        warningNote="Data yang dihapus akan hilang dari database Supabase dan Firebase secara permanen dan tidak dapat dipulihkan."
+        warningNote="Data yang dihapus akan hilang dari database Supabase secara permanen dan tidak dapat dipulihkan."
         isLoading={isDeletingSantri}
         withReasonSelector={true}
       />
