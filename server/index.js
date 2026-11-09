@@ -5,6 +5,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { query, testConnection } from './db.js';
 import whatsappGatewayRouter from './whatsapp-gateway/whatsappGatewayRouter.js';
+import osisReportsHandler from '../api/osis/reports.js';
+import aiLogsHandler from '../api/ai/logs.js';
+import mongoHealthHandler from '../api/mongodb/health.js';
+import aiParseBookingHandler from '../api/visits/ai-parse-booking.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,6 +24,12 @@ app.use(express.json());
 
 // WhatsApp Real-Time Gateway (Redis Message Broker & Soketi Broadcaster)
 app.use('/api/whatsapp', whatsappGatewayRouter);
+
+// MongoDB & PostgreSQL OSIS Reports CRUD + AI Logs + Health
+app.all('/api/osis/reports', osisReportsHandler);
+app.all('/api/ai/logs', aiLogsHandler);
+app.all('/api/mongodb/health', mongoHealthHandler);
+app.all('/api/visits/ai-parse-booking', aiParseBookingHandler);
 
 // -------------------------------------------------------------------------------------
 // HEALTH CHECK ENDPOINT

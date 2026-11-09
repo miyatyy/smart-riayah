@@ -2,6 +2,8 @@
 // Smart Riayah - AI Agent & Character Evaluation Engine for All Roles & Wali Santri
 // Official Endpoint: https://api.deepseek.com/chat/completions
 
+import { saveAiToMongo } from './mongoAiService';
+
 export const DEFAULT_DEEPSEEK_TOKEN = import.meta.env.VITE_DEEPSEEK_API_KEY || '';
 export const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions';
 export const DEFAULT_MODEL = 'deepseek-chat';
@@ -264,6 +266,28 @@ Buatkan evaluasi mendalam, skor harmoni karakter, analisis 3 pilar, dan 3 rekome
 
     const parsedData = JSON.parse(cleanJsonStr);
 
+    // Simpan hasil analisis AI ke MongoDB secara asinkron (non-blocking)
+    saveAiToMongo('ai_evaluations', {
+      santriId: santri?.id || '',
+      santriNama: santri?.nama || '',
+      nis: santri?.nis || '',
+      kelas: santri?.kelas || '',
+      kamar: santri?.kamar || '',
+      month,
+      role,
+      model: jsonRes.model || model,
+      source: 'DEEPSEEK_LIVE',
+      harmonyScore: parsedData?.harmonyScore,
+      category: parsedData?.category,
+      narrativeSummary: parsedData?.narrativeSummary,
+      pillars: parsedData?.pillars,
+      recommendations: parsedData?.recommendations,
+      roleSpecificInsight: parsedData?.roleSpecificInsight,
+      totals,
+      latencyMs,
+      tokensUsed: jsonRes.usage || null
+    }).catch(() => {});
+
     return {
       success: true,
       source: 'DEEPSEEK_LIVE',
@@ -349,6 +373,23 @@ INSTRUKSI INTERAKSI:
 
     const jsonRes = await response.json();
     const reply = jsonRes.choices?.[0]?.message?.content || '';
+    const lastUserMessage = [...(messages || [])].reverse().find(m => m.role === 'user')?.content || '';
+
+    // Simpan riwayat percakapan AI ke MongoDB secara asinkron (non-blocking)
+    if (reply) {
+      saveAiToMongo('ai_chat_logs', {
+        channel: 'Web AI Agent',
+        santriId: santri?.id || '',
+        santriNama: santri?.nama || '',
+        role,
+        model: jsonRes.model || model,
+        engine: 'DEEPSEEK_CHAT_AGENT',
+        prompt: lastUserMessage,
+        reply,
+        latencyMs,
+        tokensUsed: jsonRes.usage || null
+      }).catch(() => {});
+    }
 
     return {
       success: true,

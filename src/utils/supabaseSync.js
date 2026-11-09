@@ -703,6 +703,305 @@ export async function syncBookingStatusToSupabase(booking, reaction = 'VISIT_APP
   }
 }
 
+// ----------------------------------------------------------------------------
+// 3B. OSIS REPORTS CRUD SERVICE (SUPABASE + MONGODB DUAL-SYNC + MESSAGES FALLBACK)
+// ----------------------------------------------------------------------------
+
+async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 3500) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    if (!res.ok) return null;
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) return null;
+    return await res.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export function osisReportToDb(r) {
+  if (!r) return null;
+  const nowIso = new Date().toISOString();
+  return {
+    id: String(r.id),
+    santri_id: String(r.santriId || r.santri_id || ''),
+    santri_nama: r.santriNama || r.santri_nama || '',
+    gender: r.gender || 'L',
+    kelas: r.kelas || '',
+    kamar: r.kamar || '',
+    bidang_osis: r.bidangOsis || r.bidang_osis || 'OSIS Kamtib',
+    pelapor_nama: r.pelaporNama || r.pelapor_nama || 'Pengurus OSIS',
+    kategori: r.kategori || 'PELANGGARAN',
+    jenis: r.jenis || 'Catatan Kedisiplinan',
+    keterangan: r.keterangan || '',
+    poin: Number(r.poin || 0),
+    tazir: r.tazir || '',
+    status: r.status || 'PENDING_ADMIN',
+    admin_note: r.adminNote || r.admin_note || '',
+    verified_by: r.verified_by || null,
+    verified_at: r.verified_at || null,
+    tanggal: r.tanggal || nowIso.slice(0, 10),
+    waktu: r.waktu || nowIso.slice(11, 16),
+    created_at: r.created_at || nowIso,
+    updated_at: r.updated_at || nowIso
+  };
+}
+
+export function dbToOsisReport(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    santriId: row.santri_id ?? row.santriId ?? '',
+    santriNama: row.santri_nama ?? row.santriNama ?? '',
+    gender: row.gender || 'L',
+    kelas: row.kelas || '',
+    kamar: row.kamar || '',
+    bidangOsis: row.bidang_osis ?? row.bidangOsis ?? 'OSIS Kamtib',
+    pelaporNama: row.pelapor_nama ?? row.pelaporNama ?? 'Pengurus OSIS',
+    kategori: row.kategori || 'PELANGGARAN',
+    jenis: row.jenis || '',
+    keterangan: row.keterangan || '',
+    poin: Number(row.poin || 0),
+    tazir: row.tazir || '',
+    status: row.status || 'PENDING_ADMIN',
+    adminNote: row.admin_note ?? row.adminNote ?? '',
+    verified_by: row.verified_by || null,
+    verified_at: row.verified_at || null,
+    tanggal: row.tanggal || '',
+    waktu: row.waktu || '',
+    created_at: row.created_at,
+    updated_at: row.updated_at
+  };
+}
+
+export async function fetchOsisReportsFromSupabase() {
+  const byId = new Map();
+
+  // 1. Query dedicated table 'osis_reports' in Supabase
+  try {
+    const { data, error } = await supabase
+      .from('osis_reports')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    if (!error && Array.isArray(data)) {
+      data.forEach(row => {
+        const mapped = dbToOsisReport(row);
+        if (mapped?.id) byId.set(mapped.id, mapped);
+      });
+    }
+  } catch {}
+
+  // 2. Also read from 'messages' fallback log (if SQL table wasn't created yet)
+  try {
+    const { data: msgRows, error: msgErr } = await supabase
+      .from('messages')
+      .select('id, message_text, created_at')
+      .eq('room_id', 'osis_reports_log')
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    if (!msgErr && Array.isArray(msgRows)) {
+      for (const row of msgRows) {
+        try {
+          const parsed = JSON.parse(row.message_text);
+          if (parsed && parsed.id && !byId.has(parsed.id)) {
+            byId.set(parsed.id, { ...parsed, _supabaseMessageId: row.id });
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+
+  // 3. Also pull from MongoDB / PG API (/api/osis/reports)
+  try {
+    const apiRes = await fetchJsonWithTimeout('/api/osis/reports?limit=200', {}, 3000);
+    if (apiRes?.success && Array.isArray(apiRes.data)) {
+      for (const row of apiRes.data) {
+        if (row?.id) {
+          const existing = byId.get(row.id);
+          if (!existing || new Date(row.updated_at || 0) >= new Date(existing.updated_at || 0)) {
+            byId.set(row.id, { ...existing, ...dbToOsisReport(row) });
+          }
+        }
+      }
+    }
+  } catch {}
+
+  return Array.from(byId.values()).sort(
+    (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)
+  );
+}
+
+export async function createOsisReportInDb(report) {
+  if (!report?.id) return { success: false };
+  const payload = osisReportToDb(report);
+  let savedSupabase = false;
+  let savedMongo = false;
+
+  // 1. Write to MongoDB & PostgreSQL via /api/osis/reports
+  try {
+    const apiRes = await fetchJsonWithTimeout('/api/osis/reports', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(report)
+    }, 3500);
+    if (apiRes?.success) savedMongo = Boolean(apiRes.savedMongo);
+  } catch {}
+
+  // 2. Write to Supabase 'osis_reports' table, with fallback to 'messages'
+  try {
+    const { error } = await supabase
+      .from('osis_reports')
+      .upsert([payload], { onConflict: 'id' });
+
+    if (!error) {
+      savedSupabase = true;
+    } else {
+      const { error: msgErr } = await supabase.from('messages').insert([{
+        room_id: 'osis_reports_log',
+        sender_email: 'osis@smartriayah.com',
+        sender_name: report.pelaporNama || 'Pengurus OSIS',
+        sender_role: 'osis',
+        receiver_role: 'admin_riayah',
+        message_text: JSON.stringify(report),
+        reaction: report.status || 'PENDING_ADMIN',
+        is_read: false
+      }]);
+      if (!msgErr) savedSupabase = true;
+    }
+  } catch (err) {
+    console.warn('⚠️ [createOsisReportInDb]:', err.message);
+  }
+
+  return { success: true, savedSupabase, savedMongo };
+}
+
+export async function updateOsisReportInDb(report) {
+  if (!report?.id) return { success: false };
+  const updatedRecord = { ...report, updated_at: new Date().toISOString() };
+  const payload = osisReportToDb(updatedRecord);
+  let updatedSupabase = false;
+  let updatedMongo = false;
+
+  // 1. Update in MongoDB & PostgreSQL via /api/osis/reports
+  try {
+    const apiRes = await fetchJsonWithTimeout('/api/osis/reports', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedRecord)
+    }, 3500);
+    if (apiRes?.success) updatedMongo = Boolean(apiRes.updatedMongo);
+  } catch {}
+
+  // 2. Update in Supabase 'osis_reports' table
+  try {
+    const { error } = await supabase
+      .from('osis_reports')
+      .upsert([payload], { onConflict: 'id' });
+
+    if (!error) {
+      updatedSupabase = true;
+    } else {
+      // Fallback: find row in 'messages' table and update or insert
+      const { data: rows } = await supabase
+        .from('messages')
+        .select('id, message_text')
+        .eq('room_id', 'osis_reports_log')
+        .order('created_at', { ascending: false })
+        .limit(200);
+
+      const matched = Array.isArray(rows)
+        ? rows.find(r => {
+            try { return JSON.parse(r.message_text)?.id === report.id; } catch { return false; }
+          })
+        : null;
+
+      if (matched) {
+        const { error: updErr } = await supabase
+          .from('messages')
+          .update({
+            message_text: JSON.stringify(updatedRecord),
+            reaction: updatedRecord.status || 'UPDATED',
+            is_read: updatedRecord.status !== 'PENDING_ADMIN'
+          })
+          .eq('id', matched.id);
+        if (!updErr) updatedSupabase = true;
+      } else {
+        const { error: insErr } = await supabase.from('messages').insert([{
+          room_id: 'osis_reports_log',
+          sender_email: 'osis@smartriayah.com',
+          sender_name: updatedRecord.pelaporNama || 'Pengurus OSIS',
+          sender_role: 'osis',
+          receiver_role: 'admin_riayah',
+          message_text: JSON.stringify(updatedRecord),
+          reaction: updatedRecord.status || 'PENDING_ADMIN',
+          is_read: updatedRecord.status !== 'PENDING_ADMIN'
+        }]);
+        if (!insErr) updatedSupabase = true;
+      }
+    }
+  } catch (err) {
+    console.warn('⚠️ [updateOsisReportInDb]:', err.message);
+  }
+
+  return { success: true, updatedSupabase, updatedMongo };
+}
+
+export async function deleteOsisReportFromDb(reportId) {
+  if (!reportId) return { success: false };
+  let deletedSupabase = false;
+  let deletedMongo = false;
+
+  // 1. Delete from MongoDB & PostgreSQL via /api/osis/reports
+  try {
+    const apiRes = await fetchJsonWithTimeout(`/api/osis/reports?id=${encodeURIComponent(reportId)}`, {
+      method: 'DELETE'
+    }, 3500);
+    if (apiRes?.success) deletedMongo = Boolean(apiRes.deletedMongo);
+  } catch {}
+
+  // 2. Delete from Supabase 'osis_reports' table & fallback 'messages' log
+  try {
+    const { error } = await supabase
+      .from('osis_reports')
+      .delete()
+      .eq('id', reportId);
+    if (!error) deletedSupabase = true;
+
+    const { data: rows } = await supabase
+      .from('messages')
+      .select('id, message_text')
+      .eq('room_id', 'osis_reports_log')
+      .limit(200);
+
+    if (Array.isArray(rows)) {
+      const idsToDelete = rows
+        .filter(r => {
+          try { return JSON.parse(r.message_text)?.id === reportId; } catch { return false; }
+        })
+        .map(r => r.id);
+
+      if (idsToDelete.length > 0) {
+        const { error: delMsgErr } = await supabase
+          .from('messages')
+          .delete()
+          .in('id', idsToDelete);
+        if (!delMsgErr) deletedSupabase = true;
+      }
+    }
+  } catch (err) {
+    console.warn('⚠️ [deleteOsisReportFromDb]:', err.message);
+  }
+
+  return { success: true, deletedSupabase, deletedMongo };
+}
+
 export async function fetchAllDataFromSupabase() {
   console.log('🔄 [Supabase] Mengambil data utama dari Supabase...');
 
@@ -711,8 +1010,9 @@ export async function fetchAllDataFromSupabase() {
     supabase.from('rooms').select('*').order('created_at', { ascending: true }),
     supabase.from('permits').select('*').order('created_at', { ascending: false }),
     supabase.from('evaluasi_harian').select('*').order('tanggal', { ascending: false }).limit(50),
-    supabase.from('messages').select('*').neq('room_id', 'visit_bookings_log').order('created_at', { ascending: true }).limit(100),
-    fetchVisitBookingsFromSupabase()
+    supabase.from('messages').select('*').neq('room_id', 'visit_bookings_log').neq('room_id', 'osis_reports_log').order('created_at', { ascending: true }).limit(100),
+    fetchVisitBookingsFromSupabase(),
+    fetchOsisReportsFromSupabase()
   ]);
 
   const output = {};
@@ -734,6 +1034,9 @@ export async function fetchAllDataFromSupabase() {
   }
   if (results[5].status === 'fulfilled' && Array.isArray(results[5].value) && results[5].value.length > 0) {
     output.visitBookings = results[5].value;
+  }
+  if (results[6].status === 'fulfilled' && Array.isArray(results[6].value) && results[6].value.length > 0) {
+    output.osisReports = results[6].value;
   }
 
   console.log('✅ [Supabase] Selesai sinkronisasi awal data:', Object.keys(output));
@@ -817,6 +1120,15 @@ export function subscribeToAllTablesRealtime(callbacks = {}) {
       (payload) => {
         console.log('⚡ [Realtime RFID Trx]:', payload.new);
         if (callbacks.onRfidTransactionInsert) callbacks.onRfidTransactionInsert(payload.new);
+      }
+    )
+    // 9. OSIS Reports (CRUD Realtime 2-Arah)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'osis_reports' },
+      (payload) => {
+        console.log('⚡ [Realtime OSIS Reports]:', payload.eventType, payload.new || payload.old);
+        if (callbacks.onOsisReportChange) callbacks.onOsisReportChange(payload);
       }
     )
     .subscribe((status) => {

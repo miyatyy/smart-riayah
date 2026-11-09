@@ -22,6 +22,7 @@
     "html5-qrcode": "^2.3.8",
     "ioredis": "^6.0.0",
     "lucide-react": "^1.16.0",
+    "mongodb": "^7.8.0",
     "pg": "^8.23.1",
     "pusher-js": "^8.6.0",
     "react": "^18.3.1",

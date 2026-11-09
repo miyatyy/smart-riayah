@@ -5,6 +5,7 @@
 
 import { getRealtimePondokClock, formatCalendarPromptForDeepSeek } from '../utils/pondokTimeUtils';
 import { generateBarcodeToken, getVisitGatePassUrls } from '../utils/barcodeUtils';
+import { saveAiToMongo } from '../utils/mongoAiService';
 
 export const DEFAULT_DEEPSEEK_KEY = (import.meta.env.VITE_DEEPSEEK_API_KEY || '').trim();
 export const DEFAULT_DEEPSEEK_BASE_URL = (import.meta.env.VITE_DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1/chat/completions').trim();
@@ -144,12 +145,7 @@ Output HANYA berupa JSON object murni.`;
         const barcodeToken = isWeekday ? null : generateBarcodeToken(cleanSantri);
         const { qrCodeUrl, gatePassUrl } = barcodeToken ? getVisitGatePassUrls(barcodeToken) : {};
         const waktuSekarangStr = `${clock.nama_hari}, ${clock.tanggal_lengkap} • ${clock.jam_menit_detik} WITA`;
-
-        return {
-          success: true,
-          ai_engine: 'DeepSeek Chat (Direct Client)',
-          is_weekday: isWeekday,
-          booking: {
+        const bookingObj = {
             id: `VST-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`,
             booking_source: 'WHATSAPP_AI_DEEPSEEK',
             nama_santri: parsed.nama_santri || 'Ahmad Fauzi',
@@ -173,7 +169,25 @@ Output HANYA berupa JSON object murni.`;
             jam_masuk_aktual: null,
             jam_keluar_aktual: null,
             created_at: new Date().toISOString()
-          }
+        };
+
+        saveAiToMongo('ai_whatsapp_bookings', {
+          id: `AI-BOOK-${bookingObj.id}`,
+          bookingId: bookingObj.id,
+          prompt: messageText,
+          sender,
+          senderName,
+          santriNama: bookingObj.nama_santri,
+          ai_engine: 'DeepSeek Chat (Direct Client)',
+          is_weekday: isWeekday,
+          booking: bookingObj
+        }).catch(() => {});
+
+        return {
+          success: true,
+          ai_engine: 'DeepSeek Chat (Direct Client)',
+          is_weekday: isWeekday,
+          booking: bookingObj
         };
       }
     }
@@ -183,17 +197,13 @@ Output HANYA berupa JSON object murni.`;
 
   // Fallback regex jika semuanya gagal
   const isWeekday = true;
-  return {
-    success: true,
-    ai_engine: 'Regex Fallback Engine',
-    is_weekday: isWeekday,
-    booking: {
+  const fallbackBooking = {
       id: `VST-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`,
       booking_source: 'WHATSAPP_FALLBACK',
       nama_santri: 'Ahmad Fauzi',
       kelas: '10-A (Umar 204)',
       asal: 'Surabaya',
-      tanggal_kunjungan: todayStr,
+      tanggal_kunjungan: clock.tanggal_ymd,
       hari_kunjungan: 'Senin',
       jam_kunjungan: '14:00',
       jam_selesai: '15:30',
@@ -207,7 +217,25 @@ Output HANYA berupa JSON object murni.`;
       status_kunjungan: 'Menunggu Approval',
       is_weekday: true,
       created_at: new Date().toISOString()
-    }
+  };
+
+  saveAiToMongo('ai_whatsapp_bookings', {
+    id: `AI-BOOK-${fallbackBooking.id}`,
+    bookingId: fallbackBooking.id,
+    prompt: messageText,
+    sender,
+    senderName,
+    santriNama: fallbackBooking.nama_santri,
+    ai_engine: 'Regex Fallback Engine',
+    is_weekday: isWeekday,
+    booking: fallbackBooking
+  }).catch(() => {});
+
+  return {
+    success: true,
+    ai_engine: 'Regex Fallback Engine',
+    is_weekday: isWeekday,
+    booking: fallbackBooking
   };
 }
 

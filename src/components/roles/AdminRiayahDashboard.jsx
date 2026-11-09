@@ -2234,12 +2234,13 @@ export default function AdminRiayahDashboard() {
   );
 }
 
-// ─── KOMPONEN MODUL VERIFIKASI LAPORAN KEDISIPLINAN OSIS (ADMIN RI'AYAH) ───
+// ─── KOMPONEN MODUL VERIFIKASI LAPORAN KEDISIPLINAN OSIS (ADMIN RI'AYAH - FULL CRUD) ───
 function OsisVerificationManager() {
-  const { osisReports, verifyOsisReport, santriList } = useApp();
+  const { osisReports, verifyOsisReport, updateOsisReport, deleteOsisReport, santriList } = useApp();
   const [filterMode, setFilterMode] = useState('PENDING'); // 'PENDING' | 'BANAT' | 'BANIN' | 'APPROVED' | 'REJECTED' | 'ALL'
   const [searchQuery, setSearchQuery] = useState('');
   const [editingDrafts, setEditingDrafts] = useState({});
+  const [unlockedEditIds, setUnlockedEditIds] = useState({}); // Buka edit untuk laporan yang sudah APPROVED/REJECTED
 
   const allReports = Array.isArray(osisReports) ? osisReports : [];
   const pendingCount = allReports.filter(r => r.status === 'PENDING_ADMIN').length;
@@ -2272,24 +2273,52 @@ function OsisVerificationManager() {
       jenis: rep.jenis,
       keterangan: rep.keterangan,
       tazir: rep.tazir || '',
-      adminNote: ''
+      adminNote: rep.adminNote || ''
     };
   };
 
   const updateDraft = (repId, field, val) => {
     setEditingDrafts(prev => {
+      const target = allReports.find(r => r.id === repId);
       const current = prev[repId] || {
-        poin: allReports.find(r => r.id === repId)?.poin ?? 0,
-        jenis: allReports.find(r => r.id === repId)?.jenis ?? '',
-        keterangan: allReports.find(r => r.id === repId)?.keterangan ?? '',
-        tazir: allReports.find(r => r.id === repId)?.tazir ?? '',
-        adminNote: ''
+        poin: target?.poin ?? 0,
+        jenis: target?.jenis ?? '',
+        keterangan: target?.keterangan ?? '',
+        tazir: target?.tazir ?? '',
+        adminNote: target?.adminNote ?? ''
       };
       return {
         ...prev,
         [repId]: { ...current, [field]: val }
       };
     });
+  };
+
+  const handleSaveUpdate = (rep) => {
+    const draft = getDraft(rep);
+    if (!draft.jenis?.trim() || !draft.keterangan?.trim()) {
+      alert('Perihal dan kronologi laporan tidak boleh kosong!');
+      return;
+    }
+    updateOsisReport?.(rep.id, {
+      jenis: draft.jenis.trim(),
+      keterangan: draft.keterangan.trim(),
+      poin: Number(draft.poin || 0),
+      tazir: (draft.tazir || '').trim(),
+      adminNote: (draft.adminNote || '').trim()
+    });
+    setUnlockedEditIds(prev => ({ ...prev, [rep.id]: false }));
+    sound.playSuccess?.();
+    alert(`✅ Perubahan laporan [${rep.id}] untuk ananda ${rep.santriNama} berhasil diperbarui ke database!`);
+  };
+
+  const handleDelete = (rep) => {
+    const confirmed = window.confirm(
+      `🗑️ KONFIRMASI HAPUS LAPORAN OSIS\n\nID: ${rep.id}\nSantri: ${rep.santriNama}\nPerihal: ${rep.jenis}\nStatus: ${rep.status}\n\nLaporan akan dihapus permanen dari Supabase & MongoDB. Lanjutkan?`
+    );
+    if (!confirmed) return;
+    deleteOsisReport?.(rep.id);
+    sound.playBeep?.();
   };
 
   const handleApprove = (rep) => {
@@ -2324,7 +2353,7 @@ function OsisVerificationManager() {
           <div className="space-y-1.5">
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-teal-500/20 border border-teal-400/30 rounded-full text-[11px] font-bold text-teal-300">
               <Shield className="w-3.5 h-3.5 text-teal-400" />
-              <span>OTORISASI &amp; VERIFIKASI KEDISIPLINAN OSIS</span>
+              <span>OTORISASI, VERIFIKASI &amp; CRUD KEDISIPLINAN OSIS (SUPABASE + MONGODB)</span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
               <span>🛡️ Verifikasi Laporan Kelakuan Santri/Wati dari Pengurus OSIS</span>
@@ -2450,6 +2479,7 @@ function OsisVerificationManager() {
             const isPending = rep.status === 'PENDING_ADMIN';
             const isApproved = rep.status === 'APPROVED';
             const isRejected = rep.status === 'REJECTED';
+            const isEditable = isPending || Boolean(unlockedEditIds[rep.id]);
             const targetSantri = santriList.find(s => s.id === rep.santriId);
             const currentPoints = targetSantri ? (targetSantri.poinDisiplin ?? 100) : 100;
 
@@ -2548,7 +2578,7 @@ function OsisVerificationManager() {
                       <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
                         Perihal Kejadian:
                       </div>
-                      {isPending ? (
+                      {isEditable ? (
                         <input
                           type="text"
                           value={draft.jenis}
@@ -2564,7 +2594,7 @@ function OsisVerificationManager() {
                       <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
                         Kronologi Kejadian (Keterangan OSIS):
                       </div>
-                      {isPending ? (
+                      {isEditable ? (
                         <textarea
                           rows={2}
                           value={draft.keterangan}
@@ -2583,7 +2613,7 @@ function OsisVerificationManager() {
                         <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
                           Penyesuaian Poin:
                         </div>
-                        {isPending ? (
+                        {isEditable ? (
                           <div className="flex items-center gap-2">
                             <input
                               type="number"
@@ -2596,7 +2626,9 @@ function OsisVerificationManager() {
                               }`}
                             />
                             <span className="text-[11px] text-slate-500 font-bold">
-                              (Est. Hasil: {Math.max(0, Math.min(100, currentPoints + Number(draft.poin || 0)))} Poin)
+                              {isPending
+                                ? `(Est. Hasil: ${Math.max(0, Math.min(100, currentPoints + Number(draft.poin || 0)))} Poin)`
+                                : `(Saat ini: ${currentPoints} Poin)`}
                             </span>
                           </div>
                         ) : (
@@ -2612,7 +2644,7 @@ function OsisVerificationManager() {
                         <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
                           Tindakan / Ta'zir Pembinaan:
                         </div>
-                        {isPending ? (
+                        {isEditable ? (
                           <input
                             type="text"
                             value={draft.tazir}
@@ -2628,7 +2660,22 @@ function OsisVerificationManager() {
                       </div>
                     </div>
 
-                    {rep.adminNote && (
+                    {isEditable && !isPending && (
+                      <div className="space-y-1">
+                        <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                          Catatan Resmi Admin Ri'ayah:
+                        </div>
+                        <input
+                          type="text"
+                          value={draft.adminNote || ''}
+                          onChange={(e) => updateDraft(rep.id, 'adminNote', e.target.value)}
+                          placeholder="Catatan verifikasi admin..."
+                          className="w-full px-3 py-1.5 text-xs rounded-xl bg-amber-50/70 border border-amber-300 focus:outline-none focus:border-teal-500 text-slate-800"
+                        />
+                      </div>
+                    )}
+
+                    {rep.adminNote && (!isEditable || isPending) && (
                       <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
                         <strong>Catatan Admin Ri'ayah:</strong> {rep.adminNote}
                       </div>
@@ -2636,28 +2683,74 @@ function OsisVerificationManager() {
                   </div>
                 </div>
 
-                {/* Action Bar (Hanya tampil jika PENDING_ADMIN) */}
-                {isPending && (
-                  <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-end gap-2.5">
+                {/* Action Bar: Full CRUD (Update/Delete/Approve/Reject) */}
+                <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => handleReject(rep)}
-                      className="px-4 py-2 bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700 rounded-xl text-xs font-bold transition border border-slate-200 flex items-center justify-center gap-1.5"
+                      onClick={() => handleDelete(rep)}
+                      className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold transition border border-rose-200 flex items-center gap-1.5"
+                      title="Hapus laporan secara permanen dari database"
                     >
-                      <X className="w-3.5 h-3.5" />
-                      <span>Tolak Laporan</span>
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Hapus Laporan</span>
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => handleApprove(rep)}
-                      className="px-5 py-2 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-xl text-xs font-black transition shadow-md shadow-emerald-200 flex items-center justify-center gap-2"
-                    >
-                      <Check className="w-4 h-4" />
-                      <span>✅ Approve &amp; Sinkronkan ke WhatsApp Gateway</span>
-                    </button>
+                    {!isPending && !unlockedEditIds[rep.id] && (
+                      <button
+                        type="button"
+                        onClick={() => setUnlockedEditIds(prev => ({ ...prev, [rep.id]: true }))}
+                        className="px-3.5 py-2 bg-sky-50 hover:bg-sky-100 text-sky-700 rounded-xl text-xs font-bold transition border border-sky-200 flex items-center gap-1.5"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>Edit Data Laporan</span>
+                      </button>
+                    )}
+
+                    {isEditable && (
+                      <button
+                        type="button"
+                        onClick={() => handleSaveUpdate(rep)}
+                        className="px-3.5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Simpan Update (DB)</span>
+                      </button>
+                    )}
+
+                    {!isPending && unlockedEditIds[rep.id] && (
+                      <button
+                        type="button"
+                        onClick={() => setUnlockedEditIds(prev => ({ ...prev, [rep.id]: false }))}
+                        className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition"
+                      >
+                        Batal Edit
+                      </button>
+                    )}
                   </div>
-                )}
+
+                  {isPending && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleReject(rep)}
+                        className="px-4 py-2 bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700 rounded-xl text-xs font-bold transition border border-slate-200 flex items-center justify-center gap-1.5"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        <span>Tolak Laporan</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleApprove(rep)}
+                        className="px-5 py-2 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-xl text-xs font-black transition shadow-md shadow-emerald-200 flex items-center justify-center gap-2"
+                      >
+                        <Check className="w-4 h-4" />
+                        <span>✅ Approve &amp; Sinkronkan ke WhatsApp Gateway</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })

@@ -5,6 +5,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { broadcastToSupabaseRealtime } from './supabaseBroadcaster.js';
+import { saveAiDocument } from '../mongo.js';
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
 const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '';
@@ -409,6 +410,21 @@ export async function saveBookingToSystem(bookingData) {
     }]);
 
     console.log(`🎫 [Visit Booking Saved]: ${bookingData.id} for ${bookingData.nama_santri} (${bookingData.hari_kunjungan}) - ${bookingData.status_kunjungan}`);
+
+    // Simpan juga data booking AI ke MongoDB collection 'ai_whatsapp_bookings'
+    await saveAiDocument('ai_whatsapp_bookings', {
+      id: `AI-BOOK-${bookingData.id}`,
+      bookingId: bookingData.id,
+      santriNama: bookingData.nama_santri,
+      sender: bookingData.no_wa_penjenguk,
+      senderName: bookingData.nama_penjenguk,
+      ai_engine: bookingData.booking_source || 'AI_AUTONOMOUS_RESPONDER',
+      is_weekday: bookingData.is_weekday,
+      barcode_token: bookingData.barcode_token,
+      status_kunjungan: bookingData.status_kunjungan,
+      booking: bookingData
+    }).catch(() => {});
+
     return true;
   } catch (err) {
     console.error('❌ [saveBookingToSystem Error]:', err.message);
@@ -487,6 +503,16 @@ export async function generateAutonomousReply(senderPhone, incomingText, senderN
     const handoffReply = `${naturalGreeting}percakapan ini sekarang kami alihkan langsung ke *Admin Ri'ayah / Ustadz Musyrif Asrama* ya.\n\nUstadz akan segera membaca dan membalas pesan Bapak/Ibu secara langsung di sini. Mohon ditunggu sebentar ya Bapak/Ibu. 🙏`;
     await recordChatMessage(cleanPhone, 'user', incomingText, waliData.namaWali);
     await recordChatMessage(cleanPhone, 'assistant', handoffReply, 'Smart Ri\'ayah AI');
+    await saveAiDocument('ai_chat_logs', {
+      channel: String(senderPhone).startsWith('TG-') ? 'Telegram' : 'WhatsApp',
+      senderPhone: cleanPhone,
+      senderName: waliData.namaWali,
+      santriNama: waliData.santriNama,
+      engine: 'SMART_HANDOFF_TRIGGER',
+      intent: 'ADMIN_HANDOFF',
+      prompt: incomingText,
+      reply: handoffReply
+    }).catch(() => {});
     return handoffReply;
   }
 
@@ -609,8 +635,19 @@ PANDUAN KOMUNIKASI & ALUR BOOKING KUNJUNGAN:
             reply = reply.replace(/<!--BOOKING_DATA:(.*?)-->/s, '').trim();
           }
 
-          // Rekam balasan asisten ke database chat
+          // Rekam balasan asisten ke database chat & MongoDB AI Logs
           await recordChatMessage(cleanPhone, 'assistant', reply, 'Smart Ri\'ayah AI');
+          await saveAiDocument('ai_chat_logs', {
+            channel: String(senderPhone).startsWith('TG-') ? 'Telegram' : 'WhatsApp',
+            senderPhone: cleanPhone,
+            senderName: waliData.namaWali,
+            santriNama: waliData.santriNama,
+            engine: 'DEEPSEEK_AI',
+            model: 'deepseek-chat',
+            tokensUsed: dsJson.usage || null,
+            prompt: incomingText,
+            reply
+          }).catch(() => {});
           return reply;
         }
       }
@@ -620,6 +657,20 @@ PANDUAN KOMUNIKASI & ALUR BOOKING KUNJUNGAN:
   }
 
   // ─── 2. SMART LOCAL REASONING ENGINE (FALLBACK NATURAL BERBASIS KONTEKS) ───
+  const saveLocalAiReply = async (replyText, intentName) => {
+    await recordChatMessage(cleanPhone, 'assistant', replyText, 'Smart Ri\'ayah AI');
+    await saveAiDocument('ai_chat_logs', {
+      channel: String(senderPhone).startsWith('TG-') ? 'Telegram' : 'WhatsApp',
+      senderPhone: cleanPhone,
+      senderName: waliData.namaWali,
+      santriNama: waliData.santriNama,
+      engine: 'SMART_LOCAL_REASONING',
+      intent: intentName,
+      prompt: incomingText,
+      reply: replyText
+    }).catch(() => {});
+    return replyText;
+  };
 
   // A. INTENT KUNJUNGAN / SAMBANGAN / JENGUK
   const isVisiting =
@@ -655,12 +706,10 @@ PANDUAN KOMUNIKASI & ALUR BOOKING KUNJUNGAN:
     if (!hasDayMention && !hasTimeMention) {
       if (waliData.santriNama && waliData.santriNama !== 'Ananda') {
         const reply = `${naturalGreeting}bisa Bapak/Ibu. Mau menjenguk ananda *${waliData.santriNama}* ya? Rencananya mau datang hari apa dan perkiraan jam berapa?`;
-        await recordChatMessage(cleanPhone, 'assistant', reply, 'Smart Ri\'ayah AI');
-        return reply;
+        return await saveLocalAiReply(reply, 'VISIT_ASK_SCHEDULE');
       }
       const reply = `${naturalGreeting}bisa Bapak/Ibu. Mau menjenguk ananda atas nama siapa dan kelas berapa ya? Rencananya mau berkunjung hari apa dan jam berapa?`;
-      await recordChatMessage(cleanPhone, 'assistant', reply, 'Smart Ri\'ayah AI');
-      return reply;
+      return await saveLocalAiReply(reply, 'VISIT_ASK_IDENTITY');
     }
 
     // KASUS 2: Sudah sebut hari/waktu kunjungan -> Kumpulkan data dan masukkan ke sistem booking!
@@ -731,42 +780,36 @@ PANDUAN KOMUNIKASI & ALUR BOOKING KUNJUNGAN:
       reply = `${naturalGreeting}kunjungan untuk ananda *${targetSantriName}* pada hari *${targetDayName}* sudah *langsung disetujui otomatis* di sistem pondok.\n\n🎫 *Barcode Gate Pass Anda:* *${barcode}*\n\nNanti pas tiba di gerbang, tinggal perlihatkan pesan barcode ini ke petugas satpam di pos jaga ya. Titipan barang maksimal 5 Kg. Semoga perjalanannya lancar ya Bapak/Ibu.`;
     }
 
-    await recordChatMessage(cleanPhone, 'assistant', reply, 'Smart Ri\'ayah AI');
-    return reply;
+    return await saveLocalAiReply(reply, isWeekdayBooking ? 'VISIT_BOOKING_WEEKDAY' : 'VISIT_BOOKING_WEEKEND');
   }
 
   // B. TOPIK SALDO RFID / DOMPET PINTAR
   if (textLower.includes('saldo') || textLower.includes('uang') || textLower.includes('dompet') || textLower.includes('jajan') || textLower.includes('rfid') || textLower.includes('topup') || textLower.includes('top up')) {
     const reply = `${naturalGreeting}alhamdulillah sisa saldo kartu RFID ananda *${waliData.santriNama}* saat ini *${waliData.saldoRfid}* dengan limit jajan ${waliData.limitHarian} per hari.\n\nAda yang perlu kami bantu untuk pengisian saldo atau kebutuhan ananda?`;
-    await recordChatMessage(cleanPhone, 'assistant', reply, 'Smart Ri\'ayah AI');
-    return reply;
+    return await saveLocalAiReply(reply, 'QUERY_SALDO_RFID');
   }
 
   // C. TOPIK KABAR / KONDISI SANTRI
   if (textLower.includes('kabar') || textLower.includes('sehat') || textLower.includes('kondisi') || textLower.includes('kegiatan') || textLower.includes('sholat') || textLower.includes('shalat') || textLower.includes('anak saya')) {
     const reply = `${naturalGreeting}alhamdulillah ananda *${waliData.santriNama}* saat ini dalam kondisi sehat wal'afiat di asrama (${waliData.kamar}). Aktivitas mengaji, sholat berjamaah, dan sekolah berjalan dengan baik.\n\nAda pesan khusus yang ingin disampaikan untuk ananda?`;
-    await recordChatMessage(cleanPhone, 'assistant', reply, 'Smart Ri\'ayah AI');
-    return reply;
+    return await saveLocalAiReply(reply, 'QUERY_KABAR_SANTRI');
   }
 
   // D. TOPIK KESEHATAN / SAKIT / UKS / POSKESTREN
   if (textLower.includes('sakit') || textLower.includes('demam') || textLower.includes('obat') || textLower.includes('uks') || textLower.includes('poskestren') || textLower.includes('klinik') || textLower.includes('dokter')) {
     const reply = `${naturalGreeting}alhamdulillah ananda *${waliData.santriNama}* terpantau sehat di pondok. Petugas kesehatan Poskestren juga siaga 24 jam mendampingi santri. Apakah ananda sempat mengeluhkan sesuatu saat menelepon?`;
-    await recordChatMessage(cleanPhone, 'assistant', reply, 'Smart Ri\'ayah AI');
-    return reply;
+    return await saveLocalAiReply(reply, 'QUERY_KESEHATAN');
   }
 
   // E. TOPIK PERIZINAN & PULANG
   if (textLower.includes('izin') || textLower.includes('pulang') || textLower.includes('libur') || textLower.includes('perpanjang') || textLower.includes('pesiar') || textLower.includes('keluar')) {
     const reply = `${naturalGreeting}untuk perizinan ananda *${waliData.santriNama}*, permohonan dapat diajukan via aplikasi Smart Ri'ayah minimal H-1 ya. Status izin ananda saat ini: *${waliData.izinTerakhir}*. Ada izin apa yang ingin diajukan untuk ananda?`;
-    await recordChatMessage(cleanPhone, 'assistant', reply, 'Smart Ri\'ayah AI');
-    return reply;
+    return await saveLocalAiReply(reply, 'QUERY_PERIZINAN');
   }
 
   // F. SAPAAN UMUM / DEFAULT
   const reply = `${naturalGreeting}ada yang bisa kami bantu terkait ananda *${waliData.santriNama}* di Pesantren Modern Darul Ulum? Silakan disampaikan ya Bapak/Ibu. 🙏`;
-  await recordChatMessage(cleanPhone, 'assistant', reply, 'Smart Ri\'ayah AI');
-  return reply;
+  return await saveLocalAiReply(reply, 'GENERAL_GREETING');
 }
 
 /**

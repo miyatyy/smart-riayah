@@ -35,6 +35,7 @@ import {
 import RfidCardManager from '../modules/RfidCardManager';
 import ExpressPermitKiosk from '../modules/ExpressPermitKiosk';
 import SantriActivityAnalytics from '../modules/SantriActivityAnalytics';
+import MongoDbAiMonitor from '../modules/MongoDbAiMonitor';
 
 export default function SuperAdminDashboard() {
   const { 
@@ -666,6 +667,9 @@ void loop() {
             </div>
 
           </div>
+
+          {/* MongoDB Persistent Storage & AI CRUD Monitor */}
+          <MongoDbAiMonitor variant="dark" />
 
         </div>
       )}

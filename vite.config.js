@@ -118,6 +118,22 @@ export default defineConfig({
       '/api/users': {
         target: 'http://localhost:5000',
         changeOrigin: true
+      },
+      '/api/osis': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      },
+      '/api/ai': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      },
+      '/api/mongodb': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      },
+      '/api/visits': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
       }
     }
   }

@@ -7,6 +7,8 @@
  * - Jumat - Minggu (is_weekday = false) : 'Disetujui (Auto-Approved Weekend)' -> Barcode diterbitkan seketika + WA
  */
 
+import { saveAiDocument } from '../../server/mongo.js';
+
 const DEFAULT_DEEPSEEK_KEY = (process.env.DEEPSEEK_API_KEY || process.env.VITE_DEEPSEEK_API_KEY || '').trim();
 const DEFAULT_FONNTE_TOKEN = (process.env.FONNTE_TOKEN || process.env.VITE_FONNTE_TOKEN || '').trim();
 
@@ -47,8 +49,10 @@ export default async function handler(req, res) {
     let extracted = await callDeepSeekParser(messageText, sender, senderName, apiKey, rtc);
 
     // Fallback regex jika DeepSeek gagal atau respons kosong
+    let usedFallbackParser = false;
     if (!extracted || !extracted.nama_santri) {
       extracted = fallbackRegexParser(messageText, sender, senderName, rtc);
+      usedFallbackParser = true;
     }
 
     // 2. Normalisasi & Validasi Hari Kunjungan (Senin - Minggu)
@@ -170,9 +174,26 @@ export default async function handler(req, res) {
       }
     }
 
+    // 4. Simpan log hasil AI Visit Parser ke MongoDB
+    await saveAiDocument('ai_whatsapp_bookings', {
+      id: `AI-BOOK-${bookingRecord.id}`,
+      bookingId: bookingRecord.id,
+      santriNama: bookingRecord.nama_santri,
+      sender: targetWa || sender || '',
+      senderName,
+      prompt: messageText,
+      replyMessage: replyWaText,
+      ai_engine: usedFallbackParser ? 'REGEX_FALLBACK' : 'DeepSeek Chat (deepseek-chat)',
+      is_weekday: isWeekday,
+      barcode_token: barcodeToken,
+      status_kunjungan: statusKunjungan,
+      booking: bookingRecord,
+      created_at: new Date().toISOString()
+    }).catch(() => {});
+
     return res.status(200).json({
       success: true,
-      ai_engine: 'DeepSeek Chat (deepseek-chat)',
+      ai_engine: usedFallbackParser ? 'Regex Fallback Engine' : 'DeepSeek Chat (deepseek-chat)',
       is_weekday: isWeekday,
       booking: bookingRecord,
       replyMessage: replyWaText,

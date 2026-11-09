@@ -49,6 +49,7 @@ import {
   testDeepSeekConnection 
 } from '../../utils/deepseekApi';
 import { sound } from '../../utils/audio';
+import MongoDbAiMonitor from './MongoDbAiMonitor';
 
 export default function SantriActivityAnalytics({ activeSantri: propActiveSantri }) {
   const { 
@@ -1010,6 +1011,13 @@ export default function SantriActivityAnalytics({ activeSantri: propActiveSantri
           </div>
         )}
       </div>
+
+      {/* 6. PANEL PENYIMPANAN AI PERSISTEN MONGODB (HANYA UNTUK ADMIN RI'AYAH & SUPERADMIN) */}
+      {(role === 'admin_riayah' || role === 'superadmin') && (
+        <div className="no-print">
+          <MongoDbAiMonitor variant="light" />
+        </div>
+      )}
     </div>
   );
 }

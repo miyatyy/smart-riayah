@@ -17,7 +17,12 @@ import {
   CheckCircle,
   XCircle,
   HeartHandshake,
-  Loader2
+  Loader2,
+  Edit3,
+  Trash2,
+  Database,
+  X,
+  Check
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
 import { getRealtimePondokClock } from '../../utils/pondokTimeUtils';
@@ -27,7 +32,9 @@ export default function OsisDashboard() {
     currentUser,
     santriList,
     osisReports,
-    submitOsisReport
+    submitOsisReport,
+    updateOsisReport,
+    deleteOsisReport
   } = useApp();
 
   const [clock, setClock] = useState(() => getRealtimePondokClock());
@@ -51,8 +58,10 @@ export default function OsisDashboard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successAlert, setSuccessAlert] = useState(null);
 
-  // Filter Riwayat Laporan
+  // Filter Riwayat Laporan & State Edit/Delete CRUD
   const [historyFilter, setHistoryFilter] = useState('ALL'); // 'ALL' | 'PENDING_ADMIN' | 'APPROVED' | 'REJECTED'
+  const [historySearch, setHistorySearch] = useState('');
+  const [editingReport, setEditingReport] = useState(null);
 
   // Presets Cepat
   const PRESETS = [
@@ -150,10 +159,47 @@ export default function OsisDashboard() {
   // Filtered History
   const filteredHistory = useMemo(() => {
     return (osisReports || []).filter(rep => {
-      if (historyFilter === 'ALL') return true;
-      return rep.status === historyFilter;
+      if (historyFilter !== 'ALL' && rep.status !== historyFilter) return false;
+      if (historySearch.trim()) {
+        const q = historySearch.toLowerCase().trim();
+        const text = `${rep.id} ${rep.santriNama} ${rep.bidangOsis} ${rep.jenis} ${rep.keterangan} ${rep.kamar}`.toLowerCase();
+        return text.includes(q);
+      }
+      return true;
     });
-  }, [osisReports, historyFilter]);
+  }, [osisReports, historyFilter, historySearch]);
+
+  const handleSaveEditReport = (e) => {
+    e.preventDefault();
+    if (!editingReport?.id) return;
+    if (!editingReport.jenis?.trim() || !editingReport.keterangan?.trim()) {
+      alert('Perihal dan kronologi kejadian tidak boleh kosong!');
+      return;
+    }
+    const res = updateOsisReport?.(editingReport.id, {
+      bidangOsis: editingReport.bidangOsis,
+      kategori: editingReport.kategori,
+      jenis: editingReport.jenis.trim(),
+      poin: Number(editingReport.poin || 0),
+      keterangan: editingReport.keterangan.trim(),
+      tazir: (editingReport.tazir || '').trim()
+    });
+    if (res) {
+      setSuccessAlert(`✏️ Laporan [${editingReport.id}] atas nama ${editingReport.santriNama} berhasil diperbarui (Supabase & MongoDB Sync).`);
+      setTimeout(() => setSuccessAlert(null), 6000);
+    }
+    setEditingReport(null);
+  };
+
+  const handleDeleteReport = (rep) => {
+    const ok = window.confirm(
+      `🗑️ KONFIRMASI HAPUS LAPORAN OSIS\n\nID: ${rep.id}\nSantri: ${rep.santriNama} (${rep.kelas || '-'})\nPerihal: ${rep.jenis}\n\nLaporan akan dihapus permanen dari database (Supabase & MongoDB). Lanjutkan?`
+    );
+    if (!ok) return;
+    deleteOsisReport?.(rep.id);
+    setSuccessAlert(`🗑️ Laporan [${rep.id}] atas nama ${rep.santriNama} telah dihapus dari database.`);
+    setTimeout(() => setSuccessAlert(null), 6000);
+  };
 
   return (
     <div className="space-y-6 pb-16 animate-fade-in">
@@ -451,21 +497,21 @@ export default function OsisDashboard() {
                 <label className="text-xs font-bold text-slate-700 block mb-1">
                   Kategori Laporan:
                 </label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-1.5">
                   <button
                     type="button"
                     onClick={() => {
                       setKategori('PELANGGARAN');
                       if (poin > 0) setPoin(-10);
                     }}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 ${
+                    className={`py-2 px-2 rounded-xl text-[11px] font-bold transition flex items-center justify-center gap-1 ${
                       kategori === 'PELANGGARAN'
                         ? 'bg-rose-600 text-white shadow-xs'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     }`}
                   >
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                    <span>⚠️ Pelanggaran</span>
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <span>Pelanggaran</span>
                   </button>
                   <button
                     type="button"
@@ -473,14 +519,28 @@ export default function OsisDashboard() {
                       setKategori('PRESTASI');
                       if (poin < 0) setPoin(10);
                     }}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 ${
+                    className={`py-2 px-2 rounded-xl text-[11px] font-bold transition flex items-center justify-center gap-1 ${
                       kategori === 'PRESTASI'
                         ? 'bg-emerald-600 text-white shadow-xs'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     }`}
                   >
-                    <Award className="w-3.5 h-3.5" />
-                    <span>🌟 Prestasi</span>
+                    <Award className="w-3.5 h-3.5 shrink-0" />
+                    <span>Prestasi</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setKategori('IBADAH');
+                      if (poin < 0) setPoin(5);
+                    }}
+                    className={`py-2 px-2 rounded-xl text-[11px] font-bold transition flex items-center justify-center gap-1 ${
+                      kategori === 'IBADAH'
+                        ? 'bg-teal-600 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <span>🕌 Ibadah</span>
                   </button>
                 </div>
               </div>
@@ -579,45 +639,65 @@ export default function OsisDashboard() {
         </div>
       </div>
 
-      {/* ─── 4. TABEL RIWAYAT LAPORAN OSIS & STATUS VERIFIKASI ADMIN RI'AYAH ─── */}
+      {/* ─── 4. TABEL RIWAYAT LAPORAN OSIS & STATUS VERIFIKASI ADMIN RI'AYAH (FULL CRUD) ─── */}
       <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden space-y-0">
-        <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-50 via-emerald-50/30 to-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-50 via-emerald-50/30 to-slate-50 border-b border-slate-200 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div>
-            <h4 className="font-black text-sm text-slate-900 tracking-tight flex items-center gap-2">
-              <BookOpen className="w-4 h-4 text-emerald-700" />
-              <span>Riwayat Pengiriman Laporan Kedisiplinan OSIS</span>
-            </h4>
-            <p className="text-xs text-slate-500">
-              Pantau status verifikasi seluruh laporan yang dikirimkan ke Biro Pengasuhan Santri (Admin Ri'ayah).
+            <div className="flex items-center gap-2 flex-wrap">
+              <h4 className="font-black text-sm text-slate-900 tracking-tight flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-emerald-700" />
+                <span>Riwayat Pengiriman Laporan Kedisiplinan OSIS</span>
+              </h4>
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                <Database className="w-3 h-3" />
+                <span>CRUD DB: Supabase &amp; MongoDB Aktif</span>
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Buat, baca, perbarui (Update), atau hapus (Delete) laporan kelakuan santri secara real-time sebelum/sesudah diverifikasi Admin Ri'ayah.
             </p>
           </div>
 
-          {/* Filter Status Riwayat */}
-          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl text-xs font-bold">
-            <button
-              onClick={() => setHistoryFilter('ALL')}
-              className={`px-3 py-1 rounded-xl transition ${historyFilter === 'ALL' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500'}`}
-            >
-              Semua ({osisReports.length})
-            </button>
-            <button
-              onClick={() => setHistoryFilter('PENDING_ADMIN')}
-              className={`px-3 py-1 rounded-xl transition ${historyFilter === 'PENDING_ADMIN' ? 'bg-amber-500 text-white shadow-xs' : 'text-slate-500'}`}
-            >
-              Menunggu ({osisReports.filter(r => r.status === 'PENDING_ADMIN').length})
-            </button>
-            <button
-              onClick={() => setHistoryFilter('APPROVED')}
-              className={`px-3 py-1 rounded-xl transition ${historyFilter === 'APPROVED' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-500'}`}
-            >
-              Disetujui ({osisReports.filter(r => r.status === 'APPROVED').length})
-            </button>
-            <button
-              onClick={() => setHistoryFilter('REJECTED')}
-              className={`px-3 py-1 rounded-xl transition ${historyFilter === 'REJECTED' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-500'}`}
-            >
-              Ditolak ({osisReports.filter(r => r.status === 'REJECTED').length})
-            </button>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            {/* Cari Riwayat */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+              <input
+                type="text"
+                value={historySearch}
+                onChange={(e) => setHistorySearch(e.target.value)}
+                placeholder="Cari di riwayat..."
+                className="pl-8 pr-3 py-1.5 text-xs rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-emerald-500 w-full sm:w-44"
+              />
+            </div>
+
+            {/* Filter Status Riwayat */}
+            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl text-xs font-bold overflow-x-auto">
+              <button
+                onClick={() => setHistoryFilter('ALL')}
+                className={`px-3 py-1 rounded-xl transition whitespace-nowrap ${historyFilter === 'ALL' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500'}`}
+              >
+                Semua ({osisReports.length})
+              </button>
+              <button
+                onClick={() => setHistoryFilter('PENDING_ADMIN')}
+                className={`px-3 py-1 rounded-xl transition whitespace-nowrap ${historyFilter === 'PENDING_ADMIN' ? 'bg-amber-500 text-white shadow-xs' : 'text-slate-500'}`}
+              >
+                Menunggu ({osisReports.filter(r => r.status === 'PENDING_ADMIN').length})
+              </button>
+              <button
+                onClick={() => setHistoryFilter('APPROVED')}
+                className={`px-3 py-1 rounded-xl transition whitespace-nowrap ${historyFilter === 'APPROVED' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-500'}`}
+              >
+                Disetujui ({osisReports.filter(r => r.status === 'APPROVED').length})
+              </button>
+              <button
+                onClick={() => setHistoryFilter('REJECTED')}
+                className={`px-3 py-1 rounded-xl transition whitespace-nowrap ${historyFilter === 'REJECTED' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-500'}`}
+              >
+                Ditolak ({osisReports.filter(r => r.status === 'REJECTED').length})
+              </button>
+            </div>
           </div>
         </div>
 
@@ -625,19 +705,20 @@ export default function OsisDashboard() {
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="bg-slate-50/80 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
-                <th className="py-3 px-3">ID & Waktu</th>
-                <th className="py-3 px-3">Santri & Kamar</th>
+                <th className="py-3 px-3">ID &amp; Waktu</th>
+                <th className="py-3 px-3">Santri &amp; Kamar</th>
                 <th className="py-3 px-3">Bidang OSIS</th>
-                <th className="py-3 px-3">Perihal & Kronologi</th>
+                <th className="py-3 px-3">Perihal &amp; Kronologi</th>
                 <th className="py-3 px-3 text-center">Poin</th>
                 <th className="py-3 px-3">Tindakan / Ta'zir</th>
                 <th className="py-3 px-3 text-center">Status Verifikasi</th>
+                <th className="py-3 px-3 text-center">Aksi CRUD</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredHistory.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="py-12 text-center text-slate-400">
+                  <td colSpan="8" className="py-12 text-center text-slate-400">
                     Belum ada riwayat laporan pada kategori status ini.
                   </td>
                 </tr>
@@ -711,6 +792,28 @@ export default function OsisDashboard() {
                           </span>
                         )}
                       </td>
+                      <td className="py-3 px-3 text-center">
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setEditingReport({ ...rep })}
+                            className="px-2.5 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 rounded-lg text-[10px] font-bold transition inline-flex items-center gap-1"
+                            title="Edit / Perbarui Laporan di Database"
+                          >
+                            <Edit3 className="w-3 h-3" />
+                            <span>Edit</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteReport(rep)}
+                            className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[10px] font-bold transition inline-flex items-center gap-1"
+                            title="Hapus Laporan dari Database"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Hapus</span>
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })
@@ -719,6 +822,124 @@ export default function OsisDashboard() {
           </table>
         </div>
       </div>
+
+      {/* MODAL EDIT / UPDATE LAPORAN OSIS (CRUD) */}
+      {editingReport && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <form
+            onSubmit={handleSaveEditReport}
+            className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="font-black text-base text-slate-900 flex items-center gap-2">
+                  <Edit3 className="w-4 h-4 text-sky-600" />
+                  <span>Edit Laporan Kedisiplinan ({editingReport.id})</span>
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Santri: <b>{editingReport.santriNama}</b> ({editingReport.kelas} • {editingReport.kamar})
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingReport(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Bidang OSIS</label>
+                <select
+                  value={editingReport.bidangOsis || 'OSIS Kamtib'}
+                  onChange={(e) => setEditingReport({ ...editingReport, bidangOsis: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 font-semibold"
+                >
+                  <option value="OSIS Kamtib Banat (Putri)">OSIS Kamtib Banat (Putri)</option>
+                  <option value="OSIS Kamtib Banin (Putra)">OSIS Kamtib Banin (Putra)</option>
+                  <option value="OSIS Ubudiyah (Ibadah & Sholat)">OSIS Ubudiyah (Ibadah & Sholat)</option>
+                  <option value="OSIS Bahasa (Arab & Inggris)">OSIS Bahasa (Arab & Inggris)</option>
+                  <option value="OSIS Kebersihan & Lingkungan">OSIS Kebersihan & Lingkungan</option>
+                  <option value="OSIS Olahraga & Seni">OSIS Olahraga & Seni</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Kategori</label>
+                <select
+                  value={editingReport.kategori || 'PELANGGARAN'}
+                  onChange={(e) => setEditingReport({ ...editingReport, kategori: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 font-semibold"
+                >
+                  <option value="PELANGGARAN">PELANGGARAN</option>
+                  <option value="PRESTASI">PRESTASI</option>
+                  <option value="IBADAH">IBADAH</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div className="sm:col-span-2">
+                <label className="font-bold text-slate-700 block mb-1">Perihal / Jenis Kejadian</label>
+                <input
+                  type="text"
+                  value={editingReport.jenis || ''}
+                  onChange={(e) => setEditingReport({ ...editingReport, jenis: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 font-semibold"
+                />
+              </div>
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Poin</label>
+                <input
+                  type="number"
+                  value={editingReport.poin ?? 0}
+                  onChange={(e) => setEditingReport({ ...editingReport, poin: parseInt(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 font-mono font-bold text-center"
+                />
+              </div>
+            </div>
+
+            <div className="text-xs">
+              <label className="font-bold text-slate-700 block mb-1">Keterangan &amp; Kronologi</label>
+              <textarea
+                rows={3}
+                value={editingReport.keterangan || ''}
+                onChange={(e) => setEditingReport({ ...editingReport, keterangan: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 leading-relaxed"
+              />
+            </div>
+
+            <div className="text-xs">
+              <label className="font-bold text-slate-700 block mb-1">Tindakan / Ta'zir Pembinaan</label>
+              <input
+                type="text"
+                value={editingReport.tazir || ''}
+                onChange={(e) => setEditingReport({ ...editingReport, tazir: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setEditingReport(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm"
+              >
+                <Check className="w-4 h-4" />
+                <span>Simpan Update ke Database</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

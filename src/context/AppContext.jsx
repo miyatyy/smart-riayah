@@ -39,7 +39,12 @@ import {
   dbToMessage,
   syncMessageToSupabase,
   fetchVisitBookingsFromSupabase,
-  syncBookingStatusToSupabase
+  syncBookingStatusToSupabase,
+  dbToOsisReport,
+  fetchOsisReportsFromSupabase,
+  createOsisReportInDb,
+  updateOsisReportInDb,
+  deleteOsisReportFromDb
 } from '../utils/supabaseSync';
 import {
   INITIAL_SANTRI,
@@ -343,11 +348,32 @@ export const AppProvider = ({ children }) => {
     }
   });
 
-  // ─── PENGURUS OSIS: SISTEM PELAPORAN KELAKUAN SANTRI/WATI SE-PONDOK ───
+  // ─── PENGURUS OSIS: SISTEM PELAPORAN KELAKUAN SANTRI/WATI SE-PONDOK (DB CRUD) ───
+  const getDeletedOsisIds = () => {
+    try {
+      const raw = localStorage.getItem('sr_deleted_osis_ids');
+      const arr = raw ? JSON.parse(raw) : [];
+      return new Set(Array.isArray(arr) ? arr : []);
+    } catch {
+      return new Set();
+    }
+  };
+
+  const markOsisIdDeleted = (id) => {
+    if (!id) return;
+    try {
+      const set = getDeletedOsisIds();
+      set.add(String(id));
+      localStorage.setItem('sr_deleted_osis_ids', JSON.stringify(Array.from(set)));
+    } catch {}
+  };
+
   const [osisReports, setOsisReports] = useState(() => {
     try {
+      const deletedSet = getDeletedOsisIds();
       const saved = localStorage.getItem('sr_osis_reports');
-      return saved ? JSON.parse(saved) : INITIAL_OSIS_REPORTS;
+      const base = saved ? JSON.parse(saved) : INITIAL_OSIS_REPORTS;
+      return Array.isArray(base) ? base.filter(r => r && !deletedSet.has(String(r.id))) : INITIAL_OSIS_REPORTS;
     } catch {
       return INITIAL_OSIS_REPORTS;
     }
@@ -934,7 +960,10 @@ export const AppProvider = ({ children }) => {
       if (Array.isArray(payload.rfidTransactions)) setRfidTransactions(payload.rfidTransactions);
       if (Array.isArray(payload.whatsappLogs)) setWhatsappLogs(payload.whatsappLogs);
       if (Array.isArray(payload.blacklistedUids)) setBlacklistedUids(payload.blacklistedUids);
-      if (Array.isArray(payload.osisReports)) setOsisReports(payload.osisReports);
+      if (Array.isArray(payload.osisReports)) {
+        const deletedSet = getDeletedOsisIds();
+        setOsisReports(payload.osisReports.filter(r => r && !deletedSet.has(String(r.id))));
+      }
       if (Array.isArray(payload.visitBookings)) setVisitBookings(payload.visitBookings);
       if (payload.reminderThresholdMinutes) setReminderThresholdMinutes(payload.reminderThresholdMinutes);
       if (payload.version) syncVersionRef.current = payload.version;
@@ -1044,6 +1073,31 @@ export const AppProvider = ({ children }) => {
             return merged;
           });
         }
+        if (remoteData.osisReports?.length) {
+          const deletedSet = getDeletedOsisIds();
+          setOsisReports(prev => {
+            const mergedMap = new Map();
+            (prev || []).forEach(r => {
+              if (r?.id && !deletedSet.has(String(r.id))) mergedMap.set(r.id, r);
+            });
+            remoteData.osisReports.forEach(r => {
+              if (!r?.id || deletedSet.has(String(r.id))) return;
+              const existing = mergedMap.get(r.id);
+              const existingTs = new Date(existing?.updated_at || existing?.created_at || 0).getTime();
+              const remoteTs = new Date(r.updated_at || r.created_at || 0).getTime();
+              if (!existing || remoteTs >= existingTs) {
+                mergedMap.set(r.id, { ...existing, ...r });
+              }
+            });
+            const merged = Array.from(mergedMap.values()).sort(
+              (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)
+            );
+            try {
+              localStorage.setItem('sr_osis_reports', JSON.stringify(merged));
+            } catch (e) {}
+            return merged;
+          });
+        }
         if (remoteData.messages?.length) {
           const formatted = remoteData.messages.map(msg => ({
             id: msg.id,
@@ -1140,6 +1194,38 @@ export const AppProvider = ({ children }) => {
           return; // Jangan dimasukkan ke WhatsApp Chat Logs biasa
         }
 
+        // Cek jika ini adalah data laporan OSIS fallback (room_id: osis_reports_log)
+        if (payload.new && payload.new.room_id === 'osis_reports_log') {
+          try {
+            const report = JSON.parse(payload.new.message_text);
+            const deletedSet = getDeletedOsisIds();
+            if (report && report.id && !deletedSet.has(String(report.id))) {
+              if (payload.eventType === 'INSERT') {
+                setOsisReports(prev => {
+                  const exists = prev.some(r => r.id === report.id);
+                  const updated = exists
+                    ? prev.map(r => r.id === report.id ? { ...r, ...report } : r)
+                    : [report, ...prev];
+                  try { localStorage.setItem('sr_osis_reports', JSON.stringify(updated)); } catch {}
+                  return updated;
+                });
+              } else if (payload.eventType === 'UPDATE') {
+                setOsisReports(prev => {
+                  const exists = prev.some(r => r.id === report.id);
+                  const updated = exists
+                    ? prev.map(r => r.id === report.id ? { ...r, ...report } : r)
+                    : [report, ...prev];
+                  try { localStorage.setItem('sr_osis_reports', JSON.stringify(updated)); } catch {}
+                  return updated;
+                });
+              }
+            }
+          } catch (err) {
+            console.warn('Realtime osis_reports_log error:', err);
+          }
+          return;
+        }
+
         if (payload.eventType === 'INSERT' && payload.new) {
           const msg = dbToMessage(payload.new);
           sound.playWhatsApp();
@@ -1180,6 +1266,37 @@ export const AppProvider = ({ children }) => {
         if (!isMounted || !row) return;
         const item = dbToRfidTransaction(row);
         setRfidTransactions(prev => [item, ...prev.filter(t => t.id !== item.id)]);
+      },
+      onOsisReportChange: (payload) => {
+        if (!isMounted) return;
+        const deletedSet = getDeletedOsisIds();
+        if (payload.eventType === 'INSERT' && payload.new) {
+          const item = dbToOsisReport(payload.new);
+          if (!item?.id || deletedSet.has(String(item.id))) return;
+          setOsisReports(prev => {
+            const updated = [item, ...prev.filter(r => r.id !== item.id)];
+            try { localStorage.setItem('sr_osis_reports', JSON.stringify(updated)); } catch {}
+            return updated;
+          });
+        } else if (payload.eventType === 'UPDATE' && payload.new) {
+          const item = dbToOsisReport(payload.new);
+          if (!item?.id || deletedSet.has(String(item.id))) return;
+          setOsisReports(prev => {
+            const exists = prev.some(r => r.id === item.id);
+            const updated = exists
+              ? prev.map(r => r.id === item.id ? { ...r, ...item } : r)
+              : [item, ...prev];
+            try { localStorage.setItem('sr_osis_reports', JSON.stringify(updated)); } catch {}
+            return updated;
+          });
+        } else if (payload.eventType === 'DELETE' && payload.old?.id) {
+          markOsisIdDeleted(payload.old.id);
+          setOsisReports(prev => {
+            const updated = prev.filter(r => r.id !== payload.old.id);
+            try { localStorage.setItem('sr_osis_reports', JSON.stringify(updated)); } catch {}
+            return updated;
+          });
+        }
       }
     });
 
@@ -1272,7 +1389,7 @@ export const AppProvider = ({ children }) => {
         });
       })
       .on('broadcast', { event: 'osis.report_created' }, ({ payload }) => {
-        if (!isMounted || !payload?.id) return;
+        if (!isMounted || !payload?.id || getDeletedOsisIds().has(String(payload.id))) return;
         sound.playSuccess?.();
         setOsisReports(prev => {
           const exists = prev.some(r => r.id === payload.id);
@@ -1285,9 +1402,33 @@ export const AppProvider = ({ children }) => {
         });
       })
       .on('broadcast', { event: 'osis.report_verified' }, ({ payload }) => {
-        if (!isMounted || !payload?.id) return;
+        if (!isMounted || !payload?.id || getDeletedOsisIds().has(String(payload.id))) return;
         setOsisReports(prev => {
           const updated = prev.map(r => r.id === payload.id ? { ...r, ...payload } : r);
+          try {
+            localStorage.setItem('sr_osis_reports', JSON.stringify(updated));
+          } catch (e) {}
+          return updated;
+        });
+      })
+      .on('broadcast', { event: 'osis.report_updated' }, ({ payload }) => {
+        if (!isMounted || !payload?.id || getDeletedOsisIds().has(String(payload.id))) return;
+        setOsisReports(prev => {
+          const exists = prev.some(r => r.id === payload.id);
+          const updated = exists
+            ? prev.map(r => r.id === payload.id ? { ...r, ...payload } : r)
+            : [payload, ...prev];
+          try {
+            localStorage.setItem('sr_osis_reports', JSON.stringify(updated));
+          } catch (e) {}
+          return updated;
+        });
+      })
+      .on('broadcast', { event: 'osis.report_deleted' }, ({ payload }) => {
+        if (!isMounted || !payload?.id) return;
+        markOsisIdDeleted(payload.id);
+        setOsisReports(prev => {
+          const updated = prev.filter(r => r.id !== payload.id);
           try {
             localStorage.setItem('sr_osis_reports', JSON.stringify(updated));
           } catch (e) {}
@@ -1304,7 +1445,7 @@ export const AppProvider = ({ children }) => {
     };
   }, []);
 
-  // Direct instant fetch for visit_bookings_log from Supabase on mount
+  // Direct instant fetch for visit_bookings_log & osis_reports (Supabase + MongoDB) on mount
   useEffect(() => {
     let isMounted = true;
     fetchVisitBookingsFromSupabase()
@@ -1327,6 +1468,37 @@ export const AppProvider = ({ children }) => {
       })
       .catch(err => {
         console.warn('Direct fetch visit bookings warning:', err);
+      });
+
+    fetchOsisReportsFromSupabase()
+      .then(remoteReports => {
+        if (!isMounted || !Array.isArray(remoteReports) || remoteReports.length === 0) return;
+        const deletedSet = getDeletedOsisIds();
+        setOsisReports(prev => {
+          const mergedMap = new Map();
+          (prev || []).forEach(r => {
+            if (r?.id && !deletedSet.has(String(r.id))) mergedMap.set(r.id, r);
+          });
+          remoteReports.forEach(r => {
+            if (!r?.id || deletedSet.has(String(r.id))) return;
+            const existing = mergedMap.get(r.id);
+            const existingTs = new Date(existing?.updated_at || existing?.created_at || 0).getTime();
+            const remoteTs = new Date(r.updated_at || r.created_at || 0).getTime();
+            if (!existing || remoteTs >= existingTs) {
+              mergedMap.set(r.id, { ...existing, ...r });
+            }
+          });
+          const merged = Array.from(mergedMap.values()).sort(
+            (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)
+          );
+          try {
+            localStorage.setItem('sr_osis_reports', JSON.stringify(merged));
+          } catch (e) {}
+          return merged;
+        });
+      })
+      .catch(err => {
+        console.warn('Direct fetch OSIS reports warning:', err);
       });
 
     return () => { isMounted = false; };
@@ -1448,7 +1620,6 @@ export const AppProvider = ({ children }) => {
         rooms,
         rfidTransactions,
         whatsappLogs,
-        setWhatsappLogs,
         blacklistedUids,
         osisReports,
         visitBookings,
@@ -4513,9 +4684,10 @@ export const AppProvider = ({ children }) => {
     });
   };
 
-  // ─── PENGURUS OSIS: SISTEM PELAPORAN KELAKUAN SANTRI/WATI SE-PONDOK ───
+  // ─── PENGURUS OSIS: SISTEM PELAPORAN KELAKUAN SANTRI/WATI SE-PONDOK (CRUD PENUH DB) ───
   const submitOsisReport = (reportData) => {
     const clock = getRealtimePondokClock();
+    const nowIso = new Date().toISOString();
     const newReport = {
       id: `OSIS-${Date.now().toString().slice(-6)}`,
       santriId: reportData.santriId,
@@ -4533,10 +4705,21 @@ export const AppProvider = ({ children }) => {
       status: 'PENDING_ADMIN',
       tanggal: reportData.tanggal || clock.tanggal_ymd,
       waktu: reportData.waktu || clock.jam_menit,
-      created_at: new Date().toISOString()
+      created_at: nowIso,
+      updated_at: nowIso
     };
 
-    setOsisReports(prev => [newReport, ...prev]);
+    const nextReports = [newReport, ...osisReports];
+    setOsisReports(prev => {
+      const updated = [newReport, ...prev.filter(r => r.id !== newReport.id)];
+      try { localStorage.setItem('sr_osis_reports', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+
+    // Simpan persisten secara asinkron (non-blocking) ke Supabase & MongoDB CRUD API
+    createOsisReportInDb(newReport).catch((e) => {
+      console.warn('createOsisReportInDb async warning:', e?.message || e);
+    });
 
     // Siarkan ke seluruh tab & perangkat via Supabase Realtime & BroadcastChannel
     try {
@@ -4556,7 +4739,7 @@ export const AppProvider = ({ children }) => {
         bc.postMessage({
           type: 'STATE_UPDATE',
           version: Date.now(),
-          payload: { osisReports: [newReport, ...osisReports] }
+          payload: { osisReports: nextReports }
         });
         bc.close();
       }
@@ -4566,55 +4749,167 @@ export const AppProvider = ({ children }) => {
     return newReport;
   };
 
-  const verifyOsisReport = (reportId, action = 'APPROVE', refinedData = {}) => {
-    const clock = getRealtimePondokClock();
-    let targetReport = null;
+  const updateOsisReport = (reportId, updatedFields = {}) => {
+    const existing = osisReports.find(r => r.id === reportId);
+    if (!existing) return null;
 
-    setOsisReports(prev => prev.map(rep => {
-      if (rep.id === reportId) {
-        targetReport = {
-          ...rep,
-          status: action === 'APPROVE' ? 'APPROVED' : 'REJECTED',
-          jenis: refinedData.jenis !== undefined ? refinedData.jenis : rep.jenis,
-          keterangan: refinedData.keterangan !== undefined ? refinedData.keterangan : rep.keterangan,
-          poin: refinedData.poin !== undefined ? Number(refinedData.poin) : rep.poin,
-          tazir: refinedData.tazir !== undefined ? refinedData.tazir : rep.tazir,
-          adminNote: refinedData.adminNote || (action === 'APPROVE' ? 'Disetujui resmi oleh Admin Ri\'ayah' : 'Ditolak oleh Admin Ri\'ayah'),
-          verified_at: new Date().toISOString(),
-          verified_by: currentUser?.nama || 'Admin Ri\'ayah'
-        };
-        return targetReport;
-      }
-      return rep;
-    }));
+    const nowIso = new Date().toISOString();
+    const updatedReport = {
+      ...existing,
+      ...updatedFields,
+      id: existing.id,
+      poin: updatedFields.poin !== undefined ? Number(updatedFields.poin) : Number(existing.poin || 0),
+      updated_at: nowIso
+    };
 
-    // Siarkan status verifikasi ke seluruh tab & perangkat
-    if (targetReport) {
-      try {
-        const waChannel = supabase.channel('whatsapp-room');
-        waChannel.send({
-          type: 'broadcast',
-          event: 'osis.report_verified',
-          payload: targetReport
-        });
-      } catch (e) {}
+    const nextReports = osisReports.map(r => (r.id === reportId ? updatedReport : r));
+    setOsisReports(prev => {
+      const updated = prev.map(r => (r.id === reportId ? updatedReport : r));
+      try { localStorage.setItem('sr_osis_reports', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
 
-      try {
-        if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-          const bc = new BroadcastChannel('smart_riayah_sync_channel');
-          bc.postMessage({
-            type: 'STATE_UPDATE',
-            version: Date.now(),
-            payload: {
-              osisReports: osisReports.map(r => r.id === targetReport.id ? targetReport : r)
-            }
-          });
-          bc.close();
+    // Sinkronkan pembaruan poin santri bila laporan ini sudah berstatus APPROVED dan poin diubah
+    if (existing.status === 'APPROVED' && updatedFields.poin !== undefined) {
+      const oldPoin = Number(existing.poin || 0);
+      const newPoin = Number(updatedReport.poin || 0);
+      const poinDelta = newPoin - oldPoin;
+      if (poinDelta !== 0 && existing.santriId) {
+        const targetSantri = santriList.find(s => s.id === existing.santriId);
+        if (targetSantri) {
+          const adjustedPoints = Math.max(0, Math.min(100, (targetSantri.poinDisiplin ?? 100) + poinDelta));
+          setSantriList(prev => prev.map(s => (s.id === existing.santriId ? { ...s, poinDisiplin: adjustedPoints } : s)));
+          syncSantriToSupabase({ ...targetSantri, poinDisiplin: adjustedPoints });
         }
-      } catch (e) {}
+      }
     }
 
-    if (action === 'APPROVE' && targetReport) {
+    // Update persisten di Supabase & MongoDB CRUD API
+    updateOsisReportInDb(updatedReport).catch((e) => {
+      console.warn('updateOsisReportInDb async warning:', e?.message || e);
+    });
+
+    try {
+      const waChannel = supabase.channel('whatsapp-room');
+      waChannel.send({
+        type: 'broadcast',
+        event: 'osis.report_updated',
+        payload: updatedReport
+      });
+    } catch (e) {}
+
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const bc = new BroadcastChannel('smart_riayah_sync_channel');
+        bc.postMessage({
+          type: 'STATE_UPDATE',
+          version: Date.now(),
+          payload: { osisReports: nextReports }
+        });
+        bc.close();
+      }
+    } catch (e) {}
+
+    sound.playSuccess?.();
+    return updatedReport;
+  };
+
+  const deleteOsisReport = (reportId) => {
+    if (!reportId) return false;
+    markOsisIdDeleted(reportId);
+
+    const remaining = osisReports.filter(r => r.id !== reportId);
+    setOsisReports(remaining);
+    try {
+      localStorage.setItem('sr_osis_reports', JSON.stringify(remaining));
+    } catch {}
+
+    // Hapus persisten di Supabase & MongoDB CRUD API
+    deleteOsisReportFromDb(reportId).catch((e) => {
+      console.warn('deleteOsisReportFromDb async warning:', e?.message || e);
+    });
+
+    try {
+      const waChannel = supabase.channel('whatsapp-room');
+      waChannel.send({
+        type: 'broadcast',
+        event: 'osis.report_deleted',
+        payload: { id: reportId }
+      });
+    } catch (e) {}
+
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const bc = new BroadcastChannel('smart_riayah_sync_channel');
+        bc.postMessage({
+          type: 'STATE_UPDATE',
+          version: Date.now(),
+          payload: { osisReports: remaining }
+        });
+        bc.close();
+      }
+    } catch (e) {}
+
+    sound.playBeep?.();
+    return true;
+  };
+
+  const verifyOsisReport = (reportId, action = 'APPROVE', refinedData = {}) => {
+    const clock = getRealtimePondokClock();
+    const existingReport = osisReports.find(rep => rep.id === reportId);
+    if (!existingReport) return null;
+
+    const nowIso = new Date().toISOString();
+    const wasAlreadyApproved = existingReport.status === 'APPROVED';
+
+    const targetReport = {
+      ...existingReport,
+      status: action === 'APPROVE' ? 'APPROVED' : 'REJECTED',
+      jenis: refinedData.jenis !== undefined ? refinedData.jenis : existingReport.jenis,
+      keterangan: refinedData.keterangan !== undefined ? refinedData.keterangan : existingReport.keterangan,
+      poin: refinedData.poin !== undefined ? Number(refinedData.poin) : Number(existingReport.poin || 0),
+      tazir: refinedData.tazir !== undefined ? refinedData.tazir : existingReport.tazir,
+      adminNote: refinedData.adminNote || (action === 'APPROVE' ? 'Disetujui resmi oleh Admin Ri\'ayah' : 'Ditolak oleh Admin Ri\'ayah'),
+      verified_at: nowIso,
+      verified_by: currentUser?.nama || 'Admin Ri\'ayah',
+      updated_at: nowIso
+    };
+
+    const nextReports = osisReports.map(rep => (rep.id === reportId ? targetReport : rep));
+    setOsisReports(prev => {
+      const updated = prev.map(rep => (rep.id === reportId ? targetReport : rep));
+      try { localStorage.setItem('sr_osis_reports', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+
+    // Update status persisten di Supabase & MongoDB
+    updateOsisReportInDb(targetReport).catch((e) => {
+      console.warn('verifyOsisReport updateOsisReportInDb warning:', e?.message || e);
+    });
+
+    // Siarkan status verifikasi ke seluruh tab & perangkat
+    try {
+      const waChannel = supabase.channel('whatsapp-room');
+      waChannel.send({
+        type: 'broadcast',
+        event: 'osis.report_verified',
+        payload: targetReport
+      });
+    } catch (e) {}
+
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const bc = new BroadcastChannel('smart_riayah_sync_channel');
+        bc.postMessage({
+          type: 'STATE_UPDATE',
+          version: Date.now(),
+          payload: { osisReports: nextReports }
+        });
+        bc.close();
+      }
+    } catch (e) {}
+
+    if (action === 'APPROVE' && !wasAlreadyApproved) {
       // 1. Masukkan ke catatan disiplin resmi pondok
       const poinValue = Number(targetReport.poin || 0);
       const categoryLabel = poinValue < 0 ? 'Pelanggaran' : 'Prestasi';
@@ -4887,11 +5182,13 @@ export const AppProvider = ({ children }) => {
         OFFICIAL_TOPIC_GROUPS,
         buildVisitingHoursAndRulesReply,
 
-        // 16. OSIS Discipline Reports Engine
+        // 16. OSIS Discipline Reports Engine (Full Database CRUD)
         osisReports,
         setOsisReports,
         submitOsisReport,
-        verifyOsisReport
+        verifyOsisReport,
+        updateOsisReport,
+        deleteOsisReport
       }}
     >
       {children}
