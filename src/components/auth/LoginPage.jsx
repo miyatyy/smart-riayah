@@ -30,9 +30,125 @@ import {
   Activity
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
+import { supabase } from '../../utils/supabaseClient';
+
+const ROLE_ROUTES = {
+  superadmin: '/dashboard/developer',
+  admin_riayah: '/dashboard/admin',
+  musyrif: '/dashboard/musyrif',
+  satpam: '/dashboard/gate',
+  poskestren: '/dashboard/medical',
+  walisantri: '/dashboard/wali',
+  mudir: '/dashboard/mudir',
+};
+
+const DB_TO_APP_ROLE = {
+  superadmin: 'superadmin',
+  admin_riayah: 'admin_riayah',
+  musyrif: 'musyrif',
+  satpam: 'security',
+  poskestren: 'poskestren',
+  walisantri: 'parent',
+  mudir: 'kyai',
+};
+
+const DEMO_ACCOUNTS = [
+  {
+    id: 'ACC-01',
+    role: 'superadmin',
+    appRole: 'superadmin',
+    route: '/dashboard/developer',
+    roleName: 'Super Admin (Developer)',
+    email: 'superadmin@smartriayah.sch.id',
+    password: 'Riayah2026!',
+    nama: 'Ust. Eng. Al-Fatih, M.T.',
+    jabatan: 'Lead System Architect & IoT Developer',
+    avatar: '/images/avatar_santri_putra.jpg',
+  },
+  {
+    id: 'ACC-02',
+    role: 'admin_riayah',
+    appRole: 'admin_riayah',
+    route: '/dashboard/admin',
+    roleName: "Admin Ri'ayah",
+    email: 'adminriayah@smartriayah.sch.id',
+    password: 'Riayah2026!',
+    nama: 'Ust. Drs. H. Mustofa',
+    jabatan: 'Kepala Biro Asrama & Setting Builder',
+    avatar: '/images/avatar_santri_putra.jpg',
+  },
+  {
+    id: 'ACC-03',
+    role: 'musyrif',
+    appRole: 'musyrif',
+    route: '/dashboard/musyrif',
+    roleName: 'Musyrif / Musyrifah',
+    email: 'musyrif@smartriayah.sch.id',
+    password: 'Riayah2026!',
+    nama: 'Ust. M. Syukron, M.Pd.',
+    jabatan: 'Koordinator Musyrif Pengasuhan Santri',
+    avatar: '/images/avatar_santri_putra.jpg',
+  },
+  {
+    id: 'ACC-04',
+    role: 'satpam',
+    appRole: 'security',
+    route: '/dashboard/gate',
+    roleName: 'Pos Satpam (Keamanan)',
+    email: 'security@smartriayah.sch.id',
+    password: 'Riayah2026!',
+    nama: 'Komandan Sutrisno',
+    jabatan: 'Kepala Regu Pos Keamanan Gerbang Utama',
+    avatar: '/images/avatar_santri_putra.jpg',
+  },
+  {
+    id: 'ACC-05',
+    role: 'poskestren',
+    appRole: 'poskestren',
+    route: '/dashboard/medical',
+    roleName: 'Medis UKS / Poskestren',
+    email: 'poskestren@smartriayah.sch.id',
+    password: 'Riayah2026!',
+    nama: 'dr. Nurul Aini',
+    jabatan: 'Dokter Penanggung Jawab Poskestren',
+    avatar: '/images/avatar_santri_putri.jpg',
+  },
+  {
+    id: 'ACC-06',
+    role: 'walisantri',
+    appRole: 'parent',
+    route: '/dashboard/wali',
+    roleName: 'Orang Tua / Wali Santri',
+    email: 'wali.bambang@gmail.com',
+    password: 'Riayah2026!',
+    nama: 'H. Bambang Sudarsono',
+    jabatan: 'Wali Santri',
+    avatar: '/images/avatar_santri_putra.jpg',
+  },
+  {
+    id: 'ACC-07',
+    role: 'mudir',
+    appRole: 'kyai',
+    route: '/dashboard/mudir',
+    roleName: 'Pimpinan Pondok (Mudir)',
+    email: 'mudir@smartriayah.sch.id',
+    password: 'Riayah2026!',
+    nama: 'K.H. Ahmad Dahlan, Lc., M.A.',
+    jabatan: "Mudir Ma'had & Pengasuh Pesantren",
+    avatar: '/images/avatar_santri_putra.jpg',
+  },
+];
 
 export default function LoginPage() {
-  const { login, navigateTo, loginRoleTarget, accounts } = useApp();
+  const {
+    navigateTo,
+    loginRoleTarget,
+    setLoginRoleTarget,
+    setCurrentUser,
+    setRole,
+    setIsAuthenticated,
+    setCurrentView,
+  } = useApp();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -43,26 +159,29 @@ export default function LoginPage() {
 
   // Auto pre-fill if navigated with a specific role target from landing page
   useEffect(() => {
-    if (loginRoleTarget && accounts?.length > 0) {
-      const matched = accounts.find(a => a.role === loginRoleTarget);
+    if (loginRoleTarget) {
+      const matched = DEMO_ACCOUNTS.find(
+        (a) => a.role === loginRoleTarget || a.appRole === loginRoleTarget
+      );
       if (matched) {
         setEmail(matched.email);
         setPassword(matched.password);
       }
-    } else if (accounts?.length > 0 && !email) {
-      // Default to Super Admin or Admin Ri'ayah for developer convenience
-      const defaultAcc = accounts[0];
+    } else if (!email) {
+      // Default to Super Admin for developer convenience
+      const defaultAcc = DEMO_ACCOUNTS[0];
       setEmail(defaultAcc.email);
       setPassword(defaultAcc.password);
     }
-  }, [loginRoleTarget, accounts]);
+  }, [loginRoleTarget]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMessage('');
 
-    if (!email.trim()) {
-      setErrorMessage('Harap masukkan Email atau Username Anda.');
+    const cleanEmail = email.trim();
+    if (!cleanEmail) {
+      setErrorMessage('Harap masukkan Email akun Anda.');
       sound.playAccessDenied();
       return;
     }
@@ -74,13 +193,80 @@ export default function LoginPage() {
     }
 
     setLoading(true);
-    setTimeout(() => {
-      const res = login(email, password);
-      setLoading(false);
-      if (!res.success) {
-        setErrorMessage(res.error);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password,
+      });
+
+      if (error) {
+        setErrorMessage(error.message);
+        sound.playAccessDenied();
+        return;
       }
-    }, 300);
+
+      const { data: prof, error: profError } = await supabase
+        .from('profiles')
+        .select('*, roles(nama_role)')
+        .eq('auth_user_id', data.user.id)
+        .single();
+
+      const namaRole = Array.isArray(prof?.roles)
+        ? prof.roles[0]?.nama_role
+        : prof?.roles?.nama_role;
+
+      if (profError || !namaRole) {
+        setErrorMessage(profError?.message || 'Profil atau role akun tidak ditemukan.');
+        sound.playAccessDenied();
+        return;
+      }
+
+      const targetRoute = ROLE_ROUTES[namaRole];
+      const appRole = DB_TO_APP_ROLE[namaRole];
+      if (!targetRoute || !appRole) {
+        setErrorMessage(`Role "${namaRole}" tidak terdaftar pada routing dashboard.`);
+        sound.playAccessDenied();
+        return;
+      }
+
+      const matchedDemo = DEMO_ACCOUNTS.find((a) => a.role === namaRole);
+      const authenticatedUser = {
+        id: prof.id || data.user.id,
+        auth_user_id: data.user.id,
+        email: data.user.email || cleanEmail,
+        nama:
+          prof.nama_lengkap ||
+          prof.full_name ||
+          prof.nama ||
+          data.user.user_metadata?.nama_lengkap ||
+          matchedDemo?.nama ||
+          data.user.email,
+        role: appRole,
+        dbRole: namaRole,
+        roleName: matchedDemo?.roleName || namaRole,
+        jabatan: prof.jabatan || matchedDemo?.jabatan || namaRole,
+        avatar: prof.avatar_url || matchedDemo?.avatar || '/images/avatar_santri_putra.jpg',
+      };
+
+      localStorage.setItem('sr_current_user', JSON.stringify(authenticatedUser));
+      localStorage.setItem('sr_active_role', appRole);
+      localStorage.setItem('sr_is_authenticated', 'true');
+      localStorage.setItem('sr_current_view', 'dashboard');
+
+      setCurrentUser(authenticatedUser);
+      setRole(appRole);
+      setIsAuthenticated(true);
+      setCurrentView('dashboard');
+      setLoginRoleTarget(null);
+
+      sound.playSuccess();
+      window.location.assign(targetRoute);
+    } catch (err) {
+      setErrorMessage(err?.message || 'Gagal melakukan autentikasi dengan Supabase Auth.');
+      sound.playAccessDenied();
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSelectDemoAccount = (acc) => {
@@ -93,12 +279,11 @@ export default function LoginPage() {
   const roleIcons = {
     superadmin: Cpu,
     admin_riayah: Wrench,
-    parent: Users,
     musyrif: ShieldCheck,
-    security: Radio,
+    satpam: Radio,
     poskestren: HeartPulse,
-    kyai: TrendingUp,
-    osis: Shield
+    walisantri: Users,
+    mudir: TrendingUp,
   };
 
   return (
@@ -498,7 +683,7 @@ export default function LoginPage() {
                     setEmail(e.target.value);
                     setErrorMessage('');
                   }}
-                  placeholder="contoh: superadmin@gmail.com"
+                  placeholder="contoh: superadmin@smartriayah.sch.id"
                   className="block w-full pl-10 pr-3.5 py-2.5 bg-slate-50 hover:bg-slate-100/80 focus:bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition"
                   autoComplete="username"
                   required
@@ -576,7 +761,7 @@ export default function LoginPage() {
             >
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-amber-500" />
-                <span>Pilih Akun Demo ({accounts?.length || 8} Role Akses Terpadu)</span>
+                <span>Pilih Akun Demo ({DEMO_ACCOUNTS.length} Role Akses Terpadu)</span>
               </div>
               <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
                 <span>{isDemoPanelOpen ? 'Tutup' : 'Lihat'}</span>
@@ -590,7 +775,7 @@ export default function LoginPage() {
 
             {isDemoPanelOpen && (
               <div className="mt-3 space-y-1.5 max-h-64 overflow-y-auto pr-1">
-                {accounts.map((acc, idx) => {
+                {DEMO_ACCOUNTS.map((acc, idx) => {
                   const Icon = roleIcons[acc.role] || ShieldCheck;
                   const isCurrent = email.toLowerCase() === acc.email.toLowerCase();
 
