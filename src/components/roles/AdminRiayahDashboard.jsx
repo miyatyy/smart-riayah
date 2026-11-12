@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
+import { LocalQrImage } from '../common/LocalBarcodeImages';
 import { 
   Building2, 
   Users, 
@@ -598,8 +599,9 @@ export default function AdminRiayahDashboard() {
                   )}
 
                   <div className="flex items-center gap-2 mt-2 p-1.5 bg-amber-50/80 rounded-lg border border-amber-200/90">
-                    <img
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(b.barcode_token || `GP-DU-${(b.nama_santri || 'SANTRI').replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase()}-GATEPASS`)}&format=png`}
+                    <LocalQrImage
+                      value={b.barcode_token || `GP-DU-${(b.nama_santri || 'SANTRI').replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase()}-GATEPASS`}
+                      size={120}
                       alt="Preview Barcode"
                       className="w-10 h-10 bg-white p-0.5 rounded border border-amber-200 shrink-0 object-contain shadow-2xs"
                     />

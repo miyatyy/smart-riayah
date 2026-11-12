@@ -1863,6 +1863,9 @@ export const AppProvider = ({ children }) => {
 
   // Server-side sync via /api/sync (Cross-profile, cross-browser, incognito sync)
   useEffect(() => {
+    // Saat wali santri membuka halaman E-Kupon standalone tanpa login, lewati polling /api/sync agar kupon terbuka seketika
+    if (activeGatePassToken && !isAuthenticated) return;
+
     let isMounted = true;
     let pollInterval = null;
 
@@ -1960,11 +1963,12 @@ export const AppProvider = ({ children }) => {
       isMounted = false;
       if (pollInterval) clearInterval(pollInterval);
     };
-  }, [applySyncedData]);
+  }, [applySyncedData, activeGatePassToken, isAuthenticated]);
 
   // Debounced push to /api/sync and BroadcastChannel when local state updates
   useEffect(() => {
     if (isApplyingRemoteSync.current) return;
+    if (activeGatePassToken && !isAuthenticated) return;
 
     const timer = setTimeout(() => {
       const payload = {

@@ -33,7 +33,8 @@ import {
 import { sound } from '../../utils/audio';
 import { parseBookingWithDeepSeek } from '../../services/deepseekVisitService';
 import { getRealtimePondokClock, calculateVisitCountdown, checkBarcodeLifecycle } from '../../utils/pondokTimeUtils';
-import { getBarcodeImageUrl, getVisitGatePassUrls, downloadBarcodeImage } from '../../utils/barcodeUtils';
+import { getBarcodeImageUrl, getVisitGatePassUrls, downloadBarcodeImage, generateLocalQrDataUrl } from '../../utils/barcodeUtils';
+import { LocalQrImage, LocalCode128Image } from '../common/LocalBarcodeImages';
 
 export default function VisitBookingManager({ isCompact = false }) {
   const {
@@ -898,19 +899,20 @@ export default function VisitBookingManager({ isCompact = false }) {
               {/* Visual Box QR & Barcode Nyata (Real Scannable Image) */}
               {(() => {
                 const token = selectedBookingForPass.barcode_token || selectedBookingForPass.id;
-                const { qrCodeUrl, linearBarcodeUrl } = getVisitGatePassUrls(token);
+                const { gatePassUrl, qrCodeUrl, linearBarcodeUrl } = getVisitGatePassUrls(token);
 
                 return (
                   <div className="p-4 bg-slate-50 border-2 border-dashed border-emerald-400/80 rounded-2xl space-y-4">
                     <div className="flex flex-col sm:flex-row items-center justify-center gap-4 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
-                      {/* Format 1: 2D QR Code Image */}
+                      {/* Format 1: 2D QR Code Image (Instan Lokal) */}
                       <div className="flex flex-col items-center">
                         <div className="w-36 h-36 bg-white p-1 rounded-xl border border-slate-200 shadow-xs flex items-center justify-center overflow-hidden group relative">
-                          <img
-                            src={qrCodeUrl}
+                          <LocalQrImage
+                            value={gatePassUrl || token}
+                            size={320}
+                            fallbackSrc={qrCodeUrl}
                             alt={`QR Code Pass - ${token}`}
                             className="w-full h-full object-contain"
-                            loading="eager"
                           />
                         </div>
                         <span className="text-[10px] font-mono font-bold text-slate-500 mt-1 uppercase tracking-wider">
@@ -918,14 +920,14 @@ export default function VisitBookingManager({ isCompact = false }) {
                         </span>
                       </div>
 
-                      {/* Format 2: 1D Linear Barcode 128 Image */}
+                      {/* Format 2: 1D Linear Barcode 128 Image (Instan Lokal) */}
                       <div className="flex flex-col items-center justify-center sm:border-l sm:border-slate-100 sm:pl-4">
                         <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-center overflow-hidden max-w-[220px]">
-                          <img
-                            src={linearBarcodeUrl}
+                          <LocalCode128Image
+                            value={token}
+                            fallbackSrc={linearBarcodeUrl}
                             alt={`Barcode 128 - ${token}`}
                             className="h-16 object-contain"
-                            loading="eager"
                           />
                         </div>
                         <span className="text-[10px] font-mono font-bold text-slate-500 mt-1 uppercase tracking-wider">
@@ -1006,7 +1008,10 @@ export default function VisitBookingManager({ isCompact = false }) {
                         <span>{copiedToken ? 'Disalin!' : 'Copy Link Kupon WA'}</span>
                       </button>
                       <button
-                        onClick={() => downloadBarcodeImage(qrCodeUrl, `Barcode_GatePass_${selectedBookingForPass.nama_santri}.png`)}
+                        onClick={async () => {
+                          const localPng = await generateLocalQrDataUrl(gatePassUrl || token, 500).catch(() => qrCodeUrl);
+                          downloadBarcodeImage(localPng || qrCodeUrl, `Barcode_GatePass_${selectedBookingForPass.nama_santri}.png`);
+                        }}
                         className="flex-1 py-2 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-xs transition flex items-center justify-center gap-1.5"
                         title="Unduh file gambar QR Code ke laptop/HP"
                       >
