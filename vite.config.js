@@ -138,6 +138,10 @@ export default defineConfig({
       '/api/visits': {
         target: 'http://localhost:5000',
         changeOrigin: true
+      },
+      '/api/coupons': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
       }
     }
   }

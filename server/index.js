@@ -1,9 +1,15 @@
+import crypto from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import { rateLimit, ipKeyGenerator } from 'express-rate-limit';
+import QRCode from 'qrcode';
+import { z } from 'zod';
+import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { query, testConnection } from './db.js';
+import { query } from './db.js';
 import whatsappGatewayRouter from './whatsapp-gateway/whatsappGatewayRouter.js';
 import osisReportsHandler from './handlers/osisReportsHandler.js';
 import aiLogsHandler from './handlers/aiLogsHandler.js';
@@ -15,13 +21,209 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
+
+// -------------------------------------------------------------------------------------
+// VALIDASI ENV BACKEND SAAT BOOT (TANPA PREFIX VITE_)
+// -------------------------------------------------------------------------------------
+const REQUIRED_ENV_VARS = [
+  'SUPABASE_URL',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'COUPON_TOKEN_PEPPER',
+  'ALLOWED_ORIGIN',
+];
+
+const missingEnvVars = REQUIRED_ENV_VARS.filter(
+  (key) => typeof process.env[key] !== 'string' || process.env[key].trim() === ''
+);
+
+if (missingEnvVars.length > 0) {
+  throw new Error(
+    `[Smart Riayah Backend] Missing required environment variable(s): ${missingEnvVars.join(', ')}. Configure them in backend .env (without VITE_ prefix).`
+  );
+}
+
+const allowedOrigins = process.env.ALLOWED_ORIGIN
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+if (allowedOrigins.length === 0) {
+  throw new Error('[Smart Riayah Backend] ALLOWED_ORIGIN must contain at least one valid origin.');
+}
+
+const rawDefaultTtl = process.env.COUPON_DEFAULT_TTL_SECONDS?.trim();
+const parsedDefaultTtl = rawDefaultTtl ? Number(rawDefaultTtl) : 900;
+if (!Number.isInteger(parsedDefaultTtl) || parsedDefaultTtl < 60 || parsedDefaultTtl > 86400) {
+  throw new Error('[Smart Riayah Backend] COUPON_DEFAULT_TTL_SECONDS must be an integer between 60 and 86400.');
+}
+const COUPON_DEFAULT_TTL_SECONDS = parsedDefaultTtl;
+
+const SUPABASE_URL = process.env.SUPABASE_URL.trim();
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY.trim();
+const COUPON_TOKEN_PEPPER = process.env.COUPON_TOKEN_PEPPER;
+
+// Client Supabase Admin khusus backend (tidak pernah diekspos ke client)
+const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+});
 
 const app = express();
-const PORT = process.env.SERVER_PORT || 5000;
+const PORT = process.env.PORT || process.env.SERVER_PORT || 5000;
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+// -------------------------------------------------------------------------------------
+// MIDDLEWARE KEAMANAN GLOBAL (SEBELUM SEMUA ROUTE)
+// -------------------------------------------------------------------------------------
+app.set('trust proxy', 1);
+app.use(helmet());
+app.use(cors({ origin: allowedOrigins, credentials: true }));
+app.use(express.json({ limit: '10kb' }));
+
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests' },
+});
+app.use(globalLimiter);
+
+// -------------------------------------------------------------------------------------
+// HELPER TOKEN, AUTH & RBAC MODUL VISITOR E-COUPON
+// -------------------------------------------------------------------------------------
+const ROLE_MATRIX = {
+  issue: ['superadmin', 'admin_riayah', 'musyrif', 'mudir'],
+  scan: ['satpam', 'superadmin', 'admin_riayah', 'musyrif'],
+  revoke: ['superadmin', 'admin_riayah', 'musyrif'],
+};
+
+const TOKEN_REGEX = /^[A-Za-z0-9_-]{32,64}$/;
+
+const generateToken = () => crypto.randomBytes(32).toString('base64url');
+
+const hashToken = (token) =>
+  crypto.createHmac('sha256', COUPON_TOKEN_PEPPER).update(`coupon:${token}`).digest('hex');
+
+const tokenPrefix = (raw) => {
+  if (typeof raw !== 'string') return 'invalid';
+  const cleaned = raw.trim().replace(/^SR1:/, '').slice(0, 8);
+  return cleaned || 'invalid';
+};
+
+function normalizeScanned(raw) {
+  if (typeof raw !== 'string') return null;
+  let value = raw.trim();
+  if (value.startsWith('SR1:')) {
+    value = value.slice(4).trim();
+  }
+  if (value.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(value);
+      if (!parsed || typeof parsed.t !== 'string') return null;
+      value = parsed.t.trim();
+      if (value.startsWith('SR1:')) {
+        value = value.slice(4).trim();
+      }
+    } catch {
+      return null;
+    }
+  }
+  if (!TOKEN_REGEX.test(value)) {
+    return null;
+  }
+  return value;
+}
+
+async function authenticateUser(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization;
+    if (typeof authHeader !== 'string') {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+    const jwt = match?.[1]?.trim();
+    if (!jwt) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { data, error } = await supabaseAdmin.auth.getUser(jwt);
+    if (error || !data?.user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('roles(nama_role)')
+      .eq('auth_user_id', data.user.id)
+      .single();
+
+    if (profileError && profileError.code !== 'PGRST116') {
+      console.error('❌ [Coupon auth role lookup error]:', profileError.message);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+
+    const roleObj = Array.isArray(profile?.roles) ? profile.roles[0] : profile?.roles;
+    const roleName = typeof roleObj?.nama_role === 'string' ? roleObj.nama_role.trim() : null;
+
+    req.authUser = {
+      id: data.user.id,
+      role: roleName,
+    };
+
+    return next();
+  } catch (err) {
+    return next(err);
+  }
+}
+
+function requireRole(allowedRoles) {
+  return (req, res, next) => {
+    if (!req.authUser?.id) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    if (!req.authUser.role || !allowedRoles.includes(req.authUser.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    return next();
+  };
+}
+
+const issueCouponSchema = z.object({
+  permit_id: z.string().trim().min(1).max(100),
+  visitor_name: z.string().trim().min(2).max(120),
+  visitor_phone: z.string().trim().min(8).max(20).nullish(),
+  gate_id: z.string().trim().min(1).max(64).nullish(),
+  ttl_seconds: z.number().int().min(60).max(86400).nullish(),
+  max_uses: z.number().int().min(1).max(10).nullish(),
+  metadata: z.record(z.string(), z.unknown()).nullish(),
+});
+
+const scanCouponSchema = z.object({
+  token: z.string().trim().min(10).max(200),
+  gate_id: z.string().trim().min(1).max(64).nullish(),
+});
+
+const revokeCouponSchema = z.object({
+  coupon_id: z.uuid(),
+  reason: z.string().trim().min(3).max(200).nullish(),
+});
+
+const scanLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { valid: false, message: 'Terlalu banyak percobaan scan, coba lagi nanti' },
+  keyGenerator: (req) => {
+    const clientIp = ipKeyGenerator(req.ip || '0.0.0.0');
+    const normalized = normalizeScanned(req.body?.token);
+    const prefix = normalized ? normalized.slice(0, 8) : tokenPrefix(req.body?.token);
+    return `${clientIp}|${prefix}`;
+  },
+});
 
 // WhatsApp Real-Time Gateway (Redis Message Broker & Soketi Broadcaster)
 app.use('/api/whatsapp', whatsappGatewayRouter);
@@ -39,16 +241,227 @@ app.all('/api/visits/ai-parse-booking', aiParseBookingHandler);
 // -------------------------------------------------------------------------------------
 // HEALTH CHECK ENDPOINT
 // -------------------------------------------------------------------------------------
-app.get('/api/health', async (req, res) => {
-  const dbStatus = await testConnection();
+app.get('/api/health', (req, res) => {
   res.json({
-    status: dbStatus.success ? 'healthy' : 'degraded',
-    service: 'Smart Riayah Backend API',
-    version: '2.0.0',
-    timestamp: new Date().toISOString(),
-    database: dbStatus
+    ok: true,
+    service: 'smart-riayah-coupon-api',
   });
 });
+
+// -------------------------------------------------------------------------------------
+// VISITOR E-COUPON ROUTES (QR ONE-TIME VIA SUPABASE ADMIN + RPC CONSUME_COUPON)
+// -------------------------------------------------------------------------------------
+app.post(
+  '/api/coupons/issue',
+  authenticateUser,
+  requireRole(ROLE_MATRIX.issue),
+  async (req, res, next) => {
+    try {
+      const parsed = issueCouponSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: 'Invalid request' });
+      }
+
+      const {
+        permit_id,
+        visitor_name,
+        visitor_phone,
+        gate_id,
+        ttl_seconds,
+        max_uses,
+        metadata,
+      } = parsed.data;
+
+      // (1) Verifikasi permit di Supabase
+      const { data: permit, error: permitError } = await supabaseAdmin
+        .from('permits')
+        .select('id,santri_id,santri_name,status')
+        .eq('id', permit_id)
+        .single();
+
+      if (permitError?.code === 'PGRST116' || !permit) {
+        return res.status(404).json({ error: 'permit_not_found' });
+      }
+      if (permitError) {
+        console.error('❌ [Coupon issue permit lookup error]:', permitError.message);
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+      if (permit.status !== 'APPROVED') {
+        return res.status(400).json({ error: 'permit_not_approved' });
+      }
+
+      // (2) Lazy-expire kupon lama milik permit tersebut jika melewati expires_at
+      const nowIso = new Date().toISOString();
+      const { error: expireError } = await supabaseAdmin
+        .from('visitor_coupons')
+        .update({ status: 'expired' })
+        .eq('permit_id', permit_id)
+        .eq('status', 'issued')
+        .lt('expires_at', nowIso);
+
+      if (expireError) {
+        console.error('❌ [Coupon issue lazy-expire error]:', expireError.message);
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+
+      // (3) Generate token acak & HMAC hash (tanpa menyimpan token plaintext di DB)
+      const ttlSeconds = ttl_seconds ?? COUPON_DEFAULT_TTL_SECONDS;
+      const maxUses = max_uses ?? 1;
+      const token = generateToken();
+      const tokenHash = hashToken(token);
+      const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+
+      // (4) Simpan kupon baru (unique partial index mencegah duplikat kupon aktif)
+      const { data: insertedCoupon, error: insertError } = await supabaseAdmin
+        .from('visitor_coupons')
+        .insert([
+          {
+            permit_id: permit.id,
+            santri_id: permit.santri_id,
+            visitor_name,
+            visitor_phone_hash: visitor_phone ? hashToken(`phone:${visitor_phone}`) : null,
+            token_hash: tokenHash,
+            expires_at: expiresAt,
+            max_uses: maxUses,
+            metadata: {
+              ...(metadata || {}),
+              issued_by: req.authUser.id,
+              issued_by_role: req.authUser.role,
+              gate_id: gate_id || null,
+            },
+          },
+        ])
+        .select('id,expires_at,max_uses')
+        .single();
+
+      if (insertError?.code === '23505') {
+        return res.status(409).json({ error: 'active_coupon_already_exists' });
+      }
+      if (insertError || !insertedCoupon) {
+        console.error('❌ [Coupon issue insert error]:', insertError?.message || 'Insert failed');
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+
+      // (5) Generate QR payload TANPA PII
+      const qrText = `SR1:${token}`;
+      const qrDataUrl = await QRCode.toDataURL(qrText, {
+        errorCorrectionLevel: 'M',
+        margin: 1,
+        width: 512,
+      });
+
+      return res.status(201).json({
+        coupon_id: insertedCoupon.id,
+        expires_at: insertedCoupon.expires_at ?? expiresAt,
+        max_uses: insertedCoupon.max_uses ?? maxUses,
+        qr_text: qrText,
+        qr_data_url: qrDataUrl,
+      });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+app.post(
+  '/api/coupons/scan',
+  scanLimiter,
+  authenticateUser,
+  requireRole(ROLE_MATRIX.scan),
+  async (req, res, next) => {
+    try {
+      const parsed = scanCouponSchema.safeParse(req.body);
+      if (!parsed.success) {
+        console.warn('⚠️ [Coupon scan invalid body] prefix:', tokenPrefix(req.body?.token));
+        return res.status(400).json({ error: 'Invalid request' });
+      }
+
+      const token = normalizeScanned(parsed.data.token);
+      if (!token) {
+        console.warn('⚠️ [Coupon scan invalid token format] prefix:', tokenPrefix(parsed.data.token));
+        return res.status(400).json({ error: 'Invalid request' });
+      }
+
+      const tokenHash = hashToken(token);
+
+      const { data, error } = await supabaseAdmin.rpc('consume_coupon', {
+        p_token_hash: tokenHash,
+        p_gate_id: parsed.data.gate_id || null,
+        p_scanner_user_id: req.authUser.id,
+        p_ip: req.ip || null,
+        p_user_agent: (req.get('user-agent') || '').slice(0, 256),
+      });
+
+      if (error) {
+        console.error('❌ [Coupon scan RPC error]:', error.message, 'prefix:', token.slice(0, 8));
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+
+      if (data?.valid === true) {
+        // TODO: Integrasi hardware & notifikasi saat QR valid — HARUS via backend/Edge Function,
+        // JANGAN pernah memanggil kunci admin backend (privilege tinggi) dari client/frontend:
+        // 1. Trigger buka servo/turnstile gerbang sesuai p_gate_id
+        // 2. Kirim notifikasi WhatsApp check-in tamu ke wali/pengasuhan
+        // 3. Insert catatan lintasan ke tabel public.gate_logs melalui backend/Edge Function
+        return res.status(200).json({
+          valid: true,
+          message: 'QR valid dan berhasil dipakai',
+          coupon_id: data.coupon_id,
+          visitor_name: data.visitor_name,
+          permit_id: data.permit_id,
+          remaining_uses: data.remaining_uses,
+          expires_at: data.expires_at,
+        });
+      }
+
+      return res.status(403).json({
+        valid: false,
+        message: 'QR tidak valid, sudah dipakai, atau kedaluwarsa',
+      });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+app.post(
+  '/api/coupons/revoke',
+  authenticateUser,
+  requireRole(ROLE_MATRIX.revoke),
+  async (req, res, next) => {
+    try {
+      const parsed = revokeCouponSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: 'Invalid request' });
+      }
+
+      const { data: revokedRows, error: revokeError } = await supabaseAdmin
+        .from('visitor_coupons')
+        .update({ status: 'revoked' })
+        .eq('id', parsed.data.coupon_id)
+        .in('status', ['issued', 'expired'])
+        .select('id,status');
+
+      if (revokeError) {
+        console.error('❌ [Coupon revoke error]:', revokeError.message);
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+
+      if (!revokedRows || revokedRows.length === 0) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+
+      const revoked = revokedRows[0];
+      return res.status(200).json({
+        success: true,
+        coupon_id: revoked.id,
+        status: revoked.status,
+      });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
 
 // -------------------------------------------------------------------------------------
 // AUTH: LOGIN ENDPOINT (Semua Role & Demo Fallback)
@@ -675,9 +1088,25 @@ app.get('/api/gate/headcount', (req, res) => {
   });
 });
 
+// Global Error Handler (generik, tidak membocorkan stack trace ke client)
+app.use((err, req, res, next) => {
+  if (res.headersSent) {
+    return next(err);
+  }
+  if (err?.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'Invalid request' });
+  }
+  if (err?.type === 'entity.too.large' || err?.status === 413) {
+    return res.status(413).json({ error: 'Payload too large' });
+  }
+  console.error('❌ [Unhandled Error]:', err?.message || 'Unknown error');
+  return res.status(500).json({ error: 'Internal server error' });
+});
+
 // Jalankan Server Backend
 app.listen(PORT, () => {
   console.log(`🚀 [Smart Riayah Backend] Server aktif di: http://localhost:${PORT}`);
+  console.log(`🎟️  [API Endpoint] Visitor Coupon: http://localhost:${PORT}/api/coupons`);
   console.log(`📡 [API Endpoint] Evaluasi Santri: http://localhost:${PORT}/api/evaluasi`);
   console.log(`📡 [API Endpoint] Smart Permit: http://localhost:${PORT}/api/permits`);
   console.log(`📡 [API Endpoint] IoT Gate: http://localhost:${PORT}/api/gate/verify-rfid`);
