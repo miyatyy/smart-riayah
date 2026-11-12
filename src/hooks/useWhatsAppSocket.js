@@ -147,7 +147,7 @@ export function useWhatsAppSocket(options = {}) {
       id: customData.id || `WA-${Date.now()}`,
       status: customData.status || 'READ',
       penerima: customData.penerima || 'Wali Santri',
-      nomor: customData.nomor || '08813576012',
+      nomor: customData.nomor || '628813576012',
       waktu: new Date().toLocaleTimeString('id-ID'),
       latencyMs: customData.latencyMs || Math.floor(120 + Math.random() * 200),
       ...customData

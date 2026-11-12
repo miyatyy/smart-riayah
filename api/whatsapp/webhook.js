@@ -3,7 +3,13 @@
  * Menerima incoming webhook dari Fonnte WhatsApp Gateway dan membalas secara Otonom (Autonomous AI)
  */
 
-import { generateAutonomousReply, sendFonnteAutoReply, normalizePhone, isPhoneInManualTakeover } from '../../server/whatsapp-gateway/aiAutonomousResponder.js';
+import {
+  generateAutonomousReplyWithContext,
+  sendFonnteAutoReply,
+  normalizePhone,
+  isPhoneInManualTakeover,
+  resolveWaliIdentity,
+} from '../../server/whatsapp-gateway/aiAutonomousResponder.js';
 import { broadcastToSupabaseRealtime } from '../../server/whatsapp-gateway/supabaseBroadcaster.js';
 
 export default async function handler(req, res) {
@@ -49,15 +55,20 @@ export default async function handler(req, res) {
     // 2. Deteksi Pesan Masuk (Incoming Message dari Wali)
     const incomingText = payload.message || payload.text;
     const sender = payload.sender || payload.phone || payload.target;
-    const senderName = payload.name || payload.sender_name || 'Wali Santri';
+    const rawSenderName = payload.name || payload.sender_name || '';
 
     if (incomingText && sender) {
       const cleanSender = normalizePhone(sender);
       const nowWIB = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
 
+      // Resolusi identitas wali & santri dinamis (prioritas Supabase + binding 628813576012 -> Nurmiyaty)
+      const resolvedIdentity = await resolveWaliIdentity(cleanSender, rawSenderName);
+      const displayWaliName = resolvedIdentity?.namaWali || rawSenderName || 'Wali Santri';
+
       const incomingData = {
         id: payload.id || `IN-${Date.now()}`,
-        pengirim: senderName,
+        pengirim: displayWaliName,
+        santriNama: resolvedIdentity?.santriNama || null,
         nomor: cleanSender,
         pesan: incomingText,
         waktu: nowWIB,
@@ -75,6 +86,8 @@ export default async function handler(req, res) {
           success: true,
           type: 'manual_takeover_active',
           sender: cleanSender,
+          namaWali: displayWaliName,
+          santriNama: resolvedIdentity?.santriNama || null,
           incoming: incomingText,
           read: true,
           message: "Mode Ambil Alih Aktif. AI diistirahatkan, percakapan ditangani manual oleh Admin."
@@ -82,8 +95,9 @@ export default async function handler(req, res) {
       }
 
       // JALANKAN OTAK AI OTONOM
-      console.log(`🤖 [Vercel AI Otonom untuk ${cleanSender}]: "${incomingText}"`);
-      const aiReply = await generateAutonomousReply(cleanSender, incomingText, senderName);
+      console.log(`🤖 [Vercel AI Otonom untuk ${cleanSender} (${displayWaliName} -> ${resolvedIdentity?.santriNama || '-'})]: "${incomingText}"`);
+      const aiResult = await generateAutonomousReplyWithContext(cleanSender, incomingText, displayWaliName, resolvedIdentity);
+      const aiReply = aiResult.reply;
 
       // Kirim balasan aktif ke Fonnte API secara langsung
       const dispatchResult = await sendFonnteAutoReply(cleanSender, aiReply);
@@ -91,7 +105,8 @@ export default async function handler(req, res) {
       const aiReplyData = {
         id: `AI-${Date.now()}`,
         target: cleanSender,
-        namaWali: senderName,
+        namaWali: aiResult.waliData?.namaWali || displayWaliName,
+        santriNama: aiResult.waliData?.santriNama || resolvedIdentity?.santriNama || null,
         incomingText: incomingText,
         replyText: aiReply,
         waktu: nowWIB,

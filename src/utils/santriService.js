@@ -1,4 +1,5 @@
-import { supabase } from './supabaseClient';
+import { supabase } from './supabaseClient.js';
+import { normalizePhone } from './phoneUtils.js';
 
 /**
  * Utility pengecekan kemiripan nama santri untuk mendeteksi variasi ejaan
@@ -50,7 +51,7 @@ export async function insertSantriToSupabase(santriData, options = {}) {
   const cleanUid = (santriData.rfid_uid || santriData.rfidUid || '').trim().toUpperCase();
   const cleanNama = (santriData.nama_lengkap || santriData.nama || '').trim();
   const cleanNis = santriData.nis ? String(santriData.nis).trim() : `${Math.floor(125500 + Math.random() * 900)}`;
-  const cleanNoWali = (santriData.no_wali || santriData.waliTelepon || santriData.wali?.telepon || '').replace(/[^0-9]/g, '');
+  const cleanNoWali = normalizePhone(santriData.no_wali || santriData.waliTelepon || santriData.wali?.telepon || '');
 
   const payload = {
     id: generatedId,
@@ -63,8 +64,8 @@ export async function insertSantriToSupabase(santriData, options = {}) {
     saldo_rfid: Number(santriData.saldo_rfid ?? santriData.saldoRfid ?? santriData.saldo_awal ?? santriData.saldoAwal) || 0,
     nama_wali: (santriData.nama_wali || santriData.waliNama || santriData.wali?.nama || '').trim(),
     no_wali: cleanNoWali,
-    limit_jajan_harian: Number(santriData.limit_jajan_harian || 25000),
-    poin_disiplin: Number(santriData.poin_disiplin || 100),
+    limit_jajan_harian: Number(santriData.limit_jajan_harian ?? santriData.limitJajanHarian ?? 25000),
+    poin_disiplin: Number(santriData.poin_disiplin ?? 100),
     status_asrama: santriData.status_asrama || 'DI_ASRAMA',
     updated_at: new Date().toISOString()
   };

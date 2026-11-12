@@ -14,6 +14,7 @@ import { deleteRoomData } from '../utils/roomService';
 import { deleteSantriData } from '../utils/santriService';
 import { supabase } from '../utils/supabaseClient';
 import { sendWhatsAppBroadcast } from '../utils/whatsappRealtime';
+import { normalizePhone, isSamePhone } from '../utils/phoneUtils';
 import {
   fetchAllDataFromSupabase,
   subscribeToAllTablesRealtime,
@@ -164,6 +165,149 @@ export const autoConsolidateSantriAndPermits = (rawSantriList = [], rawPermits =
   };
 };
 
+// Migrasi & normalisasi record santri (sinkronisasi nomor WA ke 628... dan binding prioritas Nurmiyaty)
+function normalizeSantriRecord(s) {
+  if (!s || typeof s !== 'object') return s;
+  const rawTel = s.wali?.telepon || s.noWali || s.no_wali || s.waliTelepon || '';
+  const cleanTel = normalizePhone(rawTel);
+
+  const isNurmiyatyTarget =
+    s.id === 'S-107' ||
+    String(s.nama || '').trim().toLowerCase() === 'nurmiyaty' ||
+    String(s.rfidUid || '').trim().toUpperCase() === '53:57:98:0F' ||
+    String(s.nis || '').trim() === '126146';
+
+  const currentWaliName = String(s.wali?.nama || s.namaWali || s.nama_wali || '').trim();
+  const isPoisonedOrGenericWali =
+    !currentWaliName ||
+    /fatimah/i.test(currentWaliName) ||
+    /bapak\/ibu wali/i.test(currentWaliName) ||
+    /^wali dari /i.test(currentWaliName) ||
+    /^wali santri$/i.test(currentWaliName);
+
+  const nextWaliName =
+    s.id === 'S-101' && /fatimah/i.test(currentWaliName)
+      ? 'Wali Demo Putra'
+      : isNurmiyatyTarget && isPoisonedOrGenericWali
+        ? 'Arbainah'
+        : currentWaliName || `Wali ${s.nama || 'Santri'}`;
+
+  const isPlaceholderTel =
+    !cleanTel ||
+    cleanTel === '6281234567890' ||
+    cleanTel === '6281299887766';
+
+  const nextTel =
+    isNurmiyatyTarget && isPlaceholderTel
+      ? '628813576012'
+      : cleanTel;
+
+  const isOldNurmiyatyNis = !s.nis || String(s.nis).trim() === '46764644';
+  const nextNis = isNurmiyatyTarget && isOldNurmiyatyNis ? '126146' : String(s.nis || '');
+  const nextKelas =
+    isNurmiyatyTarget && (!s.kelas || s.kelas === '11-IPA (Putri)')
+      ? '10-B Putri'
+      : s.kelas;
+  const nextKamar =
+    isNurmiyatyTarget && (!s.kamar || s.kamar === 'Aisyah 201')
+      ? 'Khadijah 105'
+      : s.kamar;
+  const nextRfidUid =
+    isNurmiyatyTarget && (!s.rfidUid || String(s.rfidUid).startsWith('AUTO-'))
+      ? '53:57:98:0F'
+      : (s.rfidUid || '');
+
+  return {
+    ...s,
+    nis: nextNis,
+    kelas: nextKelas,
+    kamar: nextKamar,
+    rfidUid: nextRfidUid,
+    namaWali: nextWaliName,
+    noWali: nextTel,
+    wali: {
+      ...(s.wali || {}),
+      nama: nextWaliName,
+      hubungan: s.wali?.hubungan || 'Orang Tua Kandung',
+      telepon: nextTel,
+      alamat: s.wali?.alamat || 'Surabaya',
+    },
+  };
+}
+
+function syncChatLogsWithSantriList(rawLogs, currentSantriList = []) {
+  if (!Array.isArray(rawLogs)) return [];
+  const list = Array.isArray(currentSantriList) ? currentSantriList : [];
+  const nurmiyaty = list.find(
+    (s) =>
+      s &&
+      (s.id === 'S-107' ||
+        String(s.nama || '').trim().toLowerCase() === 'nurmiyaty' ||
+        String(s.rfidUid || '').trim().toUpperCase() === '53:57:98:0F')
+  );
+
+  return rawLogs.map((c) => {
+    if (!c || typeof c !== 'object') return c;
+    const chatPhoneRaw = c.sender_phone || c.phone || '';
+    const isPriorityChat =
+      c.id === 'chat-1' ||
+      isSamePhone(chatPhoneRaw, '628813576012') ||
+      (nurmiyaty && nurmiyaty.wali?.telepon && isSamePhone(chatPhoneRaw, nurmiyaty.wali.telepon)) ||
+      (c.santri && c.santri.toLowerCase().includes('nurmiyaty'));
+
+    if (!isPriorityChat) {
+      // Tetap normalisasi bila nama wali beracun Ibu Fatimah Az-Zahra pada thread non-prioritas
+      if (/fatimah/i.test(c.name || '')) {
+        return { ...c, name: 'Wali Demo Putra' };
+      }
+      return c;
+    }
+
+    const waliName = nurmiyaty?.wali?.nama || nurmiyaty?.namaWali || (c.name && !/fatimah/i.test(c.name) ? c.name : 'Arbainah');
+    const santriName = nurmiyaty?.nama || 'Nurmiyaty';
+    const kelasLabel = nurmiyaty?.kelas || '10-B Putri';
+    const kamarLabel = nurmiyaty?.kamar || 'Khadijah 105';
+    const canonicalPhone = normalizePhone(nurmiyaty?.wali?.telepon || nurmiyaty?.noWali || chatPhoneRaw || '628813576012') || '628813576012';
+
+    const isPoisonedThread =
+      /fatimah/i.test(c.name || '') ||
+      /ahmad fauzi/i.test(c.santri || '');
+
+    const rawMsgs = Array.isArray(c.messages) ? c.messages : [];
+    const cleanedMessages = rawMsgs
+      .filter((m) => {
+        if (!m || !m.text) return false;
+        // Buang pesan simulasi lama Ahmad Fauzi / Fatimah pada thread Nurmiyaty (kecuali m-1 / m-2 yang direwrite bersih)
+        if (m.id === 'm-1' || m.id === 'm-2') return true;
+        return !/ahmad fauzi|ibu fatimah|bu fatimah/i.test(m.text);
+      })
+      .map((m) => {
+        if (m.id === 'm-1' && /ahmad fauzi|fatimah/i.test(m.text || '')) {
+          return {
+            ...m,
+            text: `Assalamu'alaikum ustadz, bagaimana kabar ananda ${santriName} hari ini?`
+          };
+        }
+        if (m.id === 'm-2' && /ahmad fauzi|fatimah/i.test(m.text || '')) {
+          return {
+            ...m,
+            text: `Wa'alaikumsalam warahmatullah, ${waliName}. Ananda ${santriName} sehat wal'afiat dan tercatat hadir sholat Subuh berjamaah tepat waktu.`
+          };
+        }
+        return m;
+      });
+
+    return {
+      ...c,
+      name: isPoisonedThread || nurmiyaty ? waliName : c.name,
+      santri: isPoisonedThread || nurmiyaty ? `${santriName} (${kelasLabel} • ${kamarLabel})` : c.santri,
+      sender_phone: canonicalPhone,
+      phone: `+${canonicalPhone}`,
+      messages: cleanedMessages,
+    };
+  });
+}
+
 const AppContext = createContext();
 
 export const AppProvider = ({ children }) => {
@@ -279,11 +423,11 @@ export const AppProvider = ({ children }) => {
       const parsed = Array.isArray(initial) ? initial : INITIAL_SANTRI;
       const existingIds = new Set(parsed.map(s => s.id));
       const missing = INITIAL_SANTRI.filter(s => !existingIds.has(s.id));
-      const fullList = missing.length > 0 ? [...parsed, ...missing] : parsed;
+      const fullList = (missing.length > 0 ? [...parsed, ...missing] : parsed).map(normalizeSantriRecord);
       const res = autoConsolidateSantriAndPermits(fullList, []);
-      return res.santriList;
+      return res.santriList.map(normalizeSantriRecord);
     } catch {
-      return INITIAL_SANTRI;
+      return INITIAL_SANTRI.map(normalizeSantriRecord);
     }
   });
 
@@ -390,18 +534,33 @@ export const AppProvider = ({ children }) => {
       const saved = localStorage.getItem('sr_chat_logs');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return syncChatLogsWithSantriList(parsed, santriList);
+        }
       }
     } catch (e) {}
 
     const now = Date.now();
+    const prioritySantri = (Array.isArray(santriList) ? santriList : []).find(
+      (s) =>
+        s &&
+        (s.id === 'S-107' ||
+          String(s.nama || '').trim().toLowerCase() === 'nurmiyaty' ||
+          String(s.rfidUid || '').trim().toUpperCase() === '53:57:98:0F')
+    );
+    const priorityWaliName = prioritySantri?.wali?.nama || prioritySantri?.namaWali || 'Arbainah';
+    const prioritySantriName = prioritySantri?.nama || 'Nurmiyaty';
+    const priorityKelas = prioritySantri?.kelas || '10-B Putri';
+    const priorityKamar = prioritySantri?.kamar || 'Khadijah 105';
+    const priorityPhone = normalizePhone(prioritySantri?.wali?.telepon || prioritySantri?.noWali || '628813576012') || '628813576012';
+
     return [
       {
         id: 'chat-1',
-        name: 'Ibu Fatimah Az-Zahra',
-        santri: 'Ahmad Fauzi (Kamar Umar 204)',
-        sender_phone: '628813576012',
-        phone: '+62 881-3576-012',
+        name: priorityWaliName,
+        santri: `${prioritySantriName} (${priorityKelas} • ${priorityKamar})`,
+        sender_phone: priorityPhone,
+        phone: `+${priorityPhone}`,
         channel: 'WhatsApp',
         status: 'Selesai',
         handling_mode: 'OTONOM',
@@ -414,9 +573,9 @@ export const AppProvider = ({ children }) => {
         lastPreview: 'Alhamdulillah, terima kasih banyak atas infonya Ustadz.',
         unread: false,
         messages: [
-          { id: 'm-1', sender: 'wali', time: '11:38 WITA', text: "Assalamu'alaikum ustadz, bagaimana kabar ananda Ahmad Fauzi hari ini?", timestamp: new Date(now - 3600000).toISOString() },
-          { id: 'm-2', sender: 'ai', time: '11:39 WITA', text: "Wa'alaikumsalam warahmatullah, Ibu Fatimah. Ananda Ahmad Fauzi sehat wal'afiat dan tercatat hadir sholat Subuh berjamaah tepat waktu.", timestamp: new Date(now - 3500000).toISOString() },
-          { id: 'm-3', sender: 'wali', time: '11:40 WITA', text: "Alhamdulillah, terima kasih banyak atas infonya Ustadz.", timestamp: new Date(now - 1800000).toISOString() }
+          { id: 'm-1', sender: 'wali', time: '11:38 WITA', text: `Assalamu'alaikum ustadz, bagaimana kabar ananda ${prioritySantriName} hari ini?`, timestamp: new Date(now - 3600000).toISOString() },
+          { id: 'm-2', sender: 'ai', time: '11:39 WITA', text: `Wa'alaikumsalam warahmatullah, ${priorityWaliName}. Ananda ${prioritySantriName} sehat wal'afiat dan tercatat hadir sholat Subuh berjamaah tepat waktu.`, timestamp: new Date(now - 3500000).toISOString() },
+          { id: 'm-3', sender: 'wali', time: '11:40 WITA', text: 'Alhamdulillah, terima kasih banyak atas infonya Ustadz.', timestamp: new Date(now - 1800000).toISOString() }
         ]
       },
       {
@@ -663,7 +822,7 @@ export const AppProvider = ({ children }) => {
       localStorage.setItem('sr_fonnte_target', '6285960213654');
       return '6285960213654';
     }
-    return saved;
+    return normalizePhone(saved) || saved;
   });
   const [isFonnteEnabled, setIsFonnteEnabledState] = useState(() => {
     const saved = localStorage.getItem('sr_fonnte_enabled');
@@ -678,8 +837,9 @@ export const AppProvider = ({ children }) => {
     localStorage.setItem('sr_fonnte_token', val);
   };
   const setFonnteTargetNumber = (val) => {
-    setFonnteTargetNumberState(val);
-    localStorage.setItem('sr_fonnte_target', val);
+    const clean = normalizePhone(val) || val;
+    setFonnteTargetNumberState(clean);
+    localStorage.setItem('sr_fonnte_target', clean);
   };
   const setIsFonnteEnabled = (val) => {
     setIsFonnteEnabledState(val);
@@ -942,11 +1102,13 @@ export const AppProvider = ({ children }) => {
     if (!payload) return;
     isApplyingRemoteSync.current = true;
     try {
-      let incomingSantri = payload.santriList;
+      let incomingSantri = Array.isArray(payload.santriList)
+        ? payload.santriList.map(normalizeSantriRecord)
+        : payload.santriList;
       let incomingPermits = payload.permits;
       if (Array.isArray(incomingSantri) && Array.isArray(incomingPermits)) {
         const consolidated = autoConsolidateSantriAndPermits(incomingSantri, incomingPermits);
-        incomingSantri = consolidated.santriList;
+        incomingSantri = consolidated.santriList.map(normalizeSantriRecord);
         incomingPermits = consolidated.permits;
       }
       if (Array.isArray(incomingSantri)) setSantriList(incomingSantri);
@@ -1002,132 +1164,196 @@ export const AppProvider = ({ children }) => {
   useEffect(() => {
     let isMounted = true;
 
+    const applySupabaseSnapshot = (remoteData) => {
+      if (!isMounted || !remoteData) return;
+      if (remoteData.santriList?.length) {
+        const normalizedRemoteSantri = remoteData.santriList.map(normalizeSantriRecord);
+        setSantriList(normalizedRemoteSantri);
+        setChatLogs(prev => syncChatLogsWithSantriList(prev, normalizedRemoteSantri));
+      }
+      if (remoteData.rooms?.length) {
+        setRooms(prev => {
+          const saved = localStorage.getItem('sr_rooms');
+          if (!saved) return remoteData.rooms;
+          try {
+            const localRooms = JSON.parse(saved);
+            if (!Array.isArray(localRooms) || localRooms.length === 0) return remoteData.rooms;
+            return remoteData.rooms.map(remote => {
+              const local = localRooms.find(l => String(l.id) === String(remote.id));
+              if (!local) return remote;
+              if (local.updated_at && (!remote.updated_at || new Date(local.updated_at) >= new Date(remote.updated_at))) {
+                return { ...remote, ...local };
+              }
+              return remote;
+            });
+          } catch {
+            return remoteData.rooms;
+          }
+        });
+      }
+      if (remoteData.permits?.length) setPermits(remoteData.permits);
+      if (remoteData.gateLogs?.length) setGateLogs(remoteData.gateLogs);
+      if (remoteData.disciplineRecords?.length) setDisciplineRecords(remoteData.disciplineRecords);
+      if (remoteData.medicalRecords?.length) setMedicalRecords(remoteData.medicalRecords);
+      if (remoteData.rfidTransactions?.length) setRfidTransactions(remoteData.rfidTransactions);
+      if (remoteData.mutabaahList?.length) setMutabaahList(remoteData.mutabaahList);
+      if (remoteData.visitBookings?.length) {
+        setVisitBookings(prev => {
+          const remoteMap = new Map();
+          remoteData.visitBookings.forEach(b => remoteMap.set(b.id, b));
+          const merged = [...remoteData.visitBookings];
+          (prev || []).forEach(local => {
+            if (!remoteMap.has(local.id)) {
+              merged.push(local);
+            }
+          });
+          try {
+            localStorage.setItem('sr_visit_bookings', JSON.stringify(merged));
+          } catch (e) {}
+          return merged;
+        });
+      }
+      if (remoteData.osisReports?.length) {
+        const deletedSet = getDeletedOsisIds();
+        setOsisReports(prev => {
+          const mergedMap = new Map();
+          (prev || []).forEach(r => {
+            if (r?.id && !deletedSet.has(String(r.id))) mergedMap.set(r.id, r);
+          });
+          remoteData.osisReports.forEach(r => {
+            if (!r?.id || deletedSet.has(String(r.id))) return;
+            const existing = mergedMap.get(r.id);
+            const existingTs = new Date(existing?.updated_at || existing?.created_at || 0).getTime();
+            const remoteTs = new Date(r.updated_at || r.created_at || 0).getTime();
+            if (!existing || remoteTs >= existingTs) {
+              mergedMap.set(r.id, { ...existing, ...r });
+            }
+          });
+          const merged = Array.from(mergedMap.values()).sort(
+            (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)
+          );
+          try {
+            localStorage.setItem('sr_osis_reports', JSON.stringify(merged));
+          } catch (e) {}
+          return merged;
+        });
+      }
+      if (remoteData.messages?.length) {
+        const formatted = remoteData.messages.map(msg => ({
+          id: msg.id,
+          penerima: msg.receiverRole || 'Pesantren Darul Ulum',
+          nomor: msg.senderEmail || 'Mobile App',
+          tipe: 'LIVE_CHAT',
+          pesan: `${msg.senderName} (${msg.senderRole}): ${msg.messageText}`,
+          status: msg.isRead ? 'DELIVERED' : 'SENT',
+          waktu: new Date(msg.createdAt).toLocaleTimeString('id-ID'),
+          reaction: msg.reaction
+        }));
+        setWhatsappLogs(prev => {
+          const existingIds = new Set(formatted.map(f => f.id));
+          return [...formatted, ...prev.filter(p => !existingIds.has(p.id))];
+        });
+      }
+    };
+
+    const loadSupabaseSnapshot = () => {
+      fetchAllDataFromSupabase()
+        .then(applySupabaseSnapshot)
+        .catch((err) => {
+          console.warn('⚠️ Gagal fetch data awal Supabase (fallback ke cache):', err);
+        });
+    };
+
     // 1. Ambil data awal dari Supabase jika tersedia
-    fetchAllDataFromSupabase()
-      .then((remoteData) => {
-        if (!isMounted || !remoteData) return;
-        if (remoteData.santriList?.length) setSantriList(remoteData.santriList);
-        if (remoteData.rooms?.length) {
-          setRooms(prev => {
-            const saved = localStorage.getItem('sr_rooms');
-            if (!saved) return remoteData.rooms;
-            try {
-              const localRooms = JSON.parse(saved);
-              if (!Array.isArray(localRooms) || localRooms.length === 0) return remoteData.rooms;
-              return remoteData.rooms.map(remote => {
-                const local = localRooms.find(l => String(l.id) === String(remote.id));
-                if (!local) return remote;
-                if (local.updated_at && (!remote.updated_at || new Date(local.updated_at) >= new Date(remote.updated_at))) {
-                  return { ...remote, ...local };
-                }
-                return remote;
-              });
-            } catch {
-              return remoteData.rooms;
-            }
-          });
+    loadSupabaseSnapshot();
+
+    // Sinkronkan ulang ketika sesi autentikasi Supabase login / refresh
+    let authSubscription = null;
+    try {
+      const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
+        if (!isMounted) return;
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+          loadSupabaseSnapshot();
         }
-        // Ambil data kamar dari backend lokal (PostgreSQL / pgAdmin) jika server aktif
-        fetch('/api/rooms')
-          .then(res => res.json())
-          .then(resData => {
-            if (resData?.success && Array.isArray(resData?.data) && resData.data.length > 0) {
-              console.log('📦 [AppContext] Data kamar berhasil disinkronkan dari PostgreSQL pgAdmin:', resData.data.length);
-              setRooms(resData.data.map(r => ({
-                id: r.id,
-                namaGedung: r.nama_gedung,
-                kategoriGedung: r.kategori_gedung,
-                nomorKamar: r.nomor_kamar,
-                lantai: r.lantai,
-                kapasitas: r.kapasitas,
-                terisi: r.terisi,
-                ketuaKamar: r.ketua_kamar,
-                skorKerapianTerakhir: r.skor_kerapian_terakhir,
-                jadwalPiketHariIni: r.jadwal_piket_hari_ini,
-                catatanInspeksi: r.catatan_inspeksi,
-                updated_at: r.updated_at
-              })));
-            }
-          })
-          .catch(() => {});
-        if (remoteData.permits?.length) setPermits(remoteData.permits);
-        if (remoteData.gateLogs?.length) setGateLogs(remoteData.gateLogs);
-        if (remoteData.disciplineRecords?.length) setDisciplineRecords(remoteData.disciplineRecords);
-        if (remoteData.medicalRecords?.length) setMedicalRecords(remoteData.medicalRecords);
-        if (remoteData.rfidTransactions?.length) setRfidTransactions(remoteData.rfidTransactions);
-        if (remoteData.mutabaahList?.length) setMutabaahList(remoteData.mutabaahList);
-        if (remoteData.visitBookings?.length) {
-          setVisitBookings(prev => {
-            const remoteMap = new Map();
-            remoteData.visitBookings.forEach(b => remoteMap.set(b.id, b));
-            const merged = [...remoteData.visitBookings];
-            (prev || []).forEach(local => {
-              if (!remoteMap.has(local.id)) {
-                merged.push(local);
-              }
-            });
-            try {
-              localStorage.setItem('sr_visit_bookings', JSON.stringify(merged));
-            } catch (e) {}
-            return merged;
-          });
-        }
-        if (remoteData.osisReports?.length) {
-          const deletedSet = getDeletedOsisIds();
-          setOsisReports(prev => {
-            const mergedMap = new Map();
-            (prev || []).forEach(r => {
-              if (r?.id && !deletedSet.has(String(r.id))) mergedMap.set(r.id, r);
-            });
-            remoteData.osisReports.forEach(r => {
-              if (!r?.id || deletedSet.has(String(r.id))) return;
-              const existing = mergedMap.get(r.id);
-              const existingTs = new Date(existing?.updated_at || existing?.created_at || 0).getTime();
-              const remoteTs = new Date(r.updated_at || r.created_at || 0).getTime();
-              if (!existing || remoteTs >= existingTs) {
-                mergedMap.set(r.id, { ...existing, ...r });
-              }
-            });
-            const merged = Array.from(mergedMap.values()).sort(
-              (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)
-            );
-            try {
-              localStorage.setItem('sr_osis_reports', JSON.stringify(merged));
-            } catch (e) {}
-            return merged;
-          });
-        }
-        if (remoteData.messages?.length) {
-          const formatted = remoteData.messages.map(msg => ({
-            id: msg.id,
-            penerima: msg.receiverRole || 'Pesantren Darul Ulum',
-            nomor: msg.senderEmail || 'Mobile App',
-            tipe: 'LIVE_CHAT',
-            pesan: `${msg.senderName} (${msg.senderRole}): ${msg.messageText}`,
-            status: msg.isRead ? 'DELIVERED' : 'SENT',
-            waktu: new Date(msg.createdAt).toLocaleTimeString('id-ID'),
-            reaction: msg.reaction
-          }));
-          setWhatsappLogs(prev => {
-            const existingIds = new Set(formatted.map(f => f.id));
-            return [...formatted, ...prev.filter(p => !existingIds.has(p.id))];
-          });
+      });
+      authSubscription = authListener?.subscription || null;
+    } catch (e) {
+      console.warn('Supabase auth listener init warning:', e);
+    }
+
+    // Ambil data kamar dari backend lokal (PostgreSQL / pgAdmin) jika server aktif
+    fetch('/api/rooms')
+      .then(res => res.json())
+      .then(resData => {
+        if (!isMounted) return;
+        if (resData?.success && Array.isArray(resData?.data) && resData.data.length > 0) {
+          console.log('📦 [AppContext] Data kamar berhasil disinkronkan dari PostgreSQL pgAdmin:', resData.data.length);
+          setRooms(resData.data.map(r => ({
+            id: r.id,
+            namaGedung: r.nama_gedung,
+            kategoriGedung: r.kategori_gedung,
+            nomorKamar: r.nomor_kamar,
+            lantai: r.lantai,
+            kapasitas: r.kapasitas,
+            terisi: r.terisi,
+            ketuaKamar: r.ketua_kamar,
+            skorKerapianTerakhir: r.skor_kerapian_terakhir,
+            jadwalPiketHariIni: r.jadwal_piket_hari_ini,
+            catatanInspeksi: r.catatan_inspeksi,
+            updated_at: r.updated_at
+          })));
         }
       })
-      .catch((err) => {
-        console.warn('⚠️ Gagal fetch data awal Supabase (fallback ke cache):', err);
-      });
+      .catch(() => {});
 
     // 2. Berlangganan Realtime Postgres Changes seluruh kategori tabel Supabase
     const unsubscribe = subscribeToAllTablesRealtime({
       onSantriChange: (payload) => {
         if (!isMounted) return;
         if (payload.eventType === 'INSERT' && payload.new) {
-          const item = dbToSantri(payload.new);
-          setSantriList(prev => [item, ...prev.filter(s => s.id !== item.id)]);
+          const item = normalizeSantriRecord(dbToSantri(payload.new));
+          setSantriList(prev => {
+            const exists = prev.some(
+              s => s.id === item.id ||
+                (item.rfidUid && s.rfidUid && s.rfidUid.toUpperCase() === item.rfidUid.toUpperCase())
+            );
+            if (exists) {
+              return prev.map(s => {
+                const match = s.id === item.id ||
+                  (item.rfidUid && s.rfidUid && s.rfidUid.toUpperCase() === item.rfidUid.toUpperCase());
+                if (!match) return s;
+                return {
+                  ...s,
+                  ...item,
+                  wali: {
+                    ...(s.wali || {}),
+                    ...(item.wali || {}),
+                    hubungan: item.wali?.hubungan || s.wali?.hubungan || 'Orang Tua Kandung',
+                    alamat: item.wali?.alamat || s.wali?.alamat || 'Surabaya',
+                  },
+                };
+              });
+            }
+            return [item, ...prev];
+          });
         } else if (payload.eventType === 'UPDATE' && payload.new) {
-          const item = dbToSantri(payload.new);
-          setSantriList(prev => prev.map(s => s.id === item.id ? { ...s, ...item } : s));
+          const item = normalizeSantriRecord(dbToSantri(payload.new));
+          setSantriList(prev => prev.map(s => {
+            const match = s.id === item.id ||
+              (item.rfidUid && s.rfidUid && s.rfidUid.toUpperCase() === item.rfidUid.toUpperCase());
+            if (!match) return s;
+            return {
+              ...s,
+              ...item,
+              wali: {
+                ...(s.wali || {}),
+                ...(item.wali || {}),
+                hubungan: item.wali?.hubungan || s.wali?.hubungan || 'Orang Tua Kandung',
+                alamat: item.wali?.alamat || s.wali?.alamat || 'Surabaya',
+              },
+            };
+          }));
+          setChatLogs(logs => syncChatLogsWithSantriList(logs, [item]));
         } else if (payload.eventType === 'DELETE' && payload.old) {
           setSantriList(prev => prev.filter(s => s.id !== payload.old.id));
         }
@@ -1301,6 +1527,7 @@ export const AppProvider = ({ children }) => {
 
     return () => {
       isMounted = false;
+      authSubscription?.unsubscribe();
       unsubscribe();
     };
   }, []);
@@ -1433,6 +1660,47 @@ export const AppProvider = ({ children }) => {
           } catch (e) {}
           return updated;
         });
+      })
+      .on('broadcast', { event: 'santri.wali_updated' }, ({ payload }) => {
+        if (!isMounted || !payload) return;
+        const cleanNewPhone = normalizePhone(payload.noWali || '');
+        const cleanOldPhone = normalizePhone(payload.oldNoWali || '');
+
+        setSantriList(prev => prev.map(s => {
+          const isMatch =
+            (payload.santriId && s.id === payload.santriId) ||
+            (payload.rfidUid && s.rfidUid && s.rfidUid.toUpperCase() === String(payload.rfidUid).toUpperCase()) ||
+            (payload.namaSantri && s.nama && s.nama.trim().toLowerCase() === String(payload.namaSantri).trim().toLowerCase());
+          if (!isMatch) return s;
+          return {
+            ...s,
+            namaWali: payload.namaWali || s.namaWali || s.wali?.nama,
+            noWali: cleanNewPhone || s.noWali || s.wali?.telepon,
+            wali: {
+              ...(s.wali || {}),
+              nama: payload.namaWali || s.wali?.nama,
+              telepon: cleanNewPhone || s.wali?.telepon,
+            },
+          };
+        }));
+
+        setChatLogs(prev => prev.map(c => {
+          const matchSantri =
+            payload.namaSantri &&
+            c.santri &&
+            c.santri.toLowerCase().includes(String(payload.namaSantri).toLowerCase());
+          const matchPhone =
+            (cleanNewPhone && isSamePhone(c.sender_phone || c.phone, cleanNewPhone)) ||
+            (cleanOldPhone && isSamePhone(c.sender_phone || c.phone, cleanOldPhone));
+          if (!matchSantri && !matchPhone) return c;
+          const nextPhone = cleanNewPhone || normalizePhone(c.sender_phone || c.phone);
+          return {
+            ...c,
+            name: payload.namaWali || c.name,
+            sender_phone: nextPhone || c.sender_phone,
+            phone: nextPhone ? `+${nextPhone}` : c.phone,
+          };
+        }));
       })
       .subscribe((status) => {
         console.log('📡 [AppContext Supabase Realtime whatsapp-room] Status:', status);
@@ -1706,16 +1974,11 @@ export const AppProvider = ({ children }) => {
 
   // Helper: Ambil nomor HP wali santri secara konsisten & normalisasi ke format 628...
   const resolveWaliPhone = (santri, fallbackNumber = null) => {
-    if (!santri) return fallbackNumber || fonnteTargetNumber || '6285960213654';
+    const fallbackClean = normalizePhone(fallbackNumber || fonnteTargetNumber || '6285960213654') || '6285960213654';
+    if (!santri) return fallbackClean;
     const raw = santri.wali?.telepon || santri.no_wali || santri.waliTelepon || santri.noWali || fallbackNumber || '';
-    if (!raw) return fonnteTargetNumber || '6285960213654';
-    let clean = String(raw).replace(/[^0-9]/g, '');
-    if (clean.startsWith('08')) {
-      clean = '628' + clean.slice(2);
-    } else if (clean.startsWith('8')) {
-      clean = '628' + clean.slice(1);
-    }
-    return clean || fonnteTargetNumber || '6285960213654';
+    if (!raw) return fallbackClean;
+    return normalizePhone(raw) || fallbackClean;
   };
 
   // 3. FUNGSI PENGIRIMAN OTOMATIS KE API FONNTE (https://api.fonnte.com/send)
@@ -1723,12 +1986,7 @@ export const AppProvider = ({ children }) => {
     const token = (fonnteToken || defaultFonnteToken || '').trim();
     // Prioritaskan nomor tujuan wali santri aktual, fallback hanya jika nomor kosong
     const rawTarget = targetNumber || fonnteTargetNumber || '6285960213654';
-    let cleanTarget = String(rawTarget).replace(/[^0-9]/g, '');
-    if (cleanTarget.startsWith('08')) {
-      cleanTarget = '628' + cleanTarget.slice(2);
-    } else if (cleanTarget.startsWith('8')) {
-      cleanTarget = '628' + cleanTarget.slice(1);
-    }
+    const cleanTarget = normalizePhone(rawTarget) || '6285960213654';
 
     let latencyMs = 0;
     let latencySec = '0.00';
@@ -1823,12 +2081,7 @@ export const AppProvider = ({ children }) => {
 
     // Prioritaskan nomor telepon wali santri penerima pesan aktual
     const rawTarget = nomor || fonnteTargetNumber || '6285960213654';
-    let cleanTarget = String(rawTarget).replace(/[^0-9]/g, '');
-    if (cleanTarget.startsWith('08')) {
-      cleanTarget = '628' + cleanTarget.slice(2);
-    } else if (cleanTarget.startsWith('8')) {
-      cleanTarget = '628' + cleanTarget.slice(1);
-    }
+    const cleanTarget = normalizePhone(rawTarget) || '6285960213654';
 
     const newMsg = {
       id,
@@ -2698,55 +2951,104 @@ export const AppProvider = ({ children }) => {
   };
 
   // 4e. RFID Card Management: Update existing santri card info & wali contact
-  const updateSantriCard = (santriId, updatedData) => {
-    let syncedSantri = null;
+  const updateSantriCard = async (santriId, updatedData) => {
+    const existingTarget = santriList.find(s => s.id === santriId);
+    if (!existingTarget) {
+      return { success: false, error: new Error('Data santri tidak ditemukan.') };
+    }
 
-    setSantriList(prev => prev.map(s => {
-      if (s.id === santriId) {
-        const updatedWali = {
-          ...(s.wali || {}),
-          ...(updatedData.wali || {}),
-          nama: updatedData.waliNama !== undefined ? updatedData.waliNama : (updatedData.wali?.nama || s.wali?.nama || `Wali ${s.nama}`),
-          telepon: updatedData.waliTelepon !== undefined ? updatedData.waliTelepon : (updatedData.wali?.telepon || s.wali?.telepon || ''),
-          hubungan: updatedData.waliHubungan !== undefined ? updatedData.waliHubungan : (updatedData.wali?.hubungan || s.wali?.hubungan || 'Orang Tua / Wali'),
-          alamat: updatedData.waliAlamat !== undefined ? updatedData.waliAlamat : (updatedData.wali?.alamat || s.wali?.alamat || '-')
-        };
+    const previousRfidUid = existingTarget.rfidUid || '';
+    const previousNis = existingTarget.nis || '';
+    const previousNama = existingTarget.nama || '';
+    const oldNoWali = normalizePhone(existingTarget.wali?.telepon || existingTarget.noWali || '');
 
-        syncedSantri = {
-          ...s,
-          ...updatedData,
-          wali: updatedWali,
-          rfidUid: updatedData.rfidUid ? updatedData.rfidUid.trim().toUpperCase() : s.rfidUid
-        };
-        return syncedSantri;
-      }
-      return s;
-    }));
+    const rawWaliPhone =
+      updatedData.waliTelepon !== undefined
+        ? updatedData.waliTelepon
+        : (updatedData.wali?.telepon ?? existingTarget.wali?.telepon ?? existingTarget.noWali ?? '');
+    const normalizedTelepon = normalizePhone(rawWaliPhone) || String(rawWaliPhone || '').trim();
+    const resolvedWaliNama =
+      updatedData.waliNama !== undefined
+        ? String(updatedData.waliNama).trim()
+        : (updatedData.wali?.nama || existingTarget.wali?.nama || existingTarget.namaWali || `Wali ${existingTarget.nama}`);
 
-    if (syncedSantri) {
-      // 1. Simpan permanen ke Supabase PostgreSQL
-      syncSantriToSupabase(syncedSantri);
+    const updatedWali = {
+      ...(existingTarget.wali || {}),
+      ...(updatedData.wali || {}),
+      nama: resolvedWaliNama,
+      telepon: normalizedTelepon,
+      hubungan: updatedData.waliHubungan !== undefined ? updatedData.waliHubungan : (updatedData.wali?.hubungan || existingTarget.wali?.hubungan || 'Orang Tua / Wali'),
+      alamat: updatedData.waliAlamat !== undefined ? updatedData.waliAlamat : (updatedData.wali?.alamat || existingTarget.wali?.alamat || '-')
+    };
 
-      // 2. Siarkan perubahan nomor wali baru ke seluruh sesi & WhatsApp Gateway
+    const syncedSantri = {
+      ...existingTarget,
+      ...updatedData,
+      namaWali: resolvedWaliNama,
+      noWali: normalizedTelepon,
+      wali: updatedWali,
+      rfidUid: updatedData.rfidUid ? updatedData.rfidUid.trim().toUpperCase() : existingTarget.rfidUid
+    };
+
+    // 1. Simpan permanen ke Supabase PostgreSQL & verifikasi berhasil sebelum commit state
+    const syncResult = await syncSantriToSupabase(syncedSantri, {
+      previousRfidUid,
+      previousNis,
+      previousNama
+    });
+
+    if (syncResult && syncResult.success === false) {
+      sound.playError?.();
+      return syncResult;
+    }
+
+    // 2. Commit perubahan ke state & localStorage agar sinkron secara real-time di frontend
+    setSantriList(prev => {
+      const next = prev.map(s => (s.id === santriId ? syncedSantri : s));
       try {
-        const waChannel = supabase.channel('whatsapp-room');
-        waChannel.send({
-          type: 'broadcast',
-          event: 'santri.wali_updated',
-          payload: {
-            santriId: syncedSantri.id,
-            namaSantri: syncedSantri.nama,
-            namaWali: syncedSantri.wali?.nama,
-            noWali: syncedSantri.wali?.telepon,
-            rfidUid: syncedSantri.rfidUid
-          }
-        });
-      } catch (e) {
-        console.warn('Realtime broadcast wali update failed:', e);
-      }
+        localStorage.setItem('sr_santri', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+
+    setChatLogs(prev => {
+      const next = prev.map(c => {
+        const matchSantri =
+          syncedSantri.nama &&
+          c.santri &&
+          c.santri.toLowerCase().includes(syncedSantri.nama.toLowerCase());
+        const matchOldPhone = oldNoWali && isSamePhone(c.sender_phone || c.phone, oldNoWali);
+        const matchNewPhone = normalizedTelepon && isSamePhone(c.sender_phone || c.phone, normalizedTelepon);
+        if (!matchSantri && !matchOldPhone && !matchNewPhone) return c;
+        return {
+          ...c,
+          name: resolvedWaliNama || c.name,
+          sender_phone: normalizedTelepon || c.sender_phone,
+          phone: normalizedTelepon ? `+${normalizedTelepon}` : c.phone
+        };
+      });
+      try {
+        localStorage.setItem('sr_chat_logs', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+
+    // 3. Siarkan perubahan nama & nomor wali baru ke seluruh sesi & WhatsApp Gateway
+    try {
+      await sendWhatsAppBroadcast('santri.wali_updated', {
+        santriId: syncedSantri.id,
+        namaSantri: syncedSantri.nama,
+        namaWali: resolvedWaliNama,
+        noWali: normalizedTelepon,
+        oldNoWali,
+        rfidUid: syncedSantri.rfidUid
+      });
+    } catch (e) {
+      console.warn('Realtime broadcast wali update failed:', e);
     }
 
     sound.playSuccess();
+    return syncResult || { success: true, data: syncedSantri };
   };
 
   // Web Serial Port connection functions
@@ -3721,7 +4023,8 @@ export const AppProvider = ({ children }) => {
       const santriId = row.id || `S-${rawNis.slice(-4) || (Date.now() + i).toString().slice(-4)}`;
       const rawUid = (row.rfid_uid || row.rfidUid || '').trim().toUpperCase() || 
                      `04:${Math.floor(10 + Math.random() * 89)}:${Math.floor(10 + Math.random() * 89)}:${Math.floor(10 + Math.random() * 89)}`;
-      const cleanPhone = (row.no_wa_wali || row.no_wali || row.telepon_wali || '').replace(/[^0-9]/g, '');
+      const cleanPhone = normalizePhone(row.no_wa_wali || row.no_wali || row.telepon_wali || '');
+      const fallbackPhone = normalizePhone(fonnteTargetNumber || '');
       const kamarName = row.kamar_asrama || row.kamar || (gender === 'P' ? 'Khadijah 105' : 'Umar bin Khattab 204');
 
       const santriObj = {
@@ -3737,11 +4040,11 @@ export const AppProvider = ({ children }) => {
         wali: {
           nama: row.nama_wali || `Wali dari ${row.nama_santri || 'Santri'}`,
           hubungan: row.status_wali || 'Orang Tua Kandung',
-          telepon: cleanPhone || '08813576012',
+          telepon: cleanPhone || fallbackPhone,
           alamat: row.asal_daerah || 'Surabaya'
         },
         namaWali: row.nama_wali || `Wali dari ${row.nama_santri || 'Santri'}`,
-        noWali: cleanPhone || '08813576012',
+        noWali: cleanPhone || fallbackPhone,
         statusConsent: 'Granted',
         saldoRfid: Number(row.saldo_rfid || 100000),
         limitJajanHarian: 25000,
@@ -3861,7 +4164,7 @@ export const AppProvider = ({ children }) => {
     let count = 0;
     const custMap = new Map();
     rows.forEach(r => {
-      const cleanPhone = (r.no_wa_wali || r.no_wali || '').replace(/[^0-9]/g, '');
+      const cleanPhone = normalizePhone(r.no_wa_wali || r.no_wali || r.telepon_wali || '');
       const namaWali = r.nama_wali || r.namaWali;
       const namaSantri = String(r.nama_santri || r.santri || '').trim().toLowerCase();
       if (namaSantri) {
@@ -4062,7 +4365,7 @@ export const AppProvider = ({ children }) => {
     const newBooking = {
       id: bookingId,
       booking_source: bookingData.booking_source || 'WHATSAPP',
-      nama_santri: bookingData.nama_santri || 'Ahmad Fauzi',
+      nama_santri: bookingData.nama_santri || 'Santri Terdaftar',
       kelas: bookingData.kelas || '10-A',
       asal: bookingData.asal || 'Surabaya',
       tanggal_kunjungan: tgl,
@@ -4074,7 +4377,7 @@ export const AppProvider = ({ children }) => {
       nama_penjenguk: bookingData.nama_penjenguk || 'Wali Santri',
       status_penjenguk: bookingData.status_penjenguk || 'Wali Santri',
       status_penjenguk_lainnya: bookingData.status_penjenguk_lainnya || '',
-      no_wa_penjenguk: bookingData.no_wa_penjenguk || fonnteTargetNumber || '081234567890',
+      no_wa_penjenguk: normalizePhone(bookingData.no_wa_penjenguk || fonnteTargetNumber || '6285960213654') || '6285960213654',
       rfid_uid: bookingData.rfid_uid || null,
       barcode_token: barcodeToken,
       barcode_image_url: initialQrUrl || null,
@@ -4601,7 +4904,7 @@ export const AppProvider = ({ children }) => {
 
     const token = booking.barcode_token || booking.id;
     const { qrCodeUrl, gatePassUrl } = getVisitGatePassUrls(token);
-    const targetPhone = booking.no_wa_penjenguk || fonnteTargetNumber || '6285960213654';
+    const targetPhone = normalizePhone(booking.no_wa_penjenguk || fonnteTargetNumber || '6285960213654') || '6285960213654';
     const waktuKirim = `${clock.jam_menit} WITA`;
 
     const waMessage = `🎫 *[PENGIRIMAN ULANG TIKET BARCODE KUNJUNGAN - SMART RIAYAH]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${booking.nama_penjenguk}*.\n\nBerikut kami kirimkan ulang E-Barcode Gate Pass untuk kunjungan ananda *${booking.nama_santri}* (${booking.kelas || 'Santri'}):\n\n📅 *Jadwal Sambangan:* ${booking.hari_kunjungan}, ${booking.tanggal_kunjungan}\n⏰ *Jam Operasional:* ${booking.jam_kunjungan} - ${booking.jam_selesai || '16:30'} WITA\n📦 *Titipan Barang:* ${booking.titipan_barang || '-'} (${booking.berat_barang_kg || 0} Kg)\n🎫 *Kode Kupon Resmi:* *${token}*\n\n🔗 *Link Kupon & Status Scan (Bisa Diklik Langsung):*\n${gatePassUrl}\n\n📷 *Gambar Kupon QR Gate Pass (Bisa Di-scan Kamera HP):*\n${qrCodeUrl}\n\n_Catatan: Barcode dikirim ulang pada ${waktuKirim}. Tiket hanya berlaku selama jam kunjungan dan otomatis hangus setelah selesai check-out di Pos Satpam._`;
@@ -4673,9 +4976,9 @@ export const AppProvider = ({ children }) => {
       jam_selesai: '15:30',
       titipan_barang: picked.titip,
       berat_barang_kg: picked.berat,
-      nama_penjenguk: sampleSantri.wali?.nama || 'Ibu Fatimah Az-Zahra',
+      nama_penjenguk: sampleSantri.wali?.nama || sampleSantri.namaWali || 'Wali Santri',
       status_penjenguk: 'Wali Santri',
-      no_wa_penjenguk: sampleSantri.wali?.telepon || fonnteTargetNumber || '081234567890',
+      no_wa_penjenguk: normalizePhone(sampleSantri.wali?.telepon || sampleSantri.noWali || fonnteTargetNumber || '6285960213654') || '6285960213654',
       rfid_uid: sampleSantri.rfidUid
     });
   };

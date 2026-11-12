@@ -1,11 +1,20 @@
-import { generateAutonomousReply, isPhoneInManualTakeover, setManualTakeover } from '../../server/whatsapp-gateway/aiAutonomousResponder.js';
+import { generateAutonomousReplyWithContext, isPhoneInManualTakeover, setManualTakeover } from '../../server/whatsapp-gateway/aiAutonomousResponder.js';
 import { broadcastToSupabaseRealtime } from '../../server/whatsapp-gateway/supabaseBroadcaster.js';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
-const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '';
-const supabase = (supabaseUrl && supabaseKey) 
-  ? createClient(supabaseUrl, supabaseKey) 
+const supabaseUrl =
+  process.env.SUPABASE_URL ||
+  process.env.VITE_SUPABASE_URL ||
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  '';
+const supabaseKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.VITE_SUPABASE_ANON_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+  process.env.SUPABASE_ANON_KEY ||
+  '';
+const supabase = (supabaseUrl && supabaseKey)
+  ? createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } })
   : { from: () => ({ insert: async () => ({}) }) };
 
 async function safeLog(senderName, senderRole, text, reaction) {
@@ -88,6 +97,7 @@ export default async function handler(req, res) {
 
     // 2. Tangani perintah khusus /start (Selalu unblock / reset takeover ke Otonom)
     let aiReply = '';
+    let resolvedWali = null;
     if (incomingText === '/start') {
       try {
         await setManualTakeover(String(chatId), false);
@@ -108,7 +118,9 @@ export default async function handler(req, res) {
       }
 
       // Generate balasan cerdas Smart Ri'ayah
-      aiReply = await generateAutonomousReply(String(chatId), incomingText, senderName);
+      const aiResult = await generateAutonomousReplyWithContext(String(chatId), incomingText, senderName);
+      aiReply = aiResult.reply;
+      resolvedWali = aiResult.waliData;
     }
 
     // 4. Kirim balasan otomatis ke pengguna di Telegram
@@ -135,7 +147,8 @@ export default async function handler(req, res) {
     const aiReplyData = {
       id: `AI-TG-${Date.now()}`,
       target: senderPhone,
-      namaWali: senderName,
+      namaWali: resolvedWali?.namaWali || senderName,
+      santriNama: resolvedWali?.santriNama || null,
       incomingText: incomingText,
       replyText: aiReply,
       waktu: nowWIB,

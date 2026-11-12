@@ -326,13 +326,13 @@ Anda melayani pengguna dengan role: "${perspective.title}" (${perspective.subtit
 Pesantren: Pesantren Modern Darul Ulum.
 
 DATA SANTRI YANG SEDANG DIBAHAS:
-- Nama: ${santri?.nama || 'Ahmad Fauzi'} (NIS: ${santri?.nis || '125456'}, Kelas: ${santri?.kelas || '3-Aliyah (KMI)'}, Kamar: ${santri?.kamar || 'Umar bin Khattab 204'})
-- Poin Induk Kedisiplinan: ${santri?.poinDisiplin || 96}/100
+- Nama: ${santri?.nama || 'Santri Terdaftar'} (NIS: ${santri?.nis || '-'}, Kelas: ${santri?.kelas || 'Asrama Pondok'}, Kamar: ${santri?.kamar || '-'})
+- Poin Induk Kedisiplinan: ${santri?.poinDisiplin ?? 100}/100
 - Status Keberadaan: ${santri?.statusAsrama || 'DI_ASRAMA'}
-- Saldo Kartu RFID: Rp ${(santri?.saldoRfid || 75000).toLocaleString('id-ID')} (Limit Jajan Harian: Rp ${(santri?.limitJajanHarian || 30000).toLocaleString('id-ID')}/hari)
-- Hafalan Al-Qur'an: Juz ${santri?.tahfidzJuz || 12}
+- Saldo Kartu RFID: Rp ${(santri?.saldoRfid ?? 0).toLocaleString('id-ID')} (Limit Jajan Harian: Rp ${(santri?.limitJajanHarian ?? 25000).toLocaleString('id-ID')}/hari)
+- Hafalan Al-Qur'an: Juz ${santri?.tahfidzJuz || 1}
 - Riwayat Kesehatan Khusus: ${santri?.penyakitKhusus || '-'}
-- Wali Santri: ${santri?.wali?.nama || 'Ibu Fatimah'} (${santri?.wali?.telepon || '08813576012'})
+- Wali Santri: ${santri?.wali?.nama || 'Wali Santri'} (${santri?.wali?.telepon || '-'})
 
 INSTRUKSI INTERAKSI:
 1. Jawab pertanyaan pengguna dengan sopan, cerdas, solutif, bernuansa nilai kepesantrenan santun.

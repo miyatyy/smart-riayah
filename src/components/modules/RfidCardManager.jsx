@@ -32,6 +32,7 @@ import { sound } from '../../utils/audio';
 import DeleteConfirmModal from '../common/DeleteConfirmModal';
 import BulkCsvImportModal from '../common/BulkCsvImportModal';
 import { downloadCsvFile, getTemplateCsv } from '../../utils/csvUtils';
+import { normalizePhone } from '../../utils/phoneUtils';
 
 export default function RfidCardManager({ isModal = false, onClose = () => {}, defaultView = 'table' }) {
   const [activeSubTab, setActiveSubTab] = useState(defaultView);
@@ -123,6 +124,8 @@ export default function RfidCardManager({ isModal = false, onClose = () => {}, d
 
   // State for Editing an existing santri's card & biodata (termasuk nomor WA wali baru)
   const [editingSantri, setEditingSantri] = useState(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editError, setEditError] = useState(null);
   const [editForm, setEditForm] = useState({
     rfidUid: '',
     nama: '',
@@ -232,6 +235,7 @@ export default function RfidCardManager({ isModal = false, onClose = () => {}, d
 
   // Start Editing Biodata & Kontak Wali
   const handleStartEdit = (santri) => {
+    setEditError(null);
     setEditingSantri(santri);
     setEditForm({
       rfidUid: santri.rfidUid || '',
@@ -240,19 +244,49 @@ export default function RfidCardManager({ isModal = false, onClose = () => {}, d
       kelas: santri.kelas || '',
       kamar: santri.kamar || '',
       waliNama: santri.wali?.nama || '',
-      waliTelepon: santri.wali?.telepon || '',
+      waliTelepon: normalizePhone(santri.wali?.telepon || '') || (santri.wali?.telepon || ''),
       waliHubungan: santri.wali?.hubungan || 'Orang Tua / Wali',
       statusAsrama: santri.statusAsrama || 'DI_ASRAMA'
     });
   };
 
   // Save Edit (Memperbarui Biodata Santri & Nomor WA Wali Tanpa Hapus/Blokir Kartu)
-  const handleSaveEdit = (e) => {
+  const handleSaveEdit = async (e) => {
     e.preventDefault();
-    if (!editingSantri) return;
-    updateSantriCard(editingSantri.id, editForm);
-    showNotification(`✅ Biodata & No. WA Wali Santri [${editForm.nama}] berhasil diperbarui ke: ${editForm.waliTelepon || '-'}. Kartu RFID [${editForm.rfidUid}] tetap aktif terhubung!`);
-    setEditingSantri(null);
+    if (!editingSantri || isSavingEdit) return;
+
+    const normalizedWa = normalizePhone(editForm.waliTelepon);
+    if (!normalizedWa || normalizedWa.length < 9) {
+      setEditError('Nomor WhatsApp wali tidak valid. Masukkan format 08... atau 628...');
+      return;
+    }
+
+    setIsSavingEdit(true);
+    setEditError(null);
+
+    try {
+      const result = await updateSantriCard(editingSantri.id, {
+        ...editForm,
+        waliTelepon: normalizedWa,
+      });
+
+      if (result && result.success === false) {
+        setEditError(
+          result.error?.message ||
+            'Gagal menyimpan perubahan ke database Supabase. Pastikan sesi login aktif dan coba lagi.'
+        );
+        return;
+      }
+
+      showNotification(
+        `✅ Biodata & No. WA Wali Santri [${editForm.nama}] berhasil diperbarui (${editForm.waliNama || '-'} • ${normalizedWa}) dan disinkronkan ke Supabase!`
+      );
+      setEditingSantri(null);
+    } catch (err) {
+      setEditError(err?.message || 'Terjadi kesalahan saat menyimpan ke database.');
+    } finally {
+      setIsSavingEdit(false);
+    }
   };
 
   // Uji Kirim WhatsApp ke Nomor Baru Wali Santri secara langsung dari Modal Edit
@@ -1015,7 +1049,7 @@ export default function RfidCardManager({ isModal = false, onClose = () => {}, d
                         type="text"
                         value={editForm.waliNama}
                         onChange={(e) => setEditForm({ ...editForm, waliNama: e.target.value })}
-                        placeholder="Contoh: Ibu Fatimah Az-Zahra"
+                        placeholder="Contoh: Ibu Arbainah / Arosinah"
                         className="w-full bg-white border border-slate-300 rounded-xl p-2.5 font-medium text-xs focus:outline-none focus:border-emerald-500"
                       />
                     </div>
@@ -1112,21 +1146,39 @@ export default function RfidCardManager({ isModal = false, onClose = () => {}, d
                 </div>
               </div>
 
+              {editError && (
+                <div className="mx-4 mt-3 bg-rose-50 border border-rose-300 text-rose-800 rounded-xl p-2.5 text-[11px] font-bold flex items-center gap-2 shrink-0">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{editError}</span>
+                </div>
+              )}
+
               {/* Modal Footer */}
               <div className="p-3.5 sm:p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => setEditingSantri(null)}
-                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-bold text-xs transition"
+                  disabled={isSavingEdit}
+                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-bold text-xs transition disabled:opacity-50"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-md shadow-emerald-950/20 transition flex items-center gap-1.5"
+                  disabled={isSavingEdit}
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-md shadow-emerald-950/20 transition flex items-center gap-1.5 disabled:opacity-60"
                 >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Simpan Perubahan Biodata & WA</span>
+                  {isSavingEdit ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Menyimpan ke Supabase...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Simpan Perubahan Biodata & WA</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

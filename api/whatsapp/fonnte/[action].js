@@ -1,4 +1,4 @@
-import { setManualTakeover } from '../../../server/whatsapp-gateway/aiAutonomousResponder.js';
+import { normalizePhone, setManualTakeover } from '../../../server/whatsapp-gateway/aiAutonomousResponder.js';
 
 /**
  * Vercel Serverless Function: /api/whatsapp/fonnte/[action]
@@ -15,16 +15,6 @@ function resolveFonnteToken(req) {
     return req.body.token.trim();
   }
   return (process.env.FONNTE_TOKEN || process.env.VITE_FONNTE_TOKEN || '').trim();
-}
-
-function normalizeIndonesianPhone(phone) {
-  let clean = String(phone || '').replace(/[^0-9]/g, '');
-  if (clean.startsWith('08')) {
-    clean = '628' + clean.slice(2);
-  } else if (clean.startsWith('8')) {
-    clean = '628' + clean.slice(1);
-  }
-  return clean;
 }
 
 export default async function handler(req, res) {
@@ -86,7 +76,7 @@ export default async function handler(req, res) {
 
   // 2. QR
   if (action === 'qr') {
-    const whatsappNumber = req.body?.whatsapp ? normalizeIndonesianPhone(req.body.whatsapp) : '';
+    const whatsappNumber = req.body?.whatsapp ? normalizePhone(req.body.whatsapp) : '';
     try {
       const formData = new FormData();
       formData.append('type', 'qr');
@@ -135,7 +125,7 @@ export default async function handler(req, res) {
   // 3. VALIDATE
   if (action === 'validate') {
     const rawPhone = req.body?.phone || req.body?.target || '';
-    const normalized = normalizeIndonesianPhone(rawPhone);
+    const normalized = normalizePhone(rawPhone);
     if (!normalized) {
       return res.status(400).json({ success: false, message: 'Nomor WhatsApp wajib diisi!' });
     }
@@ -215,7 +205,7 @@ export default async function handler(req, res) {
     if (!target || !message) {
       return res.status(400).json({ success: false, message: 'Parameter target dan message wajib diisi!' });
     }
-    const normalized = normalizeIndonesianPhone(target);
+    const normalized = normalizePhone(target);
 
     try {
       const formData = new FormData();
@@ -262,7 +252,7 @@ export default async function handler(req, res) {
     if (!phone) {
       return res.status(400).json({ success: false, message: 'Nomor telepon wajib disertakan' });
     }
-    const clean = normalizeIndonesianPhone(phone);
+    const clean = normalizePhone(phone);
     const active = Boolean(isManual);
     await setManualTakeover(clean, active);
     return res.status(200).json({

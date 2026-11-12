@@ -1,4 +1,5 @@
-import { supabase } from './supabaseClient';
+import { supabase } from './supabaseClient.js';
+import { normalizePhone } from './phoneUtils.js';
 
 /**
  * ============================================================================
@@ -14,6 +15,7 @@ import { supabase } from './supabaseClient';
 
 export function santriToDb(s) {
   if (!s) return null;
+  const rawTel = s.wali?.telepon || s.waliTelepon || s.no_wali || s.noWali || '';
   return {
     id: s.id,
     nis: s.nis ? String(s.nis).trim() : null,
@@ -22,10 +24,10 @@ export function santriToDb(s) {
     kelas: s.kelas || '10-A',
     kamar: s.kamar || '',
     rfid_uid: s.rfidUid ? s.rfidUid.trim().toUpperCase() : null,
-    nama_wali: s.wali?.nama || s.waliNama || s.nama_wali || '',
-    no_wali: s.wali?.telepon || s.waliTelepon || s.no_wali || '',
+    nama_wali: s.wali?.nama || s.waliNama || s.nama_wali || s.namaWali || '',
+    no_wali: normalizePhone(rawTel),
     saldo_rfid: Number(s.saldoRfid ?? s.saldo_rfid ?? s.saldoAwal ?? 0),
-    limit_jajan_harian: Number(s.limitJajanHarian ?? 25000),
+    limit_jajan_harian: Number(s.limitJajanHarian ?? s.limit_jajan_harian ?? 25000),
     poin_disiplin: Number(s.poinDisiplin ?? 100),
     status_asrama: s.statusAsrama || 'DI_ASRAMA',
     foto_url: s.foto || s.foto_url || null,
@@ -37,6 +39,8 @@ export function dbToSantri(row) {
   if (!row) return null;
   const gender = row.gender || 'L';
   const defaultAvatar = gender === 'P' ? '/images/avatar_santri_putri.jpg' : '/images/avatar_santri_putra.jpg';
+  const normalizedPhone = normalizePhone(row.no_wali || '');
+  const limitJajan = Number(row.limit_jajan_harian ?? 25000);
   return {
     id: row.id,
     nis: String(row.nis || ''),
@@ -48,13 +52,14 @@ export function dbToSantri(row) {
     rfidUid: row.rfid_uid || '',
     foto: row.foto_url || defaultAvatar,
     wali: {
-      nama: row.nama_wali || `Wali dari ${row.nama_lengkap || 'Santri'}`,
+      nama: row.nama_wali || 'Wali Santri',
       hubungan: 'Orang Tua Kandung',
-      telepon: row.no_wali || '0812-3456-7890',
+      telepon: normalizedPhone,
       alamat: 'Surabaya'
     },
     saldoRfid: Number(row.saldo_rfid ?? 0),
-    limit_jajan_harian: Number(row.limit_jajan_harian ?? 25000),
+    limitJajanHarian: limitJajan,
+    limit_jajan_harian: limitJajan,
     poinDisiplin: Number(row.poin_disiplin ?? 100),
     tahfidzJuz: 1,
     statusAsrama: row.status_asrama || 'DI_ASRAMA',
@@ -370,24 +375,101 @@ export function dbToMutabaah(row) {
 // 2. SUPABASE WRITE ACTIONS
 // ----------------------------------------------------------------------------
 
-export async function syncSantriToSupabase(santri) {
+export async function syncSantriToSupabase(santri, matchHints = {}, clientOverride = null) {
+  const db = clientOverride || supabase;
   try {
     const payload = santriToDb(santri);
-    if (!payload) return;
-    const { error } = await supabase.from('santri').upsert([payload], { onConflict: 'id' });
-    if (error) {
-      if ((error.code === '23505' || error.message?.includes('santri_rfid_uid_key')) && payload.rfid_uid) {
-        const { error: fallbackErr } = await supabase
-          .from('santri')
-          .update(payload)
-          .eq('rfid_uid', payload.rfid_uid);
-        if (fallbackErr) console.warn('⚠️ [Supabase Sync Santri Fallback]:', fallbackErr.message);
-      } else {
-        console.warn('⚠️ [Supabase Sync Santri]:', error.message);
-      }
+    if (!payload) {
+      return { success: false, data: null, error: new Error('Invalid santri payload') };
     }
+
+    const { id: targetId, ...updatePayload } = payload;
+
+    const tryUpdateBy = async (column, value, exactInsensitive = false) => {
+      if (!value) return { data: null, error: null };
+      const q = db.from('santri').update(updatePayload);
+      const filtered = exactInsensitive ? q.ilike(column, value) : q.eq(column, value);
+      const { data, error } = await filtered.select();
+      if (error) return { data: null, error };
+      if (Array.isArray(data) && data.length > 0) {
+        return { data: data[0], error: null };
+      }
+      return { data: null, error: null };
+    };
+
+    // 1. Update berdasarkan ID terlebih dahulu (tidak mengubah PK id)
+    if (targetId) {
+      const byId = await tryUpdateBy('id', targetId);
+      if (byId.data) return { success: true, data: byId.data, error: null };
+      if (byId.error) return { success: false, data: null, error: byId.error };
+    }
+
+    // 2. Cocokkan via RFID UID (baru / sebelumnya)
+    const uidCandidates = Array.from(
+      new Set(
+        [
+          payload.rfid_uid,
+          matchHints?.previousRfidUid ? String(matchHints.previousRfidUid).trim().toUpperCase() : '',
+        ].filter(Boolean)
+      )
+    );
+    for (const uid of uidCandidates) {
+      const byUid = await tryUpdateBy('rfid_uid', uid, true);
+      if (byUid.data) return { success: true, data: byUid.data, error: null };
+      if (byUid.error) return { success: false, data: null, error: byUid.error };
+    }
+
+    // 3. Cocokkan via NIS (baru / sebelumnya)
+    const nisCandidates = Array.from(
+      new Set(
+        [
+          payload.nis,
+          matchHints?.previousNis ? String(matchHints.previousNis).trim() : '',
+        ].filter(Boolean)
+      )
+    );
+    for (const nis of nisCandidates) {
+      const byNis = await tryUpdateBy('nis', nis);
+      if (byNis.data) return { success: true, data: byNis.data, error: null };
+      if (byNis.error) return { success: false, data: null, error: byNis.error };
+    }
+
+    // 4. Cocokkan via nama exact case-insensitive (tanpa wildcard)
+    const namaCandidates = Array.from(
+      new Set(
+        [
+          payload.nama_lengkap,
+          matchHints?.previousNama ? String(matchHints.previousNama).trim() : '',
+        ].filter(Boolean)
+      )
+    );
+    for (const nama of namaCandidates) {
+      const byNama = await tryUpdateBy('nama_lengkap', nama, true);
+      if (byNama.data) return { success: true, data: byNama.data, error: null };
+      if (byNama.error) return { success: false, data: null, error: byNama.error };
+    }
+
+    // 5. Fallback upsert bila record belum ada di tabel santri
+    const { data: upsertedData, error: upsertError } = await db
+      .from('santri')
+      .upsert([payload], { onConflict: 'id' })
+      .select();
+
+    if (upsertError) {
+      console.warn('⚠️ [Supabase Sync Santri]:', upsertError.message);
+      return { success: false, data: null, error: upsertError };
+    }
+
+    if (Array.isArray(upsertedData) && upsertedData.length > 0) {
+      return { success: true, data: upsertedData[0], error: null };
+    }
+
+    const rlsError = new Error('Perubahan tidak tersimpan di Supabase (0 baris diperbarui - periksa RLS/autentikasi).');
+    console.warn('⚠️ [Supabase Sync Santri 0-row]:', rlsError.message);
+    return { success: false, data: null, error: rlsError };
   } catch (err) {
     console.warn('⚠️ [Supabase Sync Santri Error]:', err);
+    return { success: false, data: null, error: err };
   }
 }
 

@@ -77,7 +77,7 @@ export default function SecurityCommandCenter() {
     rfidUid: '04:A1:2B:9C',
     nis: '125456',
     kamar: 'Umar bin Khattab 204',
-    wali: { nama: 'Ibu Fatimah Az-Zahra' },
+    wali: { nama: 'Wali Santri' },
     foto: '/images/avatar_santri_putra.jpg'
   };
   const santriPermit = allPermits.find(p => p && (

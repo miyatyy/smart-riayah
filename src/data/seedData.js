@@ -12,7 +12,7 @@ export const INITIAL_SANTRI = [
     rfidUid: "04:A1:2B:9C",
     foto: "/images/avatar_santri_putra.jpg",
     wali: {
-      nama: "Ibu Fatimah Az-Zahra",
+      nama: "Wali Demo Putra",
       hubungan: "Ibu Kandung",
       telepon: "0812-3456-7890",
       alamat: "Jl. Melati No. 42, Surabaya"
@@ -136,17 +136,17 @@ export const INITIAL_SANTRI = [
   },
   {
     id: "S-107",
-    nis: "46764644",
+    nis: "126146",
     nama: "Nurmiyaty",
-    kelas: "11-B (Putri)",
+    kelas: "10-B Putri",
     gender: "P",
-    kamar: "Umar bin Khattab 204",
+    kamar: "Khadijah 105",
     rfidUid: "53:57:98:0F",
     foto: "/images/avatar_santri_putri.jpg",
     wali: {
-      nama: "Bapak/Ibu Wali dari Nurmiyaty",
+      nama: "Arbainah",
       hubungan: "Wali Santri",
-      telepon: "0812-3456-7890",
+      telepon: "628813576012",
       alamat: "Surabaya, Jawa Timur"
     },
     saldoRfid: 150000,
@@ -529,7 +529,7 @@ export const INITIAL_WHATSAPP_LOGS = [
   {
     id: "WA-003",
     waktu: "12:50 WIB",
-    penerima: "Ibu Fatimah Az-Zahra (Wali Ahmad Fauzi)",
+    penerima: "Wali Demo Putra (Wali Ahmad Fauzi)",
     nomor: "0812-3456-7890",
     tipe: "CASHLESS_NOTIF",
     pesan: "Laporan Transaksi Smart Card: Ananda Ahmad Fauzi baru saja bertransaksi di Kantin Sehat Darul Ulum sebesar Rp 12.000. Sisa saldo RFID: Rp 145.000."
@@ -567,7 +567,7 @@ export const INITIAL_ACCOUNTS = [
     roleName: "Orang Tua / Wali Santri",
     email: "walisantri@gmail.com",
     password: "walisantri01",
-    nama: "Ibu Fatimah Az-Zahra",
+    nama: "Wali Demo Putra",
     jabatan: "Wali Santri dari Ahmad Fauzi (Kls 10-A)",
     avatar: "/images/avatar_santri_putri.jpg",
     badge: "Portal Wali Santri",
@@ -708,7 +708,7 @@ export const INITIAL_VISIT_BOOKINGS = [
     jam_selesai: "16:00",
     titipan_barang: "Kitab Kuning, Pakaian Ganti, Susu Kotak, Madu Herbal",
     berat_barang_kg: 3.5,
-    nama_penjenguk: "Ibu Fatimah Az-Zahra",
+    nama_penjenguk: "Wali Demo Putra",
     status_penjenguk: "Wali Santri",
     no_wa_penjenguk: "081234567890",
     rfid_uid: "04:A1:2B:9C",

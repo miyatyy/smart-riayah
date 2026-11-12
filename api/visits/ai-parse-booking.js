@@ -8,6 +8,11 @@
  */
 
 import { saveAiDocument } from '../../server/mongo.js';
+import {
+  normalizePhone,
+  resolveWaliIdentity,
+  isPriorityNurmiyatyPhone,
+} from '../../server/whatsapp-gateway/aiAutonomousResponder.js';
 
 const DEFAULT_DEEPSEEK_KEY = (process.env.DEEPSEEK_API_KEY || process.env.VITE_DEEPSEEK_API_KEY || '').trim();
 const DEFAULT_FONNTE_TOKEN = (process.env.FONNTE_TOKEN || process.env.VITE_FONNTE_TOKEN || '').trim();
@@ -33,8 +38,9 @@ export default async function handler(req, res) {
   try {
     const payload = req.body || {};
     const messageText = payload.message || payload.text || '';
-    const sender = payload.sender || payload.phone || payload.target || '';
-    const senderName = payload.name || payload.sender_name || 'Wali Santri';
+    const rawSender = payload.sender || payload.phone || payload.target || '';
+    const cleanSender = normalizePhone(rawSender);
+    const rawSenderName = payload.name || payload.sender_name || '';
     const apiKey = payload.deepseek_api_key || DEFAULT_DEEPSEEK_KEY;
     const fonnteToken = payload.fonnte_token || DEFAULT_FONNTE_TOKEN;
 
@@ -42,17 +48,38 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false, error: 'Pesan chat booking kunjungan wajib diisi' });
     }
 
-    // Waktu real-time pondok saat ini
+    // Waktu real-time pondok saat ini & resolusi identitas wali dari database
     const rtc = getRealtimeClockAndCalendar();
+    const resolvedIdentity = cleanSender
+      ? await resolveWaliIdentity(cleanSender, rawSenderName)
+      : null;
+    const senderName = resolvedIdentity?.namaWali || (rawSenderName || 'Wali Santri');
 
     // 1. Panggil DeepSeek AI untuk Ekstraksi 9 Atribut JSON Wajib dengan Injeksi Waktu Real-Time
-    let extracted = await callDeepSeekParser(messageText, sender, senderName, apiKey, rtc);
+    let extracted = await callDeepSeekParser(messageText, cleanSender || rawSender, senderName, apiKey, rtc, resolvedIdentity);
 
     // Fallback regex jika DeepSeek gagal atau respons kosong
     let usedFallbackParser = false;
     if (!extracted || !extracted.nama_santri) {
-      extracted = fallbackRegexParser(messageText, sender, senderName, rtc);
+      extracted = fallbackRegexParser(messageText, cleanSender || rawSender, senderName, rtc, resolvedIdentity);
       usedFallbackParser = true;
+    }
+
+    const prioritySender = isPriorityNurmiyatyPhone(cleanSender);
+    if (prioritySender && resolvedIdentity) {
+      extracted.nama_santri = resolvedIdentity.santriNama;
+      extracted.kelas = resolvedIdentity.kelas;
+      if (!extracted.nama_penjenguk || /fatimah|wali santri/i.test(extracted.nama_penjenguk)) {
+        extracted.nama_penjenguk = resolvedIdentity.namaWali;
+      }
+    } else {
+      if (/ahmad\s+fauzi/i.test(String(extracted.nama_santri || '')) && resolvedIdentity?.santriNama && resolvedIdentity.santriNama !== 'Ananda') {
+        extracted.nama_santri = resolvedIdentity.santriNama;
+        extracted.kelas = resolvedIdentity.kelas;
+      }
+      if (/fatimah/i.test(String(extracted.nama_penjenguk || ''))) {
+        extracted.nama_penjenguk = senderName;
+      }
     }
 
     // 2. Normalisasi & Validasi Hari Kunjungan (Senin - Minggu)
@@ -129,7 +156,8 @@ export default async function handler(req, res) {
       berat_barang_kg: extracted.berat_barang_kg || 0,
       nama_penjenguk: extracted.nama_penjenguk,
       status_penjenguk: extracted.status_penjenguk || 'Wali Santri',
-      no_wa_penjenguk: sender || extracted.no_wa_penjenguk || '',
+      no_wa_penjenguk: cleanSender || normalizePhone(extracted.no_wa_penjenguk || '') || '',
+      rfid_uid: resolvedIdentity?.rfidUid || null,
       barcode_token: barcodeToken,
       approval_type: approvalType,
       status_kunjungan: statusKunjungan,
@@ -143,12 +171,7 @@ export default async function handler(req, res) {
 
     // 3. Kirim WhatsApp Auto-Reply via Fonnte jika nomor tujuan tersedia
     let waSendResult = null;
-    let targetWa = String(bookingRecord.no_wa_penjenguk || '').replace(/[^0-9]/g, '');
-    if (targetWa.startsWith('08')) {
-      targetWa = '628' + targetWa.slice(2);
-    } else if (targetWa.startsWith('8')) {
-      targetWa = '628' + targetWa.slice(1);
-    }
+    const targetWa = normalizePhone(bookingRecord.no_wa_penjenguk || '');
     if (targetWa && fonnteToken) {
       try {
         const qrUrlForFonnte = barcodeToken ? `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(barcodeToken)}&format=png` : null;
@@ -179,7 +202,8 @@ export default async function handler(req, res) {
       id: `AI-BOOK-${bookingRecord.id}`,
       bookingId: bookingRecord.id,
       santriNama: bookingRecord.nama_santri,
-      sender: targetWa || sender || '',
+      rfid_uid: bookingRecord.rfid_uid,
+      sender: targetWa || cleanSender || rawSender || '',
       senderName,
       prompt: messageText,
       replyMessage: replyWaText,
@@ -246,15 +270,19 @@ function getRealtimeClockAndCalendar() {
 /**
  * Panggil DeepSeek API dengan structured JSON output & injeksi waktu real-time
  */
-async function callDeepSeekParser(message, sender, senderName, apiKey, rtc = getRealtimeClockAndCalendar()) {
+async function callDeepSeekParser(message, sender, senderName, apiKey, rtc = getRealtimeClockAndCalendar(), waliIdentity = null) {
   try {
+    const waliContextSection = waliIdentity
+      ? `\nDATA TERDAFTAR DI PONDOK UNTUK NOMOR INI:\n- Nama Wali: ${waliIdentity.namaWali}\n- Nama Santri: ${waliIdentity.santriNama}\n- Kelas: ${waliIdentity.kelas}\n- UID RFID: ${waliIdentity.rfidUid || '-'}\nGunakan data di atas jika pesan wali tidak menyebut eksplisit, dan JANGAN PERNAH memakai nama placeholder "Ibu Fatimah" atau "Ahmad Fauzi".\n`
+      : `\nATURAN: JANGAN PERNAH mengarang atau memakai nama placeholder "Ibu Fatimah" atau "Ahmad Fauzi" jika tidak tertulis di pesan wali.\n`;
+
     const systemPrompt = `Anda adalah AI Asisten Cerdas Pondok Pesantren Modern Darul Ulum untuk memproses pendaftaran booking kunjungan/sambangan wali santri dari chat WhatsApp.
 
 WAKTU SISTEM PONDOK REAL-TIME SAAT INI:
 - Hari & Tanggal Sekarang: ${rtc.namaHari}, ${rtc.tanggalLengkap} (Format YMD: ${rtc.ymd})
 - Jam Sistem Presisi: ${rtc.jamMenitDetik} WITA/WIB
 - Status Hari Ini: ${rtc.isWeekday ? 'HARI KERJA (SENIN–KAMIS) • Wajib Approval Admin' : 'AKHIR PEKAN (JUMAT–MINGGU) • Auto-Approved'}
-
+${waliContextSection}
 REFERENSI KALENDER 7 HARI KE DEPAN DARI WAKTU SEKARANG:
 ${rtc.calendarText}
 
@@ -324,6 +352,8 @@ function normalizeDayName(hariStr, tanggalStr) {
   const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
   if (hariStr) {
     const clean = hariStr.trim().toLowerCase();
+    if (clean === 'ahad') return 'Minggu';
+    if (clean === "jum'at") return 'Jumat';
     for (const d of dayNames) {
       if (d.toLowerCase() === clean) return d;
     }
@@ -340,10 +370,9 @@ function normalizeDayName(hariStr, tanggalStr) {
 /**
  * Regex Fallback Parser jika API eksternal offline
  */
-function fallbackRegexParser(text, sender, senderName) {
+function fallbackRegexParser(text, sender, senderName, rtc = getRealtimeClockAndCalendar(), waliIdentity = null) {
   const clean = text || '';
-  const now = new Date();
-  const defaultDate = now.toISOString().slice(0, 10);
+  const defaultDate = rtc?.ymd || new Date().toISOString().slice(0, 10);
 
   const matchField = (patterns, fallback = '') => {
     for (const pat of patterns) {
@@ -353,14 +382,23 @@ function fallbackRegexParser(text, sender, senderName) {
     return fallback;
   };
 
-  const namaSantri = matchField([
+  const defaultSantri =
+    waliIdentity?.santriNama && waliIdentity.santriNama !== 'Ananda'
+      ? waliIdentity.santriNama
+      : 'Santri Terdaftar';
+  const defaultKelas = waliIdentity?.kelas || 'Asrama Pondok';
+  const defaultWali = waliIdentity?.namaWali || (senderName || 'Wali Santri');
+
+  const rawMatchedSantri = matchField([
     /(?:nama\s*santri|santri|ananda)\s*[:=]\s*([^\n,]+)/i,
-    /(?:menjenguk|sambang|jenguk)\s+([a-zA-Z\s]{3,30})/i
-  ], 'Ahmad Fauzi');
+    /(?:menjenguk|sambang|jenguk)\s+(?:ananda\s+)?(?!(?:hari|tgl|tanggal|jam|pukul|besok|lusa|nanti|pagi|siang|sore|malam|senin|selasa|rabu|kamis|jumat|jum'at|sabtu|minggu|ahad|pada|ke|di)\b)([a-zA-Z]+(?:\s+(?!(?:hari|tgl|tanggal|jam|pukul|kelas|kamar|besok|lusa|senin|selasa|rabu|kamis|jumat|jum'at|sabtu|minggu|ahad|bawa|dari|pada)\b)[a-zA-Z]+){0,2})/i
+  ], '');
+
+  const namaSantri = rawMatchedSantri || defaultSantri;
 
   const kelas = matchField([
     /(?:kelas|kamar|asrama)\s*[:=]\s*([^\n,]+)/i
-  ], '10-A (Umar bin Khattab 204)');
+  ], defaultKelas);
 
   const asal = matchField([
     /(?:asal|kota|daerah)\s*[:=]\s*([^\n,]+)/i
@@ -372,8 +410,9 @@ function fallbackRegexParser(text, sender, senderName) {
   ], defaultDate);
 
   const hariKunjungan = matchField([
+    /(?:hari)\s*[:=]?\s*(senin|selasa|rabu|kamis|jumat|jum'at|sabtu|minggu|ahad)/i,
     /(?:hari)\s*[:=]\s*([a-zA-Z]+)/i
-  ], 'Senin');
+  ], rtc?.namaHari || 'Senin');
 
   const jamMulai = matchField([
     /(?:jam|waktu|pukul)\s*[:=]?\s*([0-9]{1,2}[:.][0-9]{2})/i
@@ -394,9 +433,13 @@ function fallbackRegexParser(text, sender, senderName) {
   ], '2.0').replace(',', '.');
   const berat = parseFloat(beratStr) || 2.0;
 
-  const penjenguk = matchField([
+  let penjenguk = matchField([
     /(?:nama\s*penjenguk|penjenguk|wali|orang\s*tua)\s*[:=]\s*([^\n,]+)/i
-  ], senderName || 'Ibu Fatimah Az-Zahra');
+  ], defaultWali);
+
+  if (/fatimah/i.test(penjenguk)) {
+    penjenguk = defaultWali;
+  }
 
   const statusPenjenguk = matchField([
     /(?:status\s*penjenguk|status|hubungan)\s*[:=]\s*([^\n,]+)/i
@@ -414,7 +457,7 @@ function fallbackRegexParser(text, sender, senderName) {
     berat_barang_kg: berat,
     nama_penjenguk: penjenguk,
     status_penjenguk: statusPenjenguk,
-    no_wa_penjenguk: sender
+    no_wa_penjenguk: normalizePhone(sender)
   };
 }
 

@@ -59,7 +59,7 @@ export default function VisitBookingManager({ isCompact = false }) {
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
   const [selectedBookingForPass, setSelectedBookingForPass] = useState(null);
   const [copiedToken, setCopiedToken] = useState(false);
-  const [customWaChat, setCustomWaChat] = useState("Assalamu'alaikum ustadz, saya Bu Fatimah wali ananda Ahmad Fauzi kelas 10A kamar Umar 204 dari Surabaya, mau sambang hari Senin tgl 2026-11-09 jam 14.00 WIB bawa madu herbal 2 kg.");
+  const [customWaChat, setCustomWaChat] = useState("Assalamu'alaikum ustadz, saya Ibu Arbainah wali ananda Nurmiyaty kelas 10-B Putri kamar Khadijah 105 dari Surabaya, mau sambang hari Senin jam 14.00 WIB bawa madu herbal 2 kg.");
   const [isAiParsing, setIsAiParsing] = useState(false);
   const [toastNotification, setToastNotification] = useState(null);
 

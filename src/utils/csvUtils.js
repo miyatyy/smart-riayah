@@ -207,16 +207,16 @@ export function getTemplateCsv(type) {
           poin_disiplin: '100'
         },
         {
-          nis: '125602',
-          nama_santri: 'Aisyah Putri Azzahra',
+          nis: '126146',
+          nama_santri: 'Nurmiyaty',
           kategori_asrama: 'PUTRI',
-          kelas: '10-B (Putri)',
+          kelas: '10-B Putri',
           kamar_asrama: 'Asrama Putri Khadijah - Kamar 105',
-          asal_daerah: 'Malang',
-          nama_wali: 'Ibu Fatimah Az-Zahra',
+          asal_daerah: 'Surabaya',
+          nama_wali: 'Arbainah',
           status_wali: 'Orang Tua Kandung',
-          no_wa_wali: '08813576012',
-          rfid_uid: '53:57:98:8F',
+          no_wa_wali: '628813576012',
+          rfid_uid: '53:57:98:0F',
           status_kartu: 'ACTIVE',
           poin_disiplin: '100'
         },
@@ -281,10 +281,10 @@ export function getTemplateCsv(type) {
           status_wali: 'Orang Tua Kandung'
         },
         {
-          nama_wali: 'Ibu Fatimah Az-Zahra',
-          no_wa_wali: '08813576012',
-          nama_santri: 'Aisyah Putri Azzahra',
-          kelas: '10-B (Putri)',
+          nama_wali: 'Arbainah',
+          no_wa_wali: '628813576012',
+          nama_santri: 'Nurmiyaty',
+          kelas: '10-B Putri',
           kamar_asrama: 'Kamar 105',
           status_wali: 'Orang Tua Kandung'
         },

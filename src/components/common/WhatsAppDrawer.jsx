@@ -34,11 +34,24 @@ export default function WhatsAppDrawer() {
     sendWhatsAppNotification,
     isFonnteEnabled,
     fonnteTargetNumber,
+    santriList,
     role
   } = useApp();
 
   // Hanya tampil untuk role admin_riayah
   if (role !== 'admin_riayah') return null;
+
+  const matchedDrawerSantri = Array.isArray(santriList)
+    ? santriList.find(s => {
+        const d1 = String(s?.wali?.telepon || '').replace(/[^0-9]/g, '');
+        const d2 = String(fonnteTargetNumber || '').replace(/[^0-9]/g, '');
+        return d1 && d2 && d1.slice(-8) === d2.slice(-8);
+      })
+    : null;
+  const drawerWaliName = matchedDrawerSantri?.wali?.nama || 'Wali Santri';
+  const drawerSantriLabel = matchedDrawerSantri
+    ? `${drawerWaliName} (Wali ${matchedDrawerSantri.nama})`
+    : drawerWaliName;
 
   const [testCustomMsg, setTestCustomMsg] = useState('');
   const [showSettings, setShowSettings] = useState(false);
@@ -66,7 +79,7 @@ export default function WhatsAppDrawer() {
     e.preventDefault();
     if (!testCustomMsg.trim()) return;
     sendWhatsAppNotification(
-      'Ibu Fatimah Az-Zahra (Wali Ahmad Fauzi)',
+      drawerSantriLabel,
       fonnteTargetNumber || '6285960213654',
       'MANUAL_TEST',
       testCustomMsg
@@ -130,13 +143,13 @@ export default function WhatsAppDrawer() {
               </div>
               <div>
                 <h3 className="font-bold text-sm leading-tight flex items-center gap-1.5">
-                  Ibu Fatimah Az-Zahra
+                  {drawerWaliName}
                   <span className="text-[10px] bg-emerald-800/80 px-1.5 py-0.5 rounded text-emerald-200">Wali</span>
                 </h3>
                 <p className="text-[11px] text-emerald-100 flex items-center gap-1">
                   <span>Smart Gateway Online</span>
                   <span>•</span>
-                  <span>+62 {fonnteTargetNumber || '881-3576-012'}</span>
+                  <span>{fonnteTargetNumber ? (fonnteTargetNumber.startsWith('+') ? fonnteTargetNumber : `+${fonnteTargetNumber}`) : '+62 859-6021-3654'}</span>
                 </p>
               </div>
             </div>

@@ -3,6 +3,8 @@
  * Generator Barcode Gate Pass & Notifikasi WhatsApp Persetujuan Kunjungan Senin-Kamis oleh Admin Ri'ayah
  */
 
+import { normalizePhone } from '../../server/whatsapp-gateway/aiAutonomousResponder.js';
+
 const DEFAULT_FONNTE_TOKEN = (process.env.FONNTE_TOKEN || process.env.VITE_FONNTE_TOKEN || '').trim();
 
 export default async function handler(req, res) {
@@ -44,12 +46,7 @@ export default async function handler(req, res) {
       `Silakan simpan gambar QR Code / Barcode yang terlampir ini dan perlihatkan ke Satpam di Pos Gerbang untuk verifikasi check-in masuk pondok.`;
 
     let fonnteResult = null;
-    let targetWa = String(booking.no_wa_penjenguk || '').replace(/[^0-9]/g, '');
-    if (targetWa.startsWith('08')) {
-      targetWa = '628' + targetWa.slice(2);
-    } else if (targetWa.startsWith('8')) {
-      targetWa = '628' + targetWa.slice(1);
-    }
+    const targetWa = normalizePhone(booking.no_wa_penjenguk || '');
     if (targetWa && fonnteToken) {
       try {
         const fRes = await fetch('https://api.fonnte.com/send', {

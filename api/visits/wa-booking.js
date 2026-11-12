@@ -6,6 +6,12 @@
  * - Jumat - Minggu: AUTO_WEEKEND (Auto-Approved + Barcode Token Terbit Seketika)
  */
 
+import {
+  normalizePhone,
+  resolveWaliIdentity,
+  isPriorityNurmiyatyPhone,
+} from '../../server/whatsapp-gateway/aiAutonomousResponder.js';
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -30,11 +36,17 @@ export default async function handler(req, res) {
   try {
     const payload = req.body || {};
     const messageText = payload.message || payload.text || '';
-    const sender = payload.sender || payload.phone || payload.target || '';
-    const senderName = payload.name || payload.sender_name || 'Wali Santri';
+    const rawSender = payload.sender || payload.phone || payload.target || '';
+    const cleanSender = normalizePhone(rawSender);
+    const rawSenderName = payload.name || payload.sender_name || '';
+
+    const resolvedIdentity = cleanSender
+      ? await resolveWaliIdentity(cleanSender, rawSenderName)
+      : null;
+    const senderName = resolvedIdentity?.namaWali || (rawSenderName || 'Wali Santri');
 
     // 1. Ekstraksi Data Booking dari Pesan
-    const extracted = parseBookingMessage(messageText, sender, senderName);
+    const extracted = parseBookingMessage(messageText, cleanSender || rawSender, senderName, resolvedIdentity);
 
     // 2. Tentukan Hari Kunjungan & Validasi Weekday vs Weekend
     const targetDate = extracted.tanggal_kunjungan ? new Date(extracted.tanggal_kunjungan) : new Date();
@@ -88,8 +100,8 @@ export default async function handler(req, res) {
       berat_barang_kg: extracted.berat_barang_kg,
       nama_penjenguk: extracted.nama_penjenguk,
       status_penjenguk: extracted.status_penjenguk,
-      no_wa_penjenguk: sender || extracted.no_wa_penjenguk,
-      rfid_uid: extracted.rfid_uid || null,
+      no_wa_penjenguk: cleanSender || normalizePhone(extracted.no_wa_penjenguk || '') || '',
+      rfid_uid: extracted.rfid_uid || resolvedIdentity?.rfidUid || null,
       barcode_token: barcodeToken,
       approval_type: approvalType,
       status_kunjungan: statusKunjungan,
@@ -114,10 +126,11 @@ export default async function handler(req, res) {
 /**
  * Parser pintar untuk mengekstrak format booking dari teks WhatsApp
  */
-function parseBookingMessage(text, sender, senderName) {
+function parseBookingMessage(text, sender, senderName, waliIdentity = null) {
   const clean = text || '';
   const now = new Date();
   const defaultDate = now.toISOString().slice(0, 10);
+  const normalizedSender = normalizePhone(sender);
 
   // Helper regex matcher
   const matchField = (patterns, fallback = '') => {
@@ -128,14 +141,27 @@ function parseBookingMessage(text, sender, senderName) {
     return fallback;
   };
 
-  const namaSantri = matchField([
+  const defaultSantri =
+    waliIdentity?.santriNama && waliIdentity.santriNama !== 'Ananda'
+      ? waliIdentity.santriNama
+      : 'Santri Terdaftar';
+  const defaultKelas = waliIdentity?.kelas || 'Asrama Pondok';
+  const defaultWali = waliIdentity?.namaWali || (senderName || 'Wali Santri');
+
+  const rawMatchedSantri = matchField([
     /(?:nama\s*santri|santri|ananda)\s*[:=]\s*([^\n,]+)/i,
-    /(?:menjenguk|sambang|jenguk)\s+([a-zA-Z\s]{3,30})/i
-  ], 'Ahmad Fauzi');
+    /(?:menjenguk|sambang|jenguk)\s+(?:ananda\s+)?(?!(?:hari|tgl|tanggal|jam|pukul|besok|lusa|nanti|pagi|siang|sore|malam|senin|selasa|rabu|kamis|jumat|jum'at|sabtu|minggu|ahad|pada|ke|di)\b)([a-zA-Z]+(?:\s+(?!(?:hari|tgl|tanggal|jam|pukul|kelas|kamar|besok|lusa|senin|selasa|rabu|kamis|jumat|jum'at|sabtu|minggu|ahad|bawa|dari|pada)\b)[a-zA-Z]+){0,2})/i
+  ], '');
+
+  let namaSantri = rawMatchedSantri || defaultSantri;
+
+  if (isPriorityNurmiyatyPhone(normalizedSender) && waliIdentity?.santriNama) {
+    namaSantri = waliIdentity.santriNama;
+  }
 
   const kelas = matchField([
     /(?:kelas|kamar|asrama)\s*[:=]\s*([^\n,]+)/i
-  ], '10-A (Umar bin Khattab 204)');
+  ], defaultKelas);
 
   const asal = matchField([
     /(?:asal|kota|daerah)\s*[:=]\s*([^\n,]+)/i
@@ -165,9 +191,13 @@ function parseBookingMessage(text, sender, senderName) {
   ], '2.0').replace(',', '.');
   const berat = parseFloat(beratStr) || 2.0;
 
-  const penjenguk = matchField([
+  let penjenguk = matchField([
     /(?:nama\s*penjenguk|penjenguk|wali|orang\s*tua)\s*[:=]\s*([^\n,]+)/i
-  ], senderName || 'Ibu Fatimah Az-Zahra');
+  ], defaultWali);
+
+  if (/fatimah/i.test(penjenguk)) {
+    penjenguk = defaultWali;
+  }
 
   const statusPenjenguk = matchField([
     /(?:status\s*penjenguk|status|hubungan)\s*[:=]\s*([^\n,]+)/i
@@ -184,7 +214,8 @@ function parseBookingMessage(text, sender, senderName) {
     berat_barang_kg: berat,
     nama_penjenguk: penjenguk,
     status_penjenguk: statusPenjenguk,
-    no_wa_penjenguk: sender
+    no_wa_penjenguk: normalizedSender,
+    rfid_uid: waliIdentity?.rfidUid || null
   };
 }
 

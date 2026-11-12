@@ -4,6 +4,8 @@
  * dengan Seamless Direct Fallback ke https://api.fonnte.com
  */
 
+import { normalizePhone } from '../utils/phoneUtils';
+
 const DEFAULT_TOKEN = (import.meta.env.VITE_FONNTE_TOKEN || '').trim();
 
 function getStoredToken(customToken) {
@@ -21,15 +23,7 @@ function getStoredToken(customToken) {
   return DEFAULT_TOKEN;
 }
 
-export function normalizePhone(raw) {
-  let clean = String(raw || '').replace(/[^0-9]/g, '');
-  if (clean.startsWith('08')) {
-    clean = '628' + clean.slice(2);
-  } else if (clean.startsWith('8')) {
-    clean = '628' + clean.slice(1);
-  }
-  return clean;
-}
+export { normalizePhone };
 
 /**
  * 1. Refresh Status Koneksi Device Fonnte

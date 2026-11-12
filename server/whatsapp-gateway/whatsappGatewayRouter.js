@@ -1,7 +1,14 @@
 import crypto from 'node:crypto';
 import express from 'express';
 import { broadcastToSupabaseRealtime } from './supabaseBroadcaster.js';
-import { generateAutonomousReply, sendFonnteAutoReply, normalizePhone, setManualTakeover, isPhoneInManualTakeover } from './aiAutonomousResponder.js';
+import {
+  generateAutonomousReplyWithContext,
+  sendFonnteAutoReply,
+  normalizePhone,
+  setManualTakeover,
+  isPhoneInManualTakeover,
+  resolveWaliIdentity,
+} from './aiAutonomousResponder.js';
 
 /**
  * ============================================================================
@@ -156,7 +163,7 @@ router.post('/webhook', validateWaSignature, async (req, res) => {
     // 2. Deteksi pesan masuk (Incoming Message dari Wali) & EKSEKUSI AI OTONOM
     const incomingText = payload.message || payload.text;
     const sender = payload.sender || payload.phone || payload.target;
-    const senderName = payload.name || payload.sender_name || 'Wali Santri';
+    const rawSenderName = payload.name || payload.sender_name || '';
 
     if (incomingText && sender) {
       const cleanSender = normalizePhone(sender);
@@ -165,9 +172,14 @@ router.post('/webhook', validateWaSignature, async (req, res) => {
       // ✅ AMAN - Hanya catat audit, JANGAN pernah auto-update profiles.no_telepon dari payload webhook
       console.log(`🔍 [WA Audit] Pesan masuk dari ${cleanSender}. Update kontak DINONAKTIFKAN demi keamanan.`);
 
+      // Resolusi identitas wali & santri dinamis (prioritas Supabase + binding 628813576012 -> Nurmiyaty)
+      const resolvedIdentity = await resolveWaliIdentity(cleanSender, rawSenderName);
+      const displayWaliName = resolvedIdentity?.namaWali || rawSenderName || 'Wali Santri';
+
       const incomingData = {
         id: payload.id || `IN-${Date.now()}`,
-        pengirim: senderName,
+        pengirim: displayWaliName,
+        santriNama: resolvedIdentity?.santriNama || null,
         nomor: cleanSender,
         pesan: incomingText,
         waktu: nowWIB,
@@ -185,6 +197,8 @@ router.post('/webhook', validateWaSignature, async (req, res) => {
           success: true,
           type: 'manual_takeover_active',
           sender: cleanSender,
+          namaWali: displayWaliName,
+          santriNama: resolvedIdentity?.santriNama || null,
           incoming: incomingText,
           broadcasted: true,
           read: true,
@@ -193,8 +207,9 @@ router.post('/webhook', validateWaSignature, async (req, res) => {
       }
 
       // ─── GENERATE BALASAN AI OTONOM (CONTEXT-AWARE SMART RI'AYAH) ───
-      console.log(`🤖 [Menjalankan AI Otonom untuk ${cleanSender}]: "${incomingText}"`);
-      const aiReply = await generateAutonomousReply(cleanSender, incomingText, senderName);
+      console.log(`🤖 [Menjalankan AI Otonom untuk ${cleanSender} (${displayWaliName} -> ${resolvedIdentity?.santriNama || '-'})]: "${incomingText}"`);
+      const aiResult = await generateAutonomousReplyWithContext(cleanSender, incomingText, displayWaliName, resolvedIdentity);
+      const aiReply = aiResult.reply;
 
       // Kirim pesan WhatsApp balasan otomatis via Fonnte REST API
       const dispatchResult = await sendFonnteAutoReply(cleanSender, aiReply);
@@ -202,7 +217,8 @@ router.post('/webhook', validateWaSignature, async (req, res) => {
       const aiReplyData = {
         id: `AI-${Date.now()}`,
         target: cleanSender,
-        namaWali: senderName,
+        namaWali: aiResult.waliData?.namaWali || displayWaliName,
+        santriNama: aiResult.waliData?.santriNama || resolvedIdentity?.santriNama || null,
         incomingText: incomingText,
         replyText: aiReply,
         waktu: nowWIB,
@@ -256,16 +272,6 @@ function resolveFonnteToken(req) {
     return req.body.token.trim();
   }
   return (process.env.FONNTE_TOKEN || process.env.VITE_FONNTE_TOKEN || '').trim();
-}
-
-function normalizeIndonesianPhone(phone) {
-  let clean = String(phone || '').replace(/[^0-9]/g, '');
-  if (clean.startsWith('08')) {
-    clean = '628' + clean.slice(2);
-  } else if (clean.startsWith('8')) {
-    clean = '628' + clean.slice(1);
-  }
-  return clean;
 }
 
 /**
@@ -328,7 +334,7 @@ router.all('/fonnte/status', async (req, res) => {
  */
 router.post('/fonnte/qr', async (req, res) => {
   const token = resolveFonnteToken(req);
-  const whatsappNumber = req.body?.whatsapp ? normalizeIndonesianPhone(req.body.whatsapp) : '';
+  const whatsappNumber = req.body?.whatsapp ? normalizePhone(req.body.whatsapp) : '';
 
   try {
     const formData = new FormData();
@@ -394,7 +400,7 @@ router.post('/fonnte/qr', async (req, res) => {
 router.post('/fonnte/validate', async (req, res) => {
   const token = resolveFonnteToken(req);
   const rawPhone = req.body?.phone || req.body?.target || '';
-  const normalized = normalizeIndonesianPhone(rawPhone);
+  const normalized = normalizePhone(rawPhone);
 
   if (!normalized) {
     return res.status(400).json({
@@ -507,7 +513,7 @@ router.post('/fonnte/send', async (req, res) => {
     });
   }
 
-  const normalized = normalizeIndonesianPhone(target);
+  const normalized = normalizePhone(target);
 
   try {
     const formData = new FormData();
@@ -569,7 +575,7 @@ router.post('/fonnte/takeover', async (req, res) => {
     });
   }
 
-  const clean = normalizeIndonesianPhone(phone);
+  const clean = normalizePhone(phone);
   const active = Boolean(isManual);
   await setManualTakeover(clean, active);
 
@@ -591,17 +597,26 @@ router.post('/fonnte/takeover', async (req, res) => {
  * Endpoint untuk menguji alur Autonomous AI secara langsung dari dashboard
  */
 router.post('/simulate-incoming', async (req, res) => {
-  const { sender = '08813576012', message = 'Assalamu\'alaikum ustadz, bagaimana kabar ananda Fauzi hari ini?', name = 'Ibu Fatimah Az-Zahra' } = req.body;
+  const {
+    sender = '628813576012',
+    message = 'Assalamu\'alaikum ustadz, bagaimana kabar ananda Nurmiyaty hari ini?',
+    name = '',
+  } = req.body || {};
   const cleanSender = normalizePhone(sender);
   const nowWIB = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
 
   try {
-    const aiReply = await generateAutonomousReply(cleanSender, message, name);
+    const resolvedIdentity = await resolveWaliIdentity(cleanSender, name);
+    const aiResult = await generateAutonomousReplyWithContext(cleanSender, message, resolvedIdentity.namaWali, resolvedIdentity);
+    const aiReply = aiResult.reply;
+    const displayWaliName = aiResult.waliData?.namaWali || resolvedIdentity.namaWali;
+    const displaySantriName = aiResult.waliData?.santriNama || resolvedIdentity.santriNama;
     const dispatch = await sendFonnteAutoReply(cleanSender, aiReply);
 
     const incomingData = {
       id: `IN-${Date.now()}`,
-      pengirim: name,
+      pengirim: displayWaliName,
+      santriNama: displaySantriName,
       nomor: cleanSender,
       pesan: message,
       waktu: nowWIB,
@@ -611,7 +626,8 @@ router.post('/simulate-incoming', async (req, res) => {
     const aiReplyData = {
       id: `AI-${Date.now()}`,
       target: cleanSender,
-      namaWali: name,
+      namaWali: displayWaliName,
+      santriNama: displaySantriName,
       incomingText: message,
       replyText: aiReply,
       waktu: nowWIB,
@@ -625,6 +641,8 @@ router.post('/simulate-incoming', async (req, res) => {
     return res.json({
       success: true,
       sender: cleanSender,
+      namaWali: displayWaliName,
+      santriNama: displaySantriName,
       incoming: message,
       reply: aiReply,
       dispatched: dispatch.success

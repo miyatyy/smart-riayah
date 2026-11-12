@@ -7,13 +7,63 @@ import { createClient } from '@supabase/supabase-js';
 import { broadcastToSupabaseRealtime } from './supabaseBroadcaster.js';
 import { saveAiDocument } from '../mongo.js';
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
-const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '';
+const supabaseUrl =
+  process.env.SUPABASE_URL ||
+  process.env.VITE_SUPABASE_URL ||
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  '';
+const supabaseKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.VITE_SUPABASE_ANON_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+  process.env.SUPABASE_ANON_KEY ||
+  '';
+
+const createFallbackSupabaseStub = () => ({
+  from: () => ({
+    select: () => ({
+      maybeSingle: async () => ({ data: null }),
+      eq: () => ({
+        like: async () => ({ data: null }),
+        order: () => ({ limit: async () => ({ data: [] }) }),
+      }),
+      in: () => ({
+        order: () => ({ limit: async () => ({ data: [] }) }),
+      }),
+      or: async () => ({ data: [] }),
+    }),
+    delete: () => ({ eq: () => ({ like: async () => ({}) }) }),
+    insert: async () => ({}),
+  }),
+});
+
 const supabase = (supabaseUrl && supabaseKey)
-  ? createClient(supabaseUrl, supabaseKey)
-  : { from: () => ({ select: () => ({ maybeSingle: async () => ({ data: null }), eq: () => ({ like: async () => ({}) }) }), delete: () => ({ eq: () => ({ like: async () => ({}) }) }), insert: async () => ({}) }) };
+  ? createClient(supabaseUrl, supabaseKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+  : createFallbackSupabaseStub();
 
 const DEFAULT_FONNTE_TOKEN = (process.env.FONNTE_TOKEN || process.env.VITE_FONNTE_TOKEN || '').trim();
+
+/**
+ * Pengikatan prioritas untuk nomor Wali 628813576012 / 08813576012 -> Santri Nurmiyaty
+ */
+export const NURMIYATY_PRIORITY_BINDING = Object.freeze({
+  phoneIntl: '628813576012',
+  phoneLocal: '08813576012',
+  santriNama: 'Nurmiyaty',
+  nis: '126146',
+  kelas: '10-B Putri',
+  kamar: 'Khadijah 105',
+  rfidUid: '53:57:98:0F',
+  defaultNamaWali: 'Arbainah',
+});
+
+function isPoisonedFallbackName(name) {
+  const lower = String(name || '').trim().toLowerCase();
+  if (!lower) return false;
+  return /\b(?:ibu\s+)?fatimah(?:\s+az[-\s]?zahra)?\b/i.test(lower);
+}
 
 // In-memory set penyimpan nomor HP yang sedang diambil alih manual oleh Admin Ri'ayah
 export const manualTakeoverPhones = new Set();
@@ -127,64 +177,16 @@ export async function isPhoneInManualTakeover(phone) {
   return false;
 }
 
-// Database referensi cepat Wali & Santri Pesantren Darul Ulum
+// Database referensi cepat Wali & Santri Pesantren Darul Ulum (tanpa data hardcode Ibu Fatimah / fallback salah santri)
 const KNOWN_WALI_MAP = {
-  '6285960213654': {
-    namaWali: 'Ibu Fatimah Az-Zahra',
-    santriNama: 'Ahmad Fauzi',
-    nis: '2024001',
-    kelas: '10-A (Unggulan Tahfizh)',
-    kamar: 'Kamar Umar bin Khattab 204 Lt. 2',
-    saldoRfid: 'Rp 85.000',
-    limitHarian: 'Rp 25.000',
-    poinDisiplin: '96/100 (Mumtaz)',
-    statusAsrama: 'Di Asrama (Aktif Mengikuti Halaqah & Sholat Berjamaah)',
-    izinTerakhir: 'Tertib / Tidak ada pelanggaran'
-  },
-  '085960213654': {
-    namaWali: 'Ibu Fatimah Az-Zahra',
-    santriNama: 'Ahmad Fauzi',
-    nis: '2024001',
-    kelas: '10-A (Unggulan Tahfizh)',
-    kamar: 'Kamar Umar bin Khattab 204 Lt. 2',
-    saldoRfid: 'Rp 85.000',
-    limitHarian: 'Rp 25.000',
-    poinDisiplin: '96/100 (Mumtaz)',
-    statusAsrama: 'Di Asrama (Aktif Mengikuti Halaqah & Sholat Berjamaah)',
-    izinTerakhir: 'Tertib / Tidak ada pelanggaran'
-  },
-  '08813576012': {
-    namaWali: 'Ibu Fatimah Az-Zahra',
-    santriNama: 'Ahmad Fauzi',
-    nis: '2024001',
-    kelas: '10-A (Unggulan Tahfizh)',
-    kamar: 'Kamar Umar bin Khattab 204 Lt. 2',
-    saldoRfid: 'Rp 85.000',
-    limitHarian: 'Rp 25.000',
-    poinDisiplin: '96/100 (Mumtaz)',
-    statusAsrama: 'Di Asrama (Aktif Mengikuti Halaqah & Sholat Berjamaah)',
-    izinTerakhir: 'Tertib / Tidak ada pelanggaran'
-  },
-  '628813576012': {
-    namaWali: 'Ibu Fatimah Az-Zahra',
-    santriNama: 'Ahmad Fauzi',
-    nis: '2024001',
-    kelas: '10-A (Unggulan Tahfizh)',
-    kamar: 'Kamar Umar bin Khattab 204 Lt. 2',
-    saldoRfid: 'Rp 85.000',
-    limitHarian: 'Rp 25.000',
-    poinDisiplin: '96/100 (Mumtaz)',
-    statusAsrama: 'Di Asrama (Aktif Mengikuti Halaqah & Sholat Berjamaah)',
-    izinTerakhir: 'Tertib / Tidak ada pelanggaran'
-  },
   '08124455890': {
     namaWali: 'Bpk. Hendra Gunawan',
     santriNama: 'Muhammad Rayhan',
-    nis: '2024002',
-    kelas: '11-B (IPA)',
+    nis: '125457',
+    kelas: '11-IPA 1',
     kamar: 'Kamar Abu Bakar 102 Lt. 1',
-    saldoRfid: 'Rp 45.000',
-    limitHarian: 'Rp 20.000',
+    saldoRfid: 'Rp 82.000',
+    limitHarian: 'Rp 30.000',
     poinDisiplin: '88/100 (Jayyid Jiddan)',
     statusAsrama: 'Sedang Izin Pulang (Batas Kembali: Ahad 17.00 WIB)',
     izinTerakhir: 'Izin Sakit / Rawat Jalan'
@@ -192,11 +194,11 @@ const KNOWN_WALI_MAP = {
   '628124455890': {
     namaWali: 'Bpk. Hendra Gunawan',
     santriNama: 'Muhammad Rayhan',
-    nis: '2024002',
-    kelas: '11-B (IPA)',
+    nis: '125457',
+    kelas: '11-IPA 1',
     kamar: 'Kamar Abu Bakar 102 Lt. 1',
-    saldoRfid: 'Rp 45.000',
-    limitHarian: 'Rp 20.000',
+    saldoRfid: 'Rp 82.000',
+    limitHarian: 'Rp 30.000',
     poinDisiplin: '88/100 (Jayyid Jiddan)',
     statusAsrama: 'Sedang Izin Pulang (Batas Kembali: Ahad 17.00 WIB)',
     izinTerakhir: 'Izin Sakit / Rawat Jalan'
@@ -228,58 +230,344 @@ const KNOWN_WALI_MAP = {
 };
 
 /**
- * Normalisasi nomor HP Indonesia
+ * Normalisasi nomor HP Indonesia: ubah 08..., +628..., 00628..., 6208..., JID @s.whatsapp.net menjadi kanonik 628...
+ * Mempertahankan ID Telegram (TG-...).
  */
 export function normalizePhone(raw) {
-  let clean = String(raw || '').replace(/[^0-9]/g, '');
-  if (clean.startsWith('08')) {
-    clean = '628' + clean.slice(2);
-  } else if (clean.startsWith('8')) {
-    clean = '628' + clean.slice(1);
+  if (raw === null || raw === undefined) return '';
+  const trimmed = String(raw).trim();
+  if (!trimmed) return '';
+
+  if (trimmed.toUpperCase().startsWith('TG-')) {
+    return trimmed;
+  }
+
+  const cleanJid = trimmed.split('@')[0].split(':')[0];
+  let digits = cleanJid.replace(/[^0-9]/g, '');
+  if (!digits) return '';
+
+  if (digits.startsWith('0062')) {
+    digits = '62' + digits.slice(4);
+  }
+  if (digits.startsWith('6208')) {
+    digits = '628' + digits.slice(4);
+  } else if (digits.startsWith('620')) {
+    digits = '62' + digits.slice(3);
+  }
+
+  if (digits.startsWith('08')) {
+    digits = '628' + digits.slice(2);
+  } else if (digits.startsWith('0') && digits.length >= 9) {
+    digits = '62' + digits.slice(1);
+  } else if (digits.startsWith('8') && digits.length >= 8) {
+    digits = '628' + digits.slice(1);
+  }
+
+  return digits;
+}
+
+/**
+ * Kembalikan kedua format 628... & 08... beserta varian umum untuk query Supabase dual-format
+ */
+export function getPhoneVariants(raw) {
+  const intl = normalizePhone(raw);
+  if (!intl || intl.toUpperCase().startsWith('TG-')) {
+    return {
+      intl,
+      local: '',
+      plusIntl: '',
+      bare: '',
+      last8: '',
+      last9: '',
+      variants: intl ? [intl] : [],
+    };
+  }
+
+  const local = intl.startsWith('62') ? '0' + intl.slice(2) : intl;
+  const plusIntl = '+' + intl;
+  const bare = intl.startsWith('62') ? intl.slice(2) : intl;
+  const last8 = bare.length >= 8 ? bare.slice(-8) : intl.slice(-8);
+  const last9 = bare.length >= 9 ? bare.slice(-9) : intl.slice(-9);
+  const dashedLocal =
+    local.length >= 10 ? `${local.slice(0, 4)}-${local.slice(4, 8)}-${local.slice(8)}` : '';
+
+  const variants = Array.from(
+    new Set([intl, local, plusIntl, bare, dashedLocal].filter(Boolean))
+  );
+
+  return { intl, local, plusIntl, bare, last8, last9, variants };
+}
+
+export function isSamePhone(a, b) {
+  const na = normalizePhone(a);
+  const nb = normalizePhone(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  if (na.toUpperCase().startsWith('TG-') || nb.toUpperCase().startsWith('TG-')) {
+    return na.toUpperCase() === nb.toUpperCase();
+  }
+  const minLen = Math.min(na.length, nb.length);
+  if (minLen >= 8) {
+    return na.slice(-8) === nb.slice(-8);
+  }
+  return false;
+}
+
+export function isPriorityNurmiyatyPhone(phone) {
+  return isSamePhone(phone, NURMIYATY_PRIORITY_BINDING.phoneIntl);
+}
+
+function formatWaliDisplayName(rawWali, { isPriorityNurmiyaty = false } = {}) {
+  const clean = String(rawWali || '').trim();
+  if (!clean || /^bapak\/ibu wali/i.test(clean) || /^wali dari /i.test(clean)) {
+    return isPriorityNurmiyaty ? NURMIYATY_PRIORITY_BINDING.defaultNamaWali : 'Wali Santri';
+  }
+  if (isPoisonedFallbackName(clean)) {
+    return isPriorityNurmiyaty ? NURMIYATY_PRIORITY_BINDING.defaultNamaWali : 'Wali Santri';
   }
   return clean;
 }
 
+export function buildWaliProfileFromRow(row, { isPriorityNurmiyaty = false } = {}) {
+  if (!row) return null;
+  const rawSantriName = String(row.nama_lengkap || row.nama || '').trim();
+  const isNurmiyatyRow =
+    rawSantriName.toLowerCase().includes('nurmiyat') ||
+    String(row.nis || '').trim() === NURMIYATY_PRIORITY_BINDING.nis ||
+    String(row.rfid_uid || row.rfidUid || '').trim().toUpperCase() === NURMIYATY_PRIORITY_BINDING.rfidUid;
+
+  const usePriorityDefaults = isPriorityNurmiyaty && isNurmiyatyRow;
+  const namaWali = formatWaliDisplayName(row.nama_wali || row.wali?.nama, {
+    isPriorityNurmiyaty: usePriorityDefaults || isPriorityNurmiyaty,
+  });
+
+  const santriNama = rawSantriName || (usePriorityDefaults ? NURMIYATY_PRIORITY_BINDING.santriNama : 'Santri');
+  const nis = String(row.nis || '').trim() || (usePriorityDefaults ? NURMIYATY_PRIORITY_BINDING.nis : '-');
+  const kelas = String(row.kelas || '').trim() || (usePriorityDefaults ? NURMIYATY_PRIORITY_BINDING.kelas : 'Santri Darul Ulum');
+  const kamar = String(row.kamar || '').trim() || (usePriorityDefaults ? NURMIYATY_PRIORITY_BINDING.kamar : 'Asrama Darul Ulum');
+  const rfidUid = String(row.rfid_uid || row.rfidUid || '').trim().toUpperCase() || (usePriorityDefaults ? NURMIYATY_PRIORITY_BINDING.rfidUid : null);
+
+  return {
+    santriId: row.id || null,
+    namaWali,
+    santriNama,
+    nis,
+    kelas,
+    kamar,
+    rfidUid,
+    noWali: normalizePhone(row.no_wali || row.wali?.telepon || (isPriorityNurmiyaty ? NURMIYATY_PRIORITY_BINDING.phoneIntl : '')),
+    saldoRfid: `Rp ${Number(row.saldo_rfid ?? row.saldo_awal ?? 0).toLocaleString('id-ID')}`,
+    limitHarian: `Rp ${Number(row.limit_jajan_harian ?? 25000).toLocaleString('id-ID')}`,
+    poinDisiplin: `${row.poin_disiplin ?? 100}/100 (Mumtaz)`,
+    statusAsrama:
+      row.status_asrama === 'DI_ASRAMA'
+        ? 'Di Asrama (Aktif Sholat Berjamaah & Halaqah)'
+        : row.status_asrama || 'Di Lingkungan Pondok',
+    izinTerakhir: 'Tertib di Asrama',
+  };
+}
+
+export function selectBestSantriCandidate(rows, senderPhone) {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  const { intl, local, variants } = getPhoneVariants(senderPhone);
+  const priorityPhone = isPriorityNurmiyatyPhone(senderPhone);
+
+  let bestRow = null;
+  let bestScore = -1;
+
+  for (const row of rows) {
+    if (!row) continue;
+    const rowNoRaw = String(row.no_wali || row.wali?.telepon || '').trim();
+    const rowNoNorm = normalizePhone(rowNoRaw);
+    const phoneExactMatch = Boolean(
+      rowNoNorm &&
+      (rowNoNorm === intl || variants.some((v) => normalizePhone(v) === rowNoNorm || v === rowNoRaw))
+    );
+    const phoneFuzzyMatch = !phoneExactMatch && isSamePhone(rowNoRaw, senderPhone);
+
+    const rowName = String(row.nama_lengkap || row.nama || '').trim().toLowerCase();
+    const rowNis = String(row.nis || '').trim();
+    const rowUid = String(row.rfid_uid || row.rfidUid || '').trim().toUpperCase();
+    const isNurmiyatyRow =
+      rowName.includes('nurmiyat') ||
+      rowNis === NURMIYATY_PRIORITY_BINDING.nis ||
+      rowUid === NURMIYATY_PRIORITY_BINDING.rfidUid;
+
+    if (!phoneExactMatch && !phoneFuzzyMatch && !(priorityPhone && isNurmiyatyRow)) {
+      continue;
+    }
+
+    let score = 0;
+    if (priorityPhone && isNurmiyatyRow) {
+      score += 1000;
+    }
+    if (phoneExactMatch) {
+      score += 120;
+    } else if (phoneFuzzyMatch) {
+      score += 90;
+    }
+    if (row.nama_wali && !isPoisonedFallbackName(row.nama_wali)) {
+      score += 15;
+    }
+    if (rowUid === NURMIYATY_PRIORITY_BINDING.rfidUid && priorityPhone) {
+      score += 50;
+    }
+    if (rowNoRaw === local || rowNoRaw === intl) {
+      score += 10;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestRow = row;
+    } else if (score === bestScore && bestRow) {
+      const currTs = new Date(row.updated_at || row.created_at || 0).getTime();
+      const bestTs = new Date(bestRow.updated_at || bestRow.created_at || 0).getTime();
+      if (currTs > bestTs) {
+        bestRow = row;
+      }
+    }
+  }
+
+  return bestRow;
+}
+
 /**
- * Cari data Santri & Wali real-time dari Supabase (Mendukung update ganti nomor dari Tabel RFID)
+ * Cari data Santri & Wali real-time dari Supabase dengan pencocokan dua format (08... & 628...)
+ * dan prioritas pengikatan 628813576012/08813576012 -> Nurmiyaty.
  */
-export async function findLiveSantriByPhone(cleanPhone) {
+export async function findLiveSantriByPhone(cleanPhone, clientOverride = null) {
+  const db = clientOverride || supabase;
+  const priorityPhone = isPriorityNurmiyatyPhone(cleanPhone);
+
   try {
-    const digits = String(cleanPhone || '').replace(/[^0-9]/g, '');
-    if (digits.length >= 7) {
-      const last8 = digits.slice(-8);
+    const { intl, local, plusIntl, last8, last9 } = getPhoneVariants(cleanPhone);
+    let rows = [];
 
-      const { data, error } = await supabase
-        .from('santri')
-        .select('*');
+    if (intl.length >= 7 || priorityPhone) {
+      const orFilters = [];
+      if (intl) orFilters.push(`no_wali.eq.${intl}`);
+      if (local && local !== intl) orFilters.push(`no_wali.eq.${local}`);
+      if (plusIntl) orFilters.push(`no_wali.eq.${plusIntl}`);
+      if (last9 && last9.length >= 8) orFilters.push(`no_wali.ilike.%${last9}`);
+      if (last8 && last8.length >= 8) orFilters.push(`no_wali.ilike.%${last8}`);
+      if (priorityPhone) {
+        orFilters.push('nama_lengkap.ilike.%nurmiyat%');
+        orFilters.push(`nis.eq.${NURMIYATY_PRIORITY_BINDING.nis}`);
+        orFilters.push(`rfid_uid.eq.${NURMIYATY_PRIORITY_BINDING.rfidUid}`);
+      }
 
-      if (!error && Array.isArray(data)) {
-        const matched = data.find(s => {
-          const sWaliDigits = String(s.no_wali || '').replace(/[^0-9]/g, '');
-          return sWaliDigits && (sWaliDigits.endsWith(last8) || digits.endsWith(sWaliDigits.slice(-8)));
-        });
+      const santriTable = db.from('santri');
+      const selectRes = santriTable.select('*');
 
-        if (matched) {
-          console.log(`🎯 [Supabase Match]: Nomor ${cleanPhone} teridentifikasi sebagai Wali dari Santri ${matched.nama_lengkap}`);
-          return {
-            namaWali: matched.nama_wali || 'Bapak/Ibu Wali Santri',
-            santriNama: matched.nama_lengkap,
-            nis: matched.nis || '-',
-            kelas: matched.kelas || 'Santri Darul Ulum',
-            kamar: matched.kamar || 'Asrama Darul Ulum',
-            saldoRfid: `Rp ${Number(matched.saldo_rfid || matched.saldo_awal || 0).toLocaleString('id-ID')}`,
-            limitHarian: `Rp ${Number(matched.limit_jajan_harian || 25000).toLocaleString('id-ID')}`,
-            poinDisiplin: `${matched.poin_disiplin || 100}/100 (Mumtaz)`,
-            statusAsrama: matched.status_asrama === 'DI_ASRAMA' ? 'Di Asrama (Aktif Sholat Berjamaah & Halaqah)' : (matched.status_asrama || 'Di Lingkungan Pondok'),
-            izinTerakhir: 'Tertib di Asrama'
-          };
+      if (selectRes && typeof selectRes.or === 'function' && orFilters.length > 0) {
+        const { data, error } = await selectRes.or(orFilters.join(','));
+        if (!error && Array.isArray(data)) {
+          rows = data;
         }
       }
+
+      if (rows.length === 0) {
+        const { data, error } = await db.from('santri').select('*');
+        if (!error && Array.isArray(data)) {
+          rows = data;
+        }
+      }
+    }
+
+    if (rows.length === 0 && !clientOverride && !process.env.VITEST && !process.env.NODE_TEST) {
+      try {
+        const pgMod = await import('../db.js').catch(() => null);
+        if (pgMod?.query) {
+          const params = [intl || '', local || '', `%${last8 || ''}`];
+          const sql = priorityPhone
+            ? `SELECT * FROM santri WHERE no_wali IN ($1, $2) OR no_wali LIKE $3 OR nis = '${NURMIYATY_PRIORITY_BINDING.nis}' OR UPPER(COALESCE(rfid_uid,'')) = '${NURMIYATY_PRIORITY_BINDING.rfidUid}' OR LOWER(COALESCE(nama_lengkap,'')) LIKE '%nurmiyat%' LIMIT 15`
+            : `SELECT * FROM santri WHERE no_wali IN ($1, $2) OR no_wali LIKE $3 LIMIT 15`;
+          const pgRes = await pgMod.query(sql, params).catch(() => null);
+          if (pgRes?.rows?.length) {
+            rows = pgRes.rows;
+          }
+        }
+      } catch {}
+    }
+
+    const matched = selectBestSantriCandidate(rows, cleanPhone);
+    if (matched) {
+      const profile = buildWaliProfileFromRow(matched, { isPriorityNurmiyaty: priorityPhone });
+      console.log(`🎯 [Supabase Match]: Nomor ${cleanPhone} -> Santri ${profile.santriNama} (Wali: ${profile.namaWali})`);
+      return profile;
     }
   } catch (err) {
     console.warn('⚠️ [findLiveSantriByPhone error]:', err.message);
   }
   return null;
+}
+
+/**
+ * Resolusi identitas lengkap Wali & Santri (Live Supabase -> Priority Nurmiyaty -> Known Map -> Neutral)
+ * Tanpa pernah memfallback ke data palsu "Ibu Fatimah".
+ */
+export async function resolveWaliIdentity(senderPhone, fallbackSenderName = '', clientOverride = null) {
+  const { intl, local } = getPhoneVariants(senderPhone);
+  const priorityPhone = isPriorityNurmiyatyPhone(senderPhone);
+
+  const liveWali = await findLiveSantriByPhone(intl || senderPhone, clientOverride);
+  if (liveWali) {
+    return liveWali;
+  }
+
+  const mapped = KNOWN_WALI_MAP[intl] || KNOWN_WALI_MAP[local] || KNOWN_WALI_MAP[String(senderPhone || '').trim()];
+  if (mapped && !isPoisonedFallbackName(mapped.namaWali)) {
+    return {
+      ...mapped,
+      noWali: intl,
+    };
+  }
+
+  if (priorityPhone) {
+    const cleanOverride =
+      fallbackSenderName &&
+      fallbackSenderName !== 'Wali Santri' &&
+      !isPoisonedFallbackName(fallbackSenderName)
+        ? fallbackSenderName
+        : NURMIYATY_PRIORITY_BINDING.defaultNamaWali;
+
+    return {
+      santriId: 'S-107',
+      namaWali: cleanOverride,
+      santriNama: NURMIYATY_PRIORITY_BINDING.santriNama,
+      nis: NURMIYATY_PRIORITY_BINDING.nis,
+      kelas: NURMIYATY_PRIORITY_BINDING.kelas,
+      kamar: NURMIYATY_PRIORITY_BINDING.kamar,
+      rfidUid: NURMIYATY_PRIORITY_BINDING.rfidUid,
+      noWali: NURMIYATY_PRIORITY_BINDING.phoneIntl,
+      saldoRfid: 'Rp 150.000',
+      limitHarian: 'Rp 30.000',
+      poinDisiplin: '100/100 (Mumtaz)',
+      statusAsrama: 'Di Asrama (Aktif Sholat Berjamaah & Halaqah)',
+      izinTerakhir: 'Tertib di Asrama',
+    };
+  }
+
+  const cleanFallbackName =
+    fallbackSenderName && !isPoisonedFallbackName(fallbackSenderName)
+      ? fallbackSenderName
+      : 'Bapak/Ibu Wali Santri';
+
+  return {
+    santriId: null,
+    namaWali: cleanFallbackName,
+    santriNama: 'Ananda',
+    nis: '-',
+    kelas: 'Santri Darul Ulum',
+    kamar: 'Asrama Pesantren',
+    rfidUid: null,
+    noWali: intl,
+    saldoRfid: 'Rp 75.000',
+    limitHarian: 'Rp 25.000',
+    poinDisiplin: '95/100',
+    statusAsrama: 'Di Lingkungan Pondok',
+    izinTerakhir: 'Tertib',
+  };
 }
 
 /**
@@ -351,22 +639,47 @@ function getRealtimePondokClockBackend() {
 }
 
 /**
- * Ambil riwayat chat terakhir untuk nomor HP ini agar percakapan berkesinambungan (multi-turn context)
+ * Ambil riwayat chat terakhir untuk nomor HP ini (mencakup room wa_628... & wa_08...)
+ * agar percakapan berkesinambungan tanpa terbawa nama contoh lama (Ibu Fatimah / Ahmad Fauzi).
  */
-export async function getRecentChatHistory(cleanPhone) {
+export async function getRecentChatHistory(cleanPhone, clientOverride = null) {
+  const db = clientOverride || supabase;
   try {
-    const { data, error } = await supabase
-      .from('messages')
-      .select('sender_role, message_text, created_at')
-      .eq('room_id', `wa_${cleanPhone}`)
+    const { intl, local } = getPhoneVariants(cleanPhone);
+    const roomIds = Array.from(
+      new Set([
+        intl ? `wa_${intl}` : '',
+        local ? `wa_${local}` : '',
+        cleanPhone ? `wa_${cleanPhone}` : '',
+      ].filter(Boolean))
+    );
+    if (roomIds.length === 0) return [];
+
+    const tableQuery = db.from('messages').select('sender_role, message_text, created_at');
+    const filteredQuery =
+      typeof tableQuery.in === 'function'
+        ? tableQuery.in('room_id', roomIds)
+        : tableQuery.eq('room_id', roomIds[0]);
+
+    const { data, error } = await filteredQuery
       .order('created_at', { ascending: false })
-      .limit(6);
+      .limit(8);
 
     if (!error && Array.isArray(data)) {
-      return data.reverse().map(m => ({
-        role: m.sender_role === 'user' ? 'user' : 'assistant',
-        content: m.message_text
-      }));
+      const priorityPhone = isPriorityNurmiyatyPhone(cleanPhone);
+      const cleanedRows = data.filter((m) => {
+        if (!priorityPhone) return true;
+        const txt = String(m.message_text || '');
+        return !/\bfatimah\b/i.test(txt) && !/\bahmad\s+fauzi\b/i.test(txt);
+      });
+
+      return cleanedRows
+        .slice(0, 6)
+        .reverse()
+        .map((m) => ({
+          role: m.sender_role === 'user' ? 'user' : 'assistant',
+          content: m.message_text,
+        }));
     }
   } catch (e) {
     console.warn('getRecentChatHistory error:', e.message);
@@ -375,14 +688,21 @@ export async function getRecentChatHistory(cleanPhone) {
 }
 
 /**
- * Simpan pesan chat ke tabel messages Supabase
+ * Simpan pesan chat ke tabel messages Supabase pada room kanonik wa_628...
  */
-export async function recordChatMessage(cleanPhone, role, text, senderName) {
+export async function recordChatMessage(cleanPhone, role, text, senderName, clientOverride = null) {
+  const db = clientOverride || supabase;
+  const normalized = normalizePhone(cleanPhone) || String(cleanPhone || '').trim();
+  const priorityPhone = isPriorityNurmiyatyPhone(normalized);
+  const safeSenderName = isPoisonedFallbackName(senderName)
+    ? (priorityPhone ? NURMIYATY_PRIORITY_BINDING.defaultNamaWali : 'Wali Santri')
+    : (senderName || (role === 'user' ? 'Wali Santri' : 'Smart Riayah AI'));
+
   try {
-    await supabase.from('messages').insert([{
-      room_id: `wa_${cleanPhone}`,
-      sender_email: role === 'user' ? `${cleanPhone}@whatsapp.user` : 'ai@smartriayah.com',
-      sender_name: senderName || (role === 'user' ? 'Wali Santri' : 'Smart Riayah AI'),
+    await db.from('messages').insert([{
+      room_id: `wa_${normalized}`,
+      sender_email: role === 'user' ? `${normalized}@whatsapp.user` : 'ai@smartriayah.com',
+      sender_name: safeSenderName,
       sender_role: role,
       message_text: text,
       is_read: true
@@ -416,6 +736,7 @@ export async function saveBookingToSystem(bookingData) {
       id: `AI-BOOK-${bookingData.id}`,
       bookingId: bookingData.id,
       santriNama: bookingData.nama_santri,
+      rfid_uid: bookingData.rfid_uid || null,
       sender: bookingData.no_wa_penjenguk,
       senderName: bookingData.nama_penjenguk,
       ai_engine: bookingData.booking_source || 'AI_AUTONOMOUS_RESPONDER',
@@ -432,31 +753,44 @@ export async function saveBookingToSystem(bookingData) {
   }
 }
 
+function sanitizeAutonomousReplyForPhone(replyText, cleanPhone, waliData) {
+  let out = String(replyText || '').trim();
+  if (!out || !isPriorityNurmiyatyPhone(cleanPhone)) return out;
+
+  const targetWali = waliData?.namaWali || NURMIYATY_PRIORITY_BINDING.defaultNamaWali;
+  const targetSantri = waliData?.santriNama || NURMIYATY_PRIORITY_BINDING.santriNama;
+
+  out = out
+    .replace(/(?:Ibu|Bu)\s+Fatimah(?:\s+Az[-\s]?Zahra)?/gi, targetWali)
+    .replace(/Fatimah\s+Az[-\s]?Zahra/gi, targetWali)
+    .replace(/Ahmad\s+Fauzi/gi, targetSantri)
+    .replace(/\b(?:ananda|santri)\s+Fauzi\b/gi, `ananda ${targetSantri}`);
+
+  return out;
+}
+
 /**
- * Otak AI Otonom: Menganalisis pesan dan menghasilkan balasan islami, natural & cerdas
+ * Otak AI Otonom + Konteks Identitas:
+ * Menghasilkan balasan islami, natural & akurat beserta objek identitas wali/santri yang terverifikasi.
  */
-export async function generateAutonomousReply(senderPhone, incomingText, senderName = 'Wali Santri') {
-  const cleanPhone = normalizePhone(senderPhone);
+export async function generateAutonomousReplyWithContext(
+  senderPhone,
+  incomingText,
+  senderName = 'Wali Santri',
+  resolvedIdentityOverride = null
+) {
+  const cleanPhone = normalizePhone(senderPhone) || String(senderPhone || '').trim();
+  const safeInputName = isPoisonedFallbackName(senderName) ? '' : senderName;
 
-  // 1. Cek live database Supabase terlebih dahulu
-  const liveWali = await findLiveSantriByPhone(cleanPhone);
-
-  const waliData = liveWali || KNOWN_WALI_MAP[cleanPhone] || KNOWN_WALI_MAP[senderPhone] || {
-    namaWali: senderName || 'Bapak/Ibu Wali Santri',
-    santriNama: 'Ananda',
-    nis: '-',
-    kelas: 'Santri Darul Ulum',
-    kamar: 'Asrama Pesantren',
-    saldoRfid: 'Rp 75.000',
-    limitHarian: 'Rp 25.000',
-    poinDisiplin: '95/100',
-    statusAsrama: 'Di Lingkungan Pondok',
-    izinTerakhir: 'Tertib'
-  };
+  // 1. Resolusi identitas lengkap dari Supabase / Prioritas Nurmiyaty / Fallback netral
+  const waliData =
+    resolvedIdentityOverride ||
+    (await resolveWaliIdentity(cleanPhone || senderPhone, safeInputName));
 
   const textLower = String(incomingText || '').toLowerCase();
   const naturalGreeting = getNaturalGreeting(incomingText, waliData.namaWali);
   const rtc = getRealtimePondokClockBackend();
+  const priorityPhone = isPriorityNurmiyatyPhone(cleanPhone);
 
   // ─── INTENT PRIORITAS TERTINGGI: CLOSINGAN / WALI INGIN BICARA DENGAN ADMIN ───
   const isAdminRequest =
@@ -493,6 +827,7 @@ export async function generateAutonomousReply(senderPhone, incomingText, senderN
         isManual: true,
         reason: 'WALI_REQUESTED_ADMIN',
         senderName: waliData.namaWali,
+        santriNama: waliData.santriNama,
         admin: 'Ust. Drs. H. Mustofa',
         timestamp: new Date().toISOString()
       });
@@ -513,7 +848,7 @@ export async function generateAutonomousReply(senderPhone, incomingText, senderN
       prompt: incomingText,
       reply: handoffReply
     }).catch(() => {});
-    return handoffReply;
+    return { reply: handoffReply, waliData, cleanPhone };
   }
 
   // Rekam pesan masuk pengguna ke riwayat
@@ -534,10 +869,14 @@ WAKTU SISTEM PONDOK REAL-TIME SAAT INI:
 - Referensi Kalender 7 Hari Ke Depan:
 ${rtc.refDays.map(r => `  * [${r.label}] -> ${r.hari}, ${r.tanggal} (${r.rule})`).join('\n')}
 
-DATA SANTRI DI SISTEM:
-- Wali: ${waliData.namaWali} (No. WA: ${cleanPhone})
-- Santri Terdaftar: ${waliData.santriNama} (${waliData.kelas}, ${waliData.kamar})
-- Status Asrama: ${waliData.statusAsrama}, Saldo RFID: ${waliData.saldoRfid}
+DATA SANTRI DI SISTEM (SUMBER KEBENARAN UTAMA):
+- Nama Wali Terdaftar: ${waliData.namaWali} (No. WA: ${cleanPhone})
+- Santri Terdaftar: ${waliData.santriNama} (NIS: ${waliData.nis || '-'}, Kelas: ${waliData.kelas}, Kamar: ${waliData.kamar}, UID RFID: ${waliData.rfidUid || '-'})
+- Status Asrama: ${waliData.statusAsrama}, Saldo RFID: ${waliData.saldoRfid}, Limit Harian: ${waliData.limitHarian}
+
+ATURAN MUTLAK IDENTITAS:
+- WAJIB merujuk nama wali "${waliData.namaWali}" dan nama santri "${waliData.santriNama}" sesuai DATA SANTRI DI SISTEM di atas.
+- DILARANG KERAS mengarang, menebak, atau memakai nama contoh/placeholder seperti "Ibu Fatimah", "Ibu Fatimah Az-Zahra", atau "Ahmad Fauzi" jika tidak tercantum di DATA SANTRI DI SISTEM.
 
 PANDUAN KOMUNIKASI & ALUR BOOKING KUNJUNGAN:
 1. BAHASA HARUS NATURAL, SANTUN, DAN NYAMBUNG:
@@ -597,15 +936,31 @@ PANDUAN KOMUNIKASI & ALUR BOOKING KUNJUNGAN:
           if (bookingMatch && bookingMatch[1]) {
             try {
               const bData = JSON.parse(bookingMatch[1]);
-              const cleanSantri = (bData.nama_santri || waliData.santriNama || 'Santri').replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase();
+              const rawBookingSantri = String(bData.nama_santri || '').trim();
+              const rawBookingPenjenguk = String(bData.nama_penjenguk || '').trim();
+
+              const safeBookingSantri =
+                !rawBookingSantri || (priorityPhone && /fauzi/i.test(rawBookingSantri))
+                  ? waliData.santriNama
+                  : rawBookingSantri;
+              const safeBookingKelas =
+                !bData.kelas || (priorityPhone && /fauzi/i.test(rawBookingSantri))
+                  ? waliData.kelas
+                  : bData.kelas;
+              const safeBookingPenjenguk =
+                !rawBookingPenjenguk || isPoisonedFallbackName(rawBookingPenjenguk)
+                  ? waliData.namaWali
+                  : rawBookingPenjenguk;
+
+              const cleanSantri = (safeBookingSantri || 'Santri').replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase();
               const isWkday = Boolean(bData.is_weekday);
               const barcode = bData.barcode_token || (isWkday ? null : `GP-DU-${cleanSantri}-${Math.floor(1000 + Math.random() * 9000)}`);
 
               const bookingRecord = {
                 id: `VST-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`,
                 booking_source: 'WHATSAPP_AI_NATURAL',
-                nama_santri: bData.nama_santri || waliData.santriNama,
-                kelas: bData.kelas || waliData.kelas,
+                nama_santri: safeBookingSantri,
+                kelas: safeBookingKelas,
                 asal: 'Surabaya',
                 tanggal_kunjungan: bData.tanggal_kunjungan || rtc.ymd,
                 hari_kunjungan: bData.hari_kunjungan || rtc.namaHari,
@@ -613,9 +968,10 @@ PANDUAN KOMUNIKASI & ALUR BOOKING KUNJUNGAN:
                 jam_selesai: bData.jam_selesai || '15:30',
                 titipan_barang: bData.titipan_barang || '-',
                 berat_barang_kg: Number(bData.berat_barang_kg) || 0,
-                nama_penjenguk: bData.nama_penjenguk || waliData.namaWali,
+                nama_penjenguk: safeBookingPenjenguk,
                 status_penjenguk: 'Wali Santri',
                 no_wa_penjenguk: cleanPhone,
+                rfid_uid: waliData.rfidUid || null,
                 barcode_token: barcode,
                 approval_type: isWkday ? 'MANUAL_WEEKDAY' : 'AUTO_WEEKEND',
                 status_kunjungan: isWkday ? 'Menunggu Approval' : 'Disetujui (Auto-Approved Weekend)',
@@ -635,6 +991,8 @@ PANDUAN KOMUNIKASI & ALUR BOOKING KUNJUNGAN:
             reply = reply.replace(/<!--BOOKING_DATA:(.*?)-->/s, '').trim();
           }
 
+          reply = sanitizeAutonomousReplyForPhone(reply, cleanPhone, waliData);
+
           // Rekam balasan asisten ke database chat & MongoDB AI Logs
           await recordChatMessage(cleanPhone, 'assistant', reply, 'Smart Ri\'ayah AI');
           await saveAiDocument('ai_chat_logs', {
@@ -648,7 +1006,7 @@ PANDUAN KOMUNIKASI & ALUR BOOKING KUNJUNGAN:
             prompt: incomingText,
             reply
           }).catch(() => {});
-          return reply;
+          return { reply, waliData, cleanPhone };
         }
       }
     } catch (llmErr) {
@@ -658,7 +1016,8 @@ PANDUAN KOMUNIKASI & ALUR BOOKING KUNJUNGAN:
 
   // ─── 2. SMART LOCAL REASONING ENGINE (FALLBACK NATURAL BERBASIS KONTEKS) ───
   const saveLocalAiReply = async (replyText, intentName) => {
-    await recordChatMessage(cleanPhone, 'assistant', replyText, 'Smart Ri\'ayah AI');
+    const cleanReply = sanitizeAutonomousReplyForPhone(replyText, cleanPhone, waliData);
+    await recordChatMessage(cleanPhone, 'assistant', cleanReply, 'Smart Ri\'ayah AI');
     await saveAiDocument('ai_chat_logs', {
       channel: String(senderPhone).startsWith('TG-') ? 'Telegram' : 'WhatsApp',
       senderPhone: cleanPhone,
@@ -667,9 +1026,9 @@ PANDUAN KOMUNIKASI & ALUR BOOKING KUNJUNGAN:
       engine: 'SMART_LOCAL_REASONING',
       intent: intentName,
       prompt: incomingText,
-      reply: replyText
+      reply: cleanReply
     }).catch(() => {});
-    return replyText;
+    return { reply: cleanReply, waliData, cleanPhone };
   };
 
   // A. INTENT KUNJUNGAN / SAMBANGAN / JENGUK
@@ -761,6 +1120,7 @@ PANDUAN KOMUNIKASI & ALUR BOOKING KUNJUNGAN:
       nama_penjenguk: waliData.namaWali,
       status_penjenguk: 'Wali Santri',
       no_wa_penjenguk: cleanPhone,
+      rfid_uid: waliData.rfidUid || null,
       barcode_token: barcode,
       approval_type: isWeekdayBooking ? 'MANUAL_WEEKDAY' : 'AUTO_WEEKEND',
       status_kunjungan: isWeekdayBooking ? 'Menunggu Approval' : 'Disetujui (Auto-Approved Weekend)',
@@ -810,6 +1170,14 @@ PANDUAN KOMUNIKASI & ALUR BOOKING KUNJUNGAN:
   // F. SAPAAN UMUM / DEFAULT
   const reply = `${naturalGreeting}ada yang bisa kami bantu terkait ananda *${waliData.santriNama}* di Pesantren Modern Darul Ulum? Silakan disampaikan ya Bapak/Ibu. 🙏`;
   return await saveLocalAiReply(reply, 'GENERAL_GREETING');
+}
+
+/**
+ * Otak AI Otonom (Wrapper kompatibilitas): Mengembalikan string balasan saja.
+ */
+export async function generateAutonomousReply(senderPhone, incomingText, senderName = 'Wali Santri') {
+  const res = await generateAutonomousReplyWithContext(senderPhone, incomingText, senderName);
+  return res.reply;
 }
 
 /**

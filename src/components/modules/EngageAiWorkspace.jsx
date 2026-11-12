@@ -78,6 +78,7 @@ import {
 } from 'recharts';
 import { sound } from '../../utils/audio';
 import { supabase } from '../../utils/supabaseClient';
+import { normalizePhone, isSamePhone } from '../../utils/phoneUtils';
 import {
   fetchDeviceStatus,
   fetchQrCode,
@@ -486,6 +487,7 @@ function EngageAiWorkspaceContent() {
           deviceData={deviceData}
           onRefreshStatus={handleRefreshStatus}
           showToast={showToast}
+          santriList={santriList}
         />
       )}
 
@@ -513,6 +515,7 @@ function EngageAiWorkspaceContent() {
           showToast={showToast}
           chatLogs={chatLogs}
           setChatLogs={setChatLogs}
+          santriList={santriList}
           manualReplyNeededCount={manualReplyNeededCount}
           purgeOldChatLogs={purgeOldChatLogs}
           lastChatPurgeSummary={lastChatPurgeSummary}
@@ -544,10 +547,10 @@ function EngageAiWorkspaceContent() {
       {activeTab === 'campaigns' && <TabCampaigns />}
 
       {/* ─── L. TAB 11: AI SETTINGS ─── */}
-      {activeTab === 'ai_settings' && <TabAiSettings showToast={showToast} />}
+      {activeTab === 'ai_settings' && <TabAiSettings showToast={showToast} santriList={santriList} />}
 
       {/* ─── M. TAB 12: REPORTS ─── */}
-      {activeTab === 'reports' && <TabReports showToast={showToast} deviceData={deviceData} />}
+      {activeTab === 'reports' && <TabReports showToast={showToast} deviceData={deviceData} santriList={santriList} />}
     </div>
   );
 }
@@ -555,8 +558,19 @@ function EngageAiWorkspaceContent() {
 /* =========================================================================================
    SUB-COMPONENT: TAB 1 - DASHBOARD
    ========================================================================================= */
-function TabDashboard({ onSwitchTab, onCopy, copiedText, deviceData, onRefreshStatus, showToast }) {
+function TabDashboard({ onSwitchTab, onCopy, copiedText, deviceData, onRefreshStatus, showToast, santriList = [] }) {
   const isConnected = Boolean(deviceData?.isConnected);
+  const prioritySantri = (santriList || []).find(
+    (s) =>
+      s &&
+      (s.id === 'S-107' ||
+        String(s.nama || '').trim().toLowerCase() === 'nurmiyaty' ||
+        String(s.rfidUid || '').trim().toUpperCase() === '53:57:98:0F')
+  );
+  const priorityWaliName = prioritySantri?.wali?.nama || prioritySantri?.namaWali || 'Arbainah';
+  const prioritySantriName = prioritySantri?.nama || 'Nurmiyaty';
+  const priorityPhoneRaw = normalizePhone(prioritySantri?.wali?.telepon || prioritySantri?.noWali || '628813576012') || '628813576012';
+  const priorityPhoneDisplay = `+${priorityPhoneRaw}`;
 
   return (
     <div className="space-y-6">
@@ -876,7 +890,7 @@ function TabDashboard({ onSwitchTab, onCopy, copiedText, deviceData, onRefreshSt
           <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Recent Requests</h4>
           <div className="space-y-2 text-xs">
             {[
-              { id: '1', name: 'Ibu Fatimah (Ahmad Fauzi)', phone: '+62 881-3576-012', type: 'Izin Pulang', time: '10:14 WIB', status: 'Approved' },
+              { id: '1', name: `${priorityWaliName} (${prioritySantriName})`, phone: priorityPhoneDisplay, type: 'Izin Pulang', time: '10:14 WIB', status: 'Approved' },
               { id: '2', name: 'Bpk. Hendra (M. Rayhan)', phone: '+62 812-4455-890', type: 'Perpanjangan Liburan', time: '09:45 WIB', status: 'Pending' },
               { id: '3', name: 'Ibu Siti (Aisyah Putri)', phone: '+62 856-7890-123', type: 'Konsultasi Medis', time: 'Kemarin', status: 'Pending' }
             ].map(req => (
@@ -1992,6 +2006,7 @@ function TabAiInbox({
   showToast,
   chatLogs,
   setChatLogs,
+  santriList = [],
   manualReplyNeededCount = 0,
   purgeOldChatLogs,
   lastChatPurgeSummary,
@@ -2010,24 +2025,37 @@ function TabAiInbox({
   const [overrideMessage, setOverrideMessage] = useState('');
   const [isSimulating, setIsSimulating] = useState(false);
 
+  const prioritySantri = (santriList || []).find(
+    (s) =>
+      s &&
+      (s.id === 'S-107' ||
+        String(s.nama || '').trim().toLowerCase() === 'nurmiyaty' ||
+        String(s.rfidUid || '').trim().toUpperCase() === '53:57:98:0F')
+  );
+  const priorityWaliName = prioritySantri?.wali?.nama || prioritySantri?.namaWali || 'Arbainah';
+  const prioritySantriName = prioritySantri?.nama || 'Nurmiyaty';
+  const priorityKelas = prioritySantri?.kelas || '10-B Putri';
+  const priorityKamar = prioritySantri?.kamar || 'Khadijah 105';
+  const priorityPhone = normalizePhone(prioritySantri?.wali?.telepon || prioritySantri?.noWali || '628813576012') || '628813576012';
+
   // ─── Conversations Directory (Source of Truth: chatLogs dari AppContext) ───
   const conversations = chatLogs && chatLogs.length > 0 ? chatLogs : [
     {
       id: 'chat-1',
-      name: 'Ibu Fatimah Az-Zahra',
-      santri: 'Ahmad Fauzi (Kamar Umar 204)',
-      phone: '+62 881-3576-012',
+      name: priorityWaliName,
+      santri: `${prioritySantriName} (${priorityKelas} • ${priorityKamar})`,
+      phone: `+${priorityPhone}`,
       channel: 'WhatsApp',
       status: 'Open',
       handling: 'Otonom - Mengikuti Global',
       aiSafety: 'AI Balas - Allow (Score: 98)',
       lastTime: '11:40 WIB',
-      lastPreview: 'Assalamu\'alaikum, apakah ananda Fauzi hari ini sholat subuh berjamaah?',
+      lastPreview: `Assalamu'alaikum, apakah ananda ${prioritySantriName} hari ini sholat subuh berjamaah?`,
       unread: false,
       needs_manual_reply: false,
       messages: [
-        { sender: 'wali', time: '11:38 WIB', text: 'Assalamu\'alaikum ustadz, bagaimana kabar ananda Ahmad Fauzi hari ini?' },
-        { sender: 'ai', time: '11:39 WIB', text: 'Wa\'alaikumsalam warahmatullah, Ibu Fatimah. Ananda Ahmad Fauzi sehat wal\'afiat dan tercatat hadir sholat Subuh berjamaah di Masjid Jami\' tepat waktu. Poin kedisiplinannya saat ini 96/100 (Mumtaz).' },
+        { sender: 'wali', time: '11:38 WIB', text: `Assalamu'alaikum ustadz, bagaimana kabar ananda ${prioritySantriName} hari ini?` },
+        { sender: 'ai', time: '11:39 WIB', text: `Wa'alaikumsalam warahmatullah, ${priorityWaliName}. Ananda ${prioritySantriName} sehat wal'afiat dan tercatat hadir sholat Subuh berjamaah di Masjid Jami' tepat waktu. Poin kedisiplinannya saat ini 100/100 (Mumtaz).` },
         { sender: 'wali', time: '11:40 WIB', text: 'Alhamdulillah, terima kasih banyak atas infonya Ustadz.' }
       ]
     },
@@ -2035,7 +2063,7 @@ function TabAiInbox({
       id: 'chat-2',
       name: 'Bpk. Hendra Gunawan',
       santri: 'Muhammad Rayhan (Kamar Abu Bakar 102)',
-      phone: '+62 812-4455-890',
+      phone: '+628124455890',
       channel: 'WhatsApp',
       status: 'Perlu Ambil Alih',
       handling: 'Semi Auto - Perlu Review',
@@ -2054,7 +2082,7 @@ function TabAiInbox({
       id: 'chat-3',
       name: 'Ibu Siti Khadijah',
       santri: 'Aisyah Putri (Kamar Khadijah 105)',
-      phone: '+62 856-7890-123',
+      phone: '+628567890123',
       channel: 'Telegram Bot',
       status: 'Open',
       handling: 'Otonom - Mengikuti Global',
@@ -2077,21 +2105,21 @@ function TabAiInbox({
   };
 
   // ─── Real-Time Inbound Live Chat Feed Stream ───
-  const [liveFeedLogs, setLiveFeedLogs] = useState([
+  const [liveFeedLogs, setLiveFeedLogs] = useState(() => [
     {
       id: 'feed-init',
       time: '11:40 WIB',
       type: 'INCOMING',
-      phone: '08813576012',
-      name: 'Ibu Fatimah Az-Zahra',
-      text: 'Assalamu\'alaikum, apakah ananda Fauzi hari ini sholat subuh berjamaah?',
+      phone: priorityPhone,
+      name: priorityWaliName,
+      text: `Assalamu'alaikum, apakah ananda ${prioritySantriName} hari ini sholat subuh berjamaah?`,
       aiStatus: 'Dibalas Otonom',
-      aiReply: 'Wa\'alaikumsalam Ibu Fatimah. Ananda sehat wal\'afiat dan sholat subuh berjamaah di Masjid Jami\'...'
+      aiReply: `Wa'alaikumsalam ${priorityWaliName}. Ananda ${prioritySantriName} sehat wal'afiat dan sholat subuh berjamaah di Masjid Jami'...`
     }
   ]);
 
-  // Helper normalisasi nomor HP
-  const normalizeDigits = (num) => String(num || '').replace(/[^0-9]/g, '');
+  // Helper normalisasi nomor HP (menyeragamkan 08 / +628 / 628 -> 628...)
+  const normalizeDigits = (num) => normalizePhone(num);
 
   // ─── Realtime Listener untuk Webhook WhatsApp & Balasan AI Otonom ───
   useEffect(() => {
@@ -2104,10 +2132,9 @@ function TabAiInbox({
       .eq('room_id', 'whatsapp_takeover')
       .then(({ data, error }) => {
         if (!error && Array.isArray(data) && data.length > 0) {
-          const activeTakeovers = data.map(d => normalizeDigits(d.message_text));
+          const activeTakeovers = data.map(d => normalizePhone(d.message_text)).filter(Boolean);
           setConversations(prev => prev.map(c => {
-            const cDigits = normalizeDigits(c.phone);
-            const isTaken = activeTakeovers.some(t => t.endsWith(cDigits.slice(-8)) || cDigits.endsWith(t.slice(-8)));
+            const isTaken = activeTakeovers.some(t => isSamePhone(c.phone || c.sender_phone, t));
             if (isTaken) {
               return {
                 ...c,
@@ -2129,7 +2156,7 @@ function TabAiInbox({
         const inc = payload?.payload;
         if (!inc) return;
 
-        const senderDigits = normalizeDigits(inc.nomor);
+        const senderCanonical = normalizePhone(inc.nomor);
         const nowWIB = inc.waktu || (new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB');
 
         const newMsg = {
@@ -2140,26 +2167,22 @@ function TabAiInbox({
 
         // 1. Update Ruang Chat Aktif jika sedang dibuka
         setSelectedChat(prev => {
-          if (prev) {
-            const prevDigits = normalizeDigits(prev.phone);
-            if (prevDigits === senderDigits || prevDigits.endsWith(senderDigits.slice(-9)) || senderDigits.endsWith(prevDigits.slice(-9))) {
-              return {
-                ...prev,
-                messages: [...prev.messages, newMsg],
-                lastTime: nowWIB,
-                lastPreview: inc.pesan
-              };
-            }
+          if (prev && isSamePhone(prev.sender_phone || prev.phone, senderCanonical)) {
+            return {
+              ...prev,
+              name: inc.pengirim && !/fatimah/i.test(inc.pengirim) ? inc.pengirim : prev.name,
+              santri: inc.santriNama ? `${inc.santriNama}${inc.kelas ? ` (${inc.kelas})` : ''}` : prev.santri,
+              messages: [...prev.messages, newMsg],
+              lastTime: nowWIB,
+              lastPreview: inc.pesan
+            };
           }
           return prev;
         });
 
         // 2. Tambahkan / Update Baris Percakapan di Tabel Kontak (Real-Time Inbound)
         setConversations(prev => {
-          const matchIdx = prev.findIndex(c => {
-            const cDigits = normalizeDigits(c.phone);
-            return cDigits === senderDigits || cDigits.endsWith(senderDigits.slice(-9)) || senderDigits.endsWith(cDigits.slice(-9));
-          });
+          const matchIdx = prev.findIndex(c => isSamePhone(c.sender_phone || c.phone, senderCanonical));
 
           if (matchIdx !== -1) {
             const copy = [...prev];
@@ -2167,6 +2190,10 @@ function TabAiInbox({
             copy.splice(matchIdx, 1);
             copy.unshift({
               ...target,
+              name: inc.pengirim && !/fatimah/i.test(inc.pengirim) ? inc.pengirim : target.name,
+              santri: inc.santriNama ? `${inc.santriNama}${inc.kelas ? ` (${inc.kelas})` : ''}` : target.santri,
+              sender_phone: senderCanonical || target.sender_phone,
+              phone: senderCanonical ? `+${senderCanonical}` : target.phone,
               lastTime: nowWIB,
               lastPreview: inc.pesan,
               unread: true,
@@ -2176,11 +2203,12 @@ function TabAiInbox({
             return copy;
           } else {
             // NOMOR BARU MASUK DITAMBAHKAN KE DAFTAR PERCAKAPAN
-            const formattedPhone = inc.nomor ? (String(inc.nomor).startsWith('+') ? String(inc.nomor) : `+${inc.nomor}`) : '+62 8xx';
+            const formattedPhone = senderCanonical ? `+${senderCanonical}` : (inc.nomor ? (String(inc.nomor).startsWith('+') ? String(inc.nomor) : `+${inc.nomor}`) : '+628xx');
             const newEntry = {
               id: `chat-${Date.now()}`,
               name: inc.pengirim || 'Wali Santri (WhatsApp)',
-              santri: 'Santri Terkait Nomor HP',
+              santri: inc.santriNama ? `${inc.santriNama}${inc.kelas ? ` (${inc.kelas})` : ''}` : 'Santri Terkait Nomor HP',
+              sender_phone: senderCanonical || formattedPhone,
               phone: formattedPhone,
               channel: 'WhatsApp',
               status: 'Open',
@@ -2202,7 +2230,7 @@ function TabAiInbox({
             id: `feed-${Date.now()}`,
             time: nowWIB,
             type: 'INCOMING',
-            phone: inc.nomor || 'Unknown',
+            phone: senderCanonical || inc.nomor || 'Unknown',
             name: inc.pengirim || 'Wali Santri',
             text: inc.pesan,
             aiStatus: '⚡ AI Memproses Balasan...',
@@ -2211,7 +2239,7 @@ function TabAiInbox({
           ...prev.slice(0, 19)
         ]);
 
-        addSafetyLog?.('inbound received', 'info', 'INCOMING_MSG', inc.nomor || 'Wali');
+        addSafetyLog?.('inbound received', 'info', 'INCOMING_MSG', senderCanonical || inc.nomor || 'Wali');
         showToast?.(`📩 WhatsApp Masuk dari ${inc.pengirim || inc.nomor}: "${inc.pesan.slice(0, 35)}..."`, 'info');
         sound.playWhatsApp?.();
       })
@@ -2219,13 +2247,11 @@ function TabAiInbox({
         const rep = payload?.payload;
         if (!rep) return;
 
-        const targetDigits = normalizeDigits(rep.target);
+        const targetCanonical = normalizePhone(rep.target);
 
         // 🛡️ FRONTEND SHIELD: Cek apakah target ini sedang dalam Mode Ambil Alih Manual
-        // Jika sedang ditangani manual oleh Admin, cegah balasan AI agar tidak menyela di percakapan!
         if (selectedChat) {
-          const selDigits = normalizeDigits(selectedChat.phone);
-          if ((selDigits === targetDigits || selDigits.endsWith(targetDigits.slice(-8)) || targetDigits.endsWith(selDigits.slice(-8))) && (selectedChat.isManual || isManualOverrideActive)) {
+          if (isSamePhone(selectedChat.sender_phone || selectedChat.phone, targetCanonical) && (selectedChat.isManual || isManualOverrideActive)) {
             console.log(`🛡️ [Frontend Shield]: Mengabaikan AI reply untuk ${rep.target} karena Admin sedang dalam Mode Ambil Alih Manual.`);
             return;
           }
@@ -2241,31 +2267,27 @@ function TabAiInbox({
 
         // 1. Update Ruang Chat Aktif
         setSelectedChat(prev => {
-          if (prev) {
-            const prevDigits = normalizeDigits(prev.phone);
-            if (prevDigits === targetDigits || prevDigits.endsWith(targetDigits.slice(-9)) || targetDigits.endsWith(prevDigits.slice(-9))) {
-              return {
-                ...prev,
-                messages: [...prev.messages, newMsg],
-                lastTime: nowWIB,
-                lastPreview: `⚡ AI: ${rep.replyText.slice(0, 50)}...`
-              };
-            }
+          if (prev && isSamePhone(prev.sender_phone || prev.phone, targetCanonical)) {
+            return {
+              ...prev,
+              name: rep.namaWali && !/fatimah/i.test(rep.namaWali) ? rep.namaWali : prev.name,
+              messages: [...prev.messages, newMsg],
+              lastTime: nowWIB,
+              lastPreview: `⚡ AI: ${rep.replyText.slice(0, 50)}...`
+            };
           }
           return prev;
         });
 
         // 2. Update status percakapan di daftar
         setConversations(prev => {
-          const matchIdx = prev.findIndex(c => {
-            const cDigits = normalizeDigits(c.phone);
-            return cDigits === targetDigits || cDigits.endsWith(targetDigits.slice(-9)) || targetDigits.endsWith(cDigits.slice(-9));
-          });
+          const matchIdx = prev.findIndex(c => isSamePhone(c.sender_phone || c.phone, targetCanonical));
 
           if (matchIdx !== -1) {
             const copy = [...prev];
             copy[matchIdx] = {
               ...copy[matchIdx],
+              name: rep.namaWali && !/fatimah/i.test(rep.namaWali) ? rep.namaWali : copy[matchIdx].name,
               lastTime: nowWIB,
               lastPreview: `⚡ AI: ${rep.replyText.slice(0, 50)}...`,
               messages: [...copy[matchIdx].messages, newMsg]
@@ -2278,10 +2300,11 @@ function TabAiInbox({
         // 3. Update Live Feed Log Real-Time
         setLiveFeedLogs(prev => {
           const updated = [...prev];
-          const found = updated.find(item => normalizeDigits(item.phone) === targetDigits);
+          const found = updated.find(item => isSamePhone(item.phone, targetCanonical));
           if (found) {
             found.aiStatus = 'Dibalas Otonom';
             found.aiReply = rep.replyText;
+            if (rep.namaWali) found.name = rep.namaWali;
             return updated;
           }
           return [
@@ -2289,7 +2312,7 @@ function TabAiInbox({
               id: `feed-ai-${Date.now()}`,
               time: nowWIB,
               type: 'AI_REPLY',
-              phone: rep.target,
+              phone: targetCanonical || rep.target,
               name: rep.namaWali || 'Wali Santri',
               text: rep.incomingText || 'Chat WhatsApp Masuk',
               aiStatus: 'Dibalas Otonom',
@@ -2299,7 +2322,7 @@ function TabAiInbox({
           ];
         });
 
-        addSafetyLog?.('outbound success', 'info', 'AUTONOMOUS_AI', rep.target || 'Wali');
+        addSafetyLog?.('outbound success', 'info', 'AUTONOMOUS_AI', targetCanonical || rep.target || 'Wali');
         showToast?.(`⚡ AI Otonom mengirim balasan ke WhatsApp ${rep.target}!`, 'success');
         sound.playSuccess?.();
       })
@@ -2307,31 +2330,57 @@ function TabAiInbox({
         const update = payload?.payload;
         if (!update) return;
 
-        showToast?.(`📲 Update Nomor WA: Wali ${update.namaSantri} berhasil diperbarui ke ${update.noWali}`, 'info');
+        const cleanNewPhone = normalizePhone(update.noWali || '');
+        const cleanOldPhone = normalizePhone(update.oldNoWali || '');
+        showToast?.(`📲 Update Kontak WA: Wali ${update.namaSantri} (${update.namaWali || 'Wali'}) berhasil diperbarui ke ${cleanNewPhone || update.noWali}`, 'info');
 
-        // Update nomor di daftar percakapan jika ada
+        const matchesConversation = (c) => {
+          const matchSantri =
+            update.namaSantri &&
+            c.santri &&
+            c.santri.toLowerCase().includes(String(update.namaSantri).toLowerCase());
+          const matchPhone =
+            (cleanNewPhone && isSamePhone(c.sender_phone || c.phone, cleanNewPhone)) ||
+            (cleanOldPhone && isSamePhone(c.sender_phone || c.phone, cleanOldPhone));
+          const matchName =
+            update.namaWali &&
+            c.name &&
+            c.name.toLowerCase().includes(String(update.namaWali).toLowerCase());
+          return Boolean(matchSantri || matchPhone || matchName);
+        };
+
         setConversations(prev => prev.map(c => {
-          if (c.santri?.toLowerCase().includes(update.namaSantri.toLowerCase()) || (c.name && update.namaWali && c.name.toLowerCase().includes(update.namaWali.toLowerCase()))) {
-            const formatted = update.noWali ? (update.noWali.startsWith('+') ? update.noWali : `+${update.noWali}`) : c.phone;
-            return {
-              ...c,
-              name: update.namaWali || c.name,
-              phone: formatted
-            };
-          }
-          return c;
+          if (!matchesConversation(c)) return c;
+          const nextPhone = cleanNewPhone || normalizePhone(c.sender_phone || c.phone);
+          return {
+            ...c,
+            name: update.namaWali || c.name,
+            sender_phone: nextPhone || c.sender_phone,
+            phone: nextPhone ? `+${nextPhone}` : c.phone
+          };
         }));
+
+        setSelectedChat(prev => {
+          if (!prev || !matchesConversation(prev)) return prev;
+          const nextPhone = cleanNewPhone || normalizePhone(prev.sender_phone || prev.phone);
+          return {
+            ...prev,
+            name: update.namaWali || prev.name,
+            sender_phone: nextPhone || prev.sender_phone,
+            phone: nextPhone ? `+${nextPhone}` : prev.phone
+          };
+        });
 
         setLiveFeedLogs(prev => [
           {
             id: `feed-update-${Date.now()}`,
             time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB',
             type: 'UPDATE',
-            phone: update.noWali || '-',
+            phone: cleanNewPhone || update.noWali || '-',
             name: update.namaWali || 'Wali Santri',
-            text: `[SINKRONISASI KONTAK] Nomor WhatsApp Wali untuk santri ${update.namaSantri} telah diperbarui melalui Tabel RFID.`,
+            text: `[SINKRONISASI KONTAK] Data Wali (${update.namaWali || '-'}) & Nomor WA (${cleanNewPhone || update.noWali || '-'}) untuk santri ${update.namaSantri} telah diperbarui ke Supabase.`,
             aiStatus: 'Tersinkronisasi Otomatis',
-            aiReply: 'AI Smart Ri\'ayah siap melayani pesan WhatsApp dari nomor baru ini.'
+            aiReply: 'AI Smart Ri\'ayah siap melayani pesan WhatsApp dengan identitas wali terbaru.'
           },
           ...prev.slice(0, 19)
         ]);
@@ -2339,7 +2388,6 @@ function TabAiInbox({
       .on('broadcast', { event: 'whatsapp.takeover' }, (payload) => {
         const t = payload?.payload;
         if (!t) return;
-        const targetDigits = normalizeDigits(t.phone);
         const nextManual = Boolean(t.isManual);
 
         if (nextManual && t.reason === 'WALI_REQUESTED_ADMIN') {
@@ -2349,7 +2397,7 @@ function TabAiInbox({
 
         setSelectedChat(prev => {
           if (!prev) return null;
-          if (normalizeDigits(prev.phone) === targetDigits) {
+          if (isSamePhone(prev.sender_phone || prev.phone, t.phone)) {
             setIsManualOverrideActive(nextManual);
             return {
               ...prev,
@@ -2362,7 +2410,7 @@ function TabAiInbox({
         });
 
         setConversations(prev => prev.map(c => {
-          if (normalizeDigits(c.phone) === targetDigits) {
+          if (isSamePhone(c.sender_phone || c.phone, t.phone)) {
             return {
               ...c,
               isManual: nextManual,
@@ -2391,6 +2439,21 @@ function TabAiInbox({
       setSelectedChat(activeConv);
     }
 
+    const activePhone = normalizePhone(activeConv?.sender_phone || activeConv?.phone || priorityPhone) || priorityPhone;
+    const matchedSantri =
+      (santriList || []).find((s) => s && isSamePhone(s.wali?.telepon || s.noWali, activePhone)) ||
+      (santriList || []).find((s) => s && activeConv?.santri && activeConv.santri.toLowerCase().includes(String(s.nama || '').toLowerCase())) ||
+      prioritySantri;
+
+    const resolvedWaliName =
+      matchedSantri?.wali?.nama ||
+      matchedSantri?.namaWali ||
+      (activeConv?.name && !/fatimah/i.test(activeConv.name) ? activeConv.name : priorityWaliName);
+    const resolvedSantriName = matchedSantri?.nama || prioritySantriName;
+    const resolvedKamar = matchedSantri?.kamar || priorityKamar;
+    const resolvedSaldo = Number(matchedSantri?.saldoRfid ?? 85000).toLocaleString('id-ID');
+    const resolvedLimit = Number(matchedSantri?.limitJajanHarian ?? 25000).toLocaleString('id-ID');
+
     const incomingMsg = {
       sender: 'wali',
       time: nowWIB,
@@ -2405,8 +2468,8 @@ function TabAiInbox({
         id: `feed-sim-${Date.now()}`,
         time: nowWIB,
         type: 'INCOMING',
-        phone: activeConv.phone || '08813576012',
-        name: activeConv.name || 'Ibu Fatimah Az-Zahra',
+        phone: activePhone,
+        name: resolvedWaliName,
         text: questionText,
         aiStatus: '⚡ AI Memproses Balasan...',
         aiReply: null
@@ -2419,9 +2482,9 @@ function TabAiInbox({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sender: activeConv.phone || '08813576012',
+          sender: activePhone,
           message: questionText,
-          name: activeConv.name || 'Ibu Fatimah Az-Zahra'
+          name: resolvedWaliName
         })
       });
 
@@ -2452,18 +2515,18 @@ function TabAiInbox({
       console.warn('Simulation backend endpoint fallback:', e);
     }
 
-    // Instant local reasoning fallback
+    // Instant local reasoning fallback menggunakan profil santri/wali aktual dari state/Supabase
     setTimeout(() => {
       let clientReply = '';
       const qLower = questionText.toLowerCase();
       if (qLower.includes('saldo')) {
-        clientReply = "Wa'alaikumsalam Warahmatullahi Wabarakatuh, Ibu Fatimah.\n\nBerikut informasi dompet pintar cashless ananda *Ahmad Fauzi*:\n\n💳 *Sisa Saldo RFID:* *Rp 85.000*\n📊 *Limit Jajan Harian:* Rp 25.000/hari\n🏢 *Lokasi Transaksi:* Kantin Asrama & Koperasi Ma'had\n\nUntuk pengisian saldo (Top Up), Bapak/Ibu dapat melakukan transfer Virtual Account atau melalui aplikasi Smart Ri'ayah.\n\n_— Smart Ri'ayah Cashless Gateway_";
+        clientReply = `Wa'alaikumsalam Warahmatullahi Wabarakatuh, Bapak/Ibu ${resolvedWaliName}.\n\nBerikut informasi dompet pintar cashless ananda *${resolvedSantriName}*:\n\n💳 *Sisa Saldo RFID:* *Rp ${resolvedSaldo}*\n📊 *Limit Jajan Harian:* Rp ${resolvedLimit}/hari\n🏢 *Lokasi Transaksi:* Kantin Asrama & Koperasi Ma'had\n\nUntuk pengisian saldo (Top Up), Bapak/Ibu dapat melakukan transfer Virtual Account atau melalui aplikasi Smart Ri'ayah.\n\n_— Smart Ri'ayah Cashless Gateway_`;
       } else if (qLower.includes('izin') || qLower.includes('perpanjang')) {
-        clientReply = "Wa'alaikumsalam Warahmatullahi Wabarakatuh, Ibu Fatimah.\n\nUntuk perizinan ananda *Ahmad Fauzi*:\n\n📋 *SOP Perizinan Santri:*\n1. Izin kepulangan/pesiar diajukan minimal H-1 oleh wali melalui menu *Perizinan* di aplikasi Smart Ri'ayah.\n2. Jika ananda sakit dan membutuhkan *Perpanjangan Liburan*, silakan klik tombol *Ajukan Perpanjangan Liburan* pada riwayat izin serta lampirkan foto surat dokter/keterangan medis.\n3. Musyrif & Mudir akan memverifikasi permohonan dalam waktu 1x24 jam.\n\nStatus izin ananda saat ini: *Tertib / Tidak ada pelanggaran*.\n\n_— Layanan Perizinan Digital DU-PERMIT_";
+        clientReply = `Wa'alaikumsalam Warahmatullahi Wabarakatuh, Bapak/Ibu ${resolvedWaliName}.\n\nUntuk perizinan ananda *${resolvedSantriName}*:\n\n📋 *SOP Perizinan Santri:*\n1. Izin kepulangan/pesiar diajukan minimal H-1 oleh wali melalui menu *Perizinan* di aplikasi Smart Ri'ayah.\n2. Jika ananda sakit dan membutuhkan *Perpanjangan Liburan*, silakan klik tombol *Ajukan Perpanjangan Liburan* pada riwayat izin serta lampirkan foto surat dokter/keterangan medis.\n3. Musyrif & Mudir akan memverifikasi permohonan dalam waktu 1x24 jam.\n\nStatus izin ananda saat ini: *Tertib / Tidak ada pelanggaran*.\n\n_— Layanan Perizinan Digital DU-PERMIT_`;
       } else if (qLower.includes('sakit') || qLower.includes('sehat')) {
-        clientReply = "Wa'alaikumsalam Warahmatullahi Wabarakatuh, Ibu Fatimah.\n\nLayanan Kesehatan Pesantren Modern Darul Ulum (Poskestren) siap siaga *24 jam* dengan tenaga medis asrama.\n\n🏥 Apabila ananda *Ahmad Fauzi* mengeluhkan sakit, ananda segera diperiksa di ruang rawat UKS dan diberikan istirahat serta pengobatan dokter.\n\nKondisi medis ananda saat ini: *Sehat & Terpantau Baik di Kamar Umar bin Khattab 204*.\n\n_— Poskestren Darul Ulum Care_";
+        clientReply = `Wa'alaikumsalam Warahmatullahi Wabarakatuh, Bapak/Ibu ${resolvedWaliName}.\n\nLayanan Kesehatan Pesantren Modern Darul Ulum (Poskestren) siap siaga *24 jam* dengan tenaga medis asrama.\n\n🏥 Apabila ananda *${resolvedSantriName}* mengeluhkan sakit, ananda segera diperiksa di ruang rawat UKS dan diberikan istirahat serta pengobatan dokter.\n\nKondisi medis ananda saat ini: *Sehat & Terpantau Baik di Kamar ${resolvedKamar}*.\n\n_— Poskestren Darul Ulum Care_`;
       } else {
-        clientReply = "Wa'alaikumsalam Warahmatullahi Wabarakatuh, Ibu Fatimah.\n\n📅 *Jadwal Kunjungan (Sambangan) Wali Santri:*\n• *Hari:* Setiap Ahad (Minggu)\n• *Waktu:* Pukul 08.00 s/d 17.00 WIB\n• *Tempat:* Area Gazebo & Aula Kunjungan Ma'had Darul Ulum\n\nSaat berkunjung, mohon memarkir kendaraan di area parkir utama dan melapor singkat ke Pos Satpam.\n\n_— Tata Tertib Kunjungan Pesantren_";
+        clientReply = `Wa'alaikumsalam Warahmatullahi Wabarakatuh, Bapak/Ibu ${resolvedWaliName}.\n\n📅 *Jadwal Kunjungan (Sambangan) Wali Santri:*\n• *Hari:* Setiap Ahad (Minggu)\n• *Waktu:* Pukul 08.00 s/d 17.00 WIB\n• *Tempat:* Area Gazebo & Aula Kunjungan Ma'had Darul Ulum\n\nSaat berkunjung, mohon memarkir kendaraan di area parkir utama dan melapor singkat ke Pos Satpam.\n\n_— Tata Tertib Kunjungan Pesantren_`;
       }
 
       const aiMsg = {
@@ -2504,7 +2567,7 @@ function TabAiInbox({
     e.preventDefault();
     if (!overrideMessage.trim() || !selectedChat) return;
 
-    const targetPhone = selectedChat.phone || '08813576012';
+    const targetPhone = normalizePhone(selectedChat.sender_phone || selectedChat.phone || priorityPhone) || priorityPhone;
     const textToSend = overrideMessage.trim();
     setIsSendingOverride(true);
     sound.playBeep?.();
@@ -3089,7 +3152,7 @@ function TabAiInbox({
           <button
             type="button"
             disabled={isSimulating}
-            onClick={() => handleSimulateIncoming("Assalamu'alaikum, berapa sisa saldo kartu RFID ananda Ahmad Fauzi?", "Cek Saldo")}
+            onClick={() => handleSimulateIncoming(`Assalamu'alaikum, berapa sisa saldo kartu RFID ananda ${(selectedChat?.santri?.split('(')[0]?.trim() || prioritySantriName)}?`, "Cek Saldo")}
             className="px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 text-xs font-bold transition shadow-xs flex items-center gap-1.5"
           >
             <span>💳 Cek Saldo</span>
@@ -3105,7 +3168,7 @@ function TabAiInbox({
           <button
             type="button"
             disabled={isSimulating}
-            onClick={() => handleSimulateIncoming("Apakah ananda Fauzi hari ini sehat dan sholat subuh berjamaah?", "Kondisi Santri")}
+            onClick={() => handleSimulateIncoming(`Apakah ananda ${(selectedChat?.santri?.split('(')[0]?.trim() || prioritySantriName)} hari ini sehat dan sholat subuh berjamaah?`, "Kondisi Santri")}
             className="px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 text-xs font-bold transition shadow-xs flex items-center gap-1.5"
           >
             <span>📈 Kondisi Santri</span>
@@ -3146,7 +3209,7 @@ function TabAiInbox({
             <div
               key={log.id || i}
               onClick={() => {
-                const match = conversations.find(c => normalizeDigits(c.phone) === normalizeDigits(log.phone));
+                const match = conversations.find(c => isSamePhone(c.sender_phone || c.phone, log.phone));
                 if (match) handleOpenChat(match);
               }}
               className="p-3 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
@@ -3936,7 +3999,7 @@ function TabCustomers() {
                   <span className="font-semibold text-slate-900 block">{s.nama} ({s.kelas || 'Santri'})</span>
                   <span className="text-[10px] text-emerald-700 font-mono font-bold">{s.kamar || 'Kamar Asrama'}</span>
                 </td>
-                <td className="py-3 px-3 font-mono font-bold text-slate-700">{s.noWali || s.wali?.telepon || '08813576012'}</td>
+                <td className="py-3 px-3 font-mono font-bold text-slate-700">{normalizePhone(s.noWali || s.wali?.telepon || '') || '-'}</td>
                 <td className="py-3 px-3">
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
                     Granted (Opt-In)
@@ -3946,8 +4009,8 @@ function TabCustomers() {
                   <button
                     onClick={() => {
                       sound.playBeep?.();
-                      const num = (s.noWali || s.wali?.telepon || '').replace(/[^0-9]/g, '');
-                      window.open(`https://wa.me/${num.startsWith('0') ? '62' + num.slice(1) : num}`, '_blank');
+                      const num = normalizePhone(s.noWali || s.wali?.telepon || '');
+                      if (num) window.open(`https://wa.me/${num}`, '_blank');
                     }}
                     className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] transition shadow-xs"
                   >
@@ -4234,7 +4297,7 @@ function TabCampaigns() {
   );
 }
 
-function TabAiSettings({ showToast }) {
+function TabAiSettings({ showToast, santriList = [] }) {
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('sr_deepseek_key') || DEFAULT_DEEPSEEK_KEY);
   const [baseUrl, setBaseUrl] = useState(() => localStorage.getItem('sr_deepseek_base_url') || DEFAULT_DEEPSEEK_BASE_URL);
   const [model, setModel] = useState(() => localStorage.getItem('sr_deepseek_model') || DEFAULT_DEEPSEEK_MODEL);
@@ -4242,10 +4305,22 @@ function TabAiSettings({ showToast }) {
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
 
-  // Playground state
-  const [sampleChat, setSampleChat] = useState(
-    "Assalamu'alaikum ustadz, saya Bu Fatimah wali dari ananda Ahmad Fauzi kelas 10-A kamar Umar 204 dari Surabaya, insya Allah mau sambang hari Senin tgl 2026-11-09 jam 14.00 sampai 15.30 WIB bawa madu herbal dan pakaian ganti seberat 2 kg."
+  const prioritySantri = (santriList || []).find(
+    (s) =>
+      s &&
+      (s.id === 'S-107' ||
+        String(s.nama || '').trim().toLowerCase() === 'nurmiyaty' ||
+        String(s.rfidUid || '').trim().toUpperCase() === '53:57:98:0F')
   );
+  const demoWaliName = prioritySantri?.wali?.nama || prioritySantri?.namaWali || 'Arbainah';
+  const demoSantriName = prioritySantri?.nama || 'Nurmiyaty';
+  const demoKelas = prioritySantri?.kelas || '10-B Putri';
+  const demoKamar = prioritySantri?.kamar || 'Khadijah 105';
+  const demoPhone = normalizePhone(prioritySantri?.wali?.telepon || prioritySantri?.noWali || '628813576012') || '628813576012';
+  const weekdaySamplePrompt = `Assalamu'alaikum ustadz, saya ${demoWaliName} wali dari ananda ${demoSantriName} kelas ${demoKelas} kamar ${demoKamar}, insya Allah mau sambang hari Senin tgl 2026-11-09 jam 14.00 sampai 15.30 WIB bawa madu herbal dan pakaian ganti seberat 2 kg.`;
+
+  // Playground state
+  const [sampleChat, setSampleChat] = useState(weekdaySamplePrompt);
   const [isParsingPlayground, setIsParsingPlayground] = useState(false);
   const [parsedPlayground, setParsedPlayground] = useState(null);
 
@@ -4283,7 +4358,7 @@ function TabAiSettings({ showToast }) {
     showToast?.('DeepSeek sedang mengekstrak 9 atribut booking kunjungan...', 'info');
 
     try {
-      const res = await parseBookingWithDeepSeek(sampleChat, '6285960213654', 'Ibu Fatimah Az-Zahra', apiKey);
+      const res = await parseBookingWithDeepSeek(sampleChat, demoPhone, demoWaliName, apiKey);
       setIsParsingPlayground(false);
       if (res && res.booking) {
         setParsedPlayground(res.booking);
@@ -4460,7 +4535,7 @@ function TabAiSettings({ showToast }) {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setSampleChat("Assalamu'alaikum ustadz, saya Bu Fatimah wali dari ananda Ahmad Fauzi kelas 10-A kamar Umar 204 dari Surabaya, insya Allah mau sambang hari Senin tgl 2026-11-09 jam 14.00 sampai 15.30 WIB bawa madu herbal dan pakaian ganti seberat 2 kg.")}
+                  onClick={() => setSampleChat(weekdaySamplePrompt)}
                   className="text-[10px] text-emerald-700 hover:underline font-bold"
                 >
                   Contoh: Senin (Hari Kerja)
@@ -4575,7 +4650,19 @@ function TabAiSettings({ showToast }) {
   );
 }
 
-function TabReports({ showToast, deviceData }) {
+function TabReports({ showToast, deviceData, santriList = [] }) {
+  const prioritySantri = (santriList || []).find(
+    (s) =>
+      s &&
+      (s.id === 'S-107' ||
+        String(s.nama || '').trim().toLowerCase() === 'nurmiyaty' ||
+        String(s.rfidUid || '').trim().toUpperCase() === '53:57:98:0F')
+  );
+  const reportWaliName = prioritySantri?.wali?.nama || prioritySantri?.namaWali || 'Arbainah';
+  const reportSantriName = prioritySantri?.nama || 'Nurmiyaty';
+  const reportKamar = prioritySantri?.kamar || 'Khadijah 105';
+  const reportPhone = normalizePhone(prioritySantri?.wali?.telepon || prioritySantri?.noWali || '628813576012') || '628813576012';
+  const reportSaldo = Number(prioritySantri?.saldoRfid ?? 85000).toLocaleString('id-ID');
   const [period, setPeriod] = useState('7d'); // 'today' | '7d' | '30d' | 'month'
   const [channelFilter, setChannelFilter] = useState('all'); // 'all' | 'wa' | 'tg'
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -4654,13 +4741,13 @@ function TabReports({ showToast, deviceData }) {
       time: '16:15 WIB',
       hari: 'Rabu',
       date: '04 Nov 2026',
-      wali: 'Ibu Fatimah Az-Zahra',
-      santri: 'Ahmed Fauzi (Kamar Umar 204)',
-      phone: '+62 881-3576-012',
+      wali: reportWaliName,
+      santri: `${reportSantriName} (Kamar ${reportKamar})`,
+      phone: `+${reportPhone}`,
       channel: 'WhatsApp',
       category: 'Cek Saldo RFID',
-      inbound: 'Assalamu\'alaikum, cek saldo kartu RFID Fauzi?',
-      outbound: 'Wa\'alaikumsalam Ibu Fatimah. Saldo kartu RFID Fauzi adalah Rp 75.000 (Limit harian Rp 25.000).',
+      inbound: `Assalamu'alaikum, cek saldo kartu RFID ${reportSantriName}?`,
+      outbound: `Wa'alaikumsalam ${reportWaliName}. Saldo kartu RFID ${reportSantriName} adalah Rp ${reportSaldo} (Limit harian Rp 25.000).`,
       status: 'Read',
       handling: 'Otonom',
       latency: '240 ms',

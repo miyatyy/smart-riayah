@@ -951,6 +951,36 @@ app.delete('/api/evaluasi/:id', async (req, res) => {
 // -------------------------------------------------------------------------------------
 // 7. REST API MODUL SMART PERMIT (FLUTTER / MOBILE COMPATIBLE)
 // -------------------------------------------------------------------------------------
+async function resolveDynamicWaliName(santriId) {
+  try {
+    const { data: profileWali, error: profileErr } = await supabaseAdmin
+      .from('profiles')
+      .select('nama_lengkap, roles!inner(nama_role)')
+      .eq('roles.nama_role', 'walisantri')
+      .limit(1)
+      .maybeSingle();
+
+    if (!profileErr && profileWali?.nama_lengkap) {
+      return `${profileWali.nama_lengkap} (Wali)`;
+    }
+
+    if (santriId) {
+      const { data: santriRow, error: santriErr } = await supabaseAdmin
+        .from('santri')
+        .select('nama_wali')
+        .eq('id', santriId)
+        .maybeSingle();
+
+      if (!santriErr && santriRow?.nama_wali) {
+        return `${santriRow.nama_wali} (Wali)`;
+      }
+    }
+  } catch (err) {
+    console.warn('⚠️ [Permits] Gagal mengambil nama wali dinamis dari Supabase:', err?.message || err);
+  }
+  return 'Wali Santri';
+}
+
 let inMemoryPermits = [
   {
     id: 'PRM-001',
@@ -959,7 +989,7 @@ let inMemoryPermits = [
     santriNama: 'Ahmad Fauzi',
     kategori: 'Pesiar',
     keperluan: 'Beli kitab kuning dan keperluan asrama di kota',
-    penjemput: 'Ibu Fatimah Az-Zahra (Wali)',
+    penjemput: 'Wali Santri',
     waktuKeluarRencana: new Date().toISOString(),
     batasKembali: new Date(Date.now() + 4 * 3600000).toISOString(),
     status: 'APPROVED',
@@ -980,8 +1010,19 @@ let inMemoryPermits = [
   }
 ];
 
-app.get('/api/permits', (req, res) => {
+resolveDynamicWaliName('S-101')
+  .then((resolvedName) => {
+    if (inMemoryPermits[0]?.id === 'PRM-001' && inMemoryPermits[0]?.penjemput === 'Wali Santri') {
+      inMemoryPermits[0].penjemput = resolvedName;
+    }
+  })
+  .catch(() => {});
+
+app.get('/api/permits', async (req, res) => {
   const { status, santriId } = req.query;
+  if (inMemoryPermits[0]?.id === 'PRM-001' && inMemoryPermits[0]?.penjemput === 'Wali Santri') {
+    inMemoryPermits[0].penjemput = await resolveDynamicWaliName(inMemoryPermits[0].santriId);
+  }
   let list = [...inMemoryPermits];
   if (status) list = list.filter(p => p.status === status);
   if (santriId) list = list.filter(p => p.santriId === santriId);
