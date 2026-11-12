@@ -7,17 +7,41 @@ import { createClient } from '@supabase/supabase-js';
 import { broadcastToSupabaseRealtime } from './supabaseBroadcaster.js';
 import { saveAiDocument } from '../mongo.js';
 
-const supabaseUrl =
-  process.env.SUPABASE_URL ||
-  process.env.VITE_SUPABASE_URL ||
-  process.env.NEXT_PUBLIC_SUPABASE_URL ||
-  '';
-const supabaseKey =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.VITE_SUPABASE_ANON_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-  process.env.SUPABASE_ANON_KEY ||
-  '';
+function resolveSupabaseUrl() {
+  const candidates = [
+    process.env.SUPABASE_URL,
+    process.env.VITE_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+  ];
+  for (const raw of candidates) {
+    const cleaned = String(raw || '').trim().replace(/^['"]|['"]$/g, '');
+    if (!cleaned) continue;
+    try {
+      const parsed = new URL(cleaned);
+      if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+        return cleaned;
+      }
+    } catch {}
+  }
+  return '';
+}
+
+function resolveSupabaseKey() {
+  const candidates = [
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    process.env.VITE_SUPABASE_ANON_KEY,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+    process.env.SUPABASE_ANON_KEY,
+  ];
+  for (const raw of candidates) {
+    const cleaned = String(raw || '').trim().replace(/^['"]|['"]$/g, '');
+    if (cleaned) return cleaned;
+  }
+  return '';
+}
+
+const supabaseUrl = resolveSupabaseUrl();
+const supabaseKey = resolveSupabaseKey();
 
 const createFallbackSupabaseStub = () => ({
   from: () => ({
@@ -37,11 +61,16 @@ const createFallbackSupabaseStub = () => ({
   }),
 });
 
-const supabase = (supabaseUrl && supabaseKey)
-  ? createClient(supabaseUrl, supabaseKey, {
+let supabase = createFallbackSupabaseStub();
+if (supabaseUrl && supabaseKey) {
+  try {
+    supabase = createClient(supabaseUrl, supabaseKey, {
       auth: { persistSession: false, autoRefreshToken: false },
-    })
-  : createFallbackSupabaseStub();
+    });
+  } catch (err) {
+    console.warn('⚠️ [AI Responder] Gagal init Supabase client, pakai fallback stub:', err?.message || err);
+  }
+}
 
 const DEFAULT_FONNTE_TOKEN = (process.env.FONNTE_TOKEN || process.env.VITE_FONNTE_TOKEN || '').trim();
 

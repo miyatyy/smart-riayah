@@ -2,20 +2,49 @@ import { generateAutonomousReplyWithContext, isPhoneInManualTakeover, setManualT
 import { broadcastToSupabaseRealtime } from '../../server/whatsapp-gateway/supabaseBroadcaster.js';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl =
-  process.env.SUPABASE_URL ||
-  process.env.VITE_SUPABASE_URL ||
-  process.env.NEXT_PUBLIC_SUPABASE_URL ||
-  '';
-const supabaseKey =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.VITE_SUPABASE_ANON_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-  process.env.SUPABASE_ANON_KEY ||
-  '';
-const supabase = (supabaseUrl && supabaseKey)
-  ? createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } })
-  : { from: () => ({ insert: async () => ({}) }) };
+function resolveSupabaseUrl() {
+  const candidates = [
+    process.env.SUPABASE_URL,
+    process.env.VITE_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+  ];
+  for (const raw of candidates) {
+    const cleaned = String(raw || '').trim().replace(/^['"]|['"]$/g, '');
+    if (!cleaned) continue;
+    try {
+      const parsed = new URL(cleaned);
+      if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+        return cleaned;
+      }
+    } catch {}
+  }
+  return '';
+}
+
+function resolveSupabaseKey() {
+  const candidates = [
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    process.env.VITE_SUPABASE_ANON_KEY,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+    process.env.SUPABASE_ANON_KEY,
+  ];
+  for (const raw of candidates) {
+    const cleaned = String(raw || '').trim().replace(/^['"]|['"]$/g, '');
+    if (cleaned) return cleaned;
+  }
+  return '';
+}
+
+const supabaseUrl = resolveSupabaseUrl();
+const supabaseKey = resolveSupabaseKey();
+let supabase = { from: () => ({ insert: async () => ({}) }) };
+if (supabaseUrl && supabaseKey) {
+  try {
+    supabase = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
+  } catch (err) {
+    console.warn('⚠️ [Telegram Webhook] Gagal init Supabase client:', err?.message || err);
+  }
+}
 
 async function safeLog(senderName, senderRole, text, reaction) {
   try {
