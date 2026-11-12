@@ -12,6 +12,7 @@ import {
   normalizePhone,
   resolveWaliIdentity,
   isPriorityNurmiyatyPhone,
+  saveBookingToSystem,
 } from '../../server/whatsapp-gateway/aiAutonomousResponder.js';
 import { resolveWaliAddressing } from '../../src/utils/phoneUtils.js';
 
@@ -170,6 +171,9 @@ export default async function handler(req, res) {
       jam_keluar_aktual: null,
       created_at: new Date().toISOString()
     };
+
+    // Simpan ke sistem antrean Admin Ri'ayah + Realtime Broadcast + MongoDB log
+    await saveBookingToSystem(bookingRecord);
 
     // 3. Kirim WhatsApp Auto-Reply via Fonnte jika nomor tujuan tersedia
     let waSendResult = null;

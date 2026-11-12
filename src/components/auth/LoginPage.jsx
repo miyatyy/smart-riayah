@@ -40,6 +40,7 @@ const ROLE_ROUTES = {
   poskestren: '/dashboard/medical',
   walisantri: '/dashboard/wali',
   mudir: '/dashboard/mudir',
+  osis: '/dashboard/osis',
 };
 
 const DB_TO_APP_ROLE = {
@@ -50,6 +51,7 @@ const DB_TO_APP_ROLE = {
   poskestren: 'poskestren',
   walisantri: 'parent',
   mudir: 'kyai',
+  osis: 'osis',
 };
 
 const DEMO_ACCOUNTS = [
@@ -135,6 +137,18 @@ const DEMO_ACCOUNTS = [
     password: 'Riayah2026!',
     nama: 'K.H. Ahmad Dahlan, Lc., M.A.',
     jabatan: "Mudir Ma'had & Pengasuh Pesantren",
+    avatar: '/images/avatar_santri_putra.jpg',
+  },
+  {
+    id: 'ACC-08',
+    role: 'osis',
+    appRole: 'osis',
+    route: '/dashboard/osis',
+    roleName: 'Pengurus OSIS (Kamtib & Ubudiyah)',
+    email: 'osis@darululum.sch.id',
+    password: 'Riayah2026!',
+    nama: 'M. Farhan & Nur Laila (Presidium OSIS)',
+    jabatan: 'Kamtib & Ubudiyah Putra/Putri',
     avatar: '/images/avatar_santri_putra.jpg',
   },
 ];
@@ -260,7 +274,9 @@ export default function LoginPage() {
       setLoginRoleTarget(null);
 
       sound.playSuccess();
-      window.location.assign(targetRoute);
+      try {
+        window.history.pushState({}, '', targetRoute);
+      } catch {}
     } catch (err) {
       setErrorMessage(err?.message || 'Gagal melakukan autentikasi dengan Supabase Auth.');
       sound.playAccessDenied();
@@ -284,6 +300,7 @@ export default function LoginPage() {
     poskestren: HeartPulse,
     walisantri: Users,
     mudir: TrendingUp,
+    osis: Shield,
   };
 
   return (

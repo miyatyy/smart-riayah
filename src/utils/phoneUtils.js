@@ -148,14 +148,14 @@ function detectGenderFromSelfText(text) {
   if (!s) return null;
 
   const explicitMale =
-    /\b(?:saya|aku|ana|sy|panggil(?:\s+saya)?|sebut(?:\s+saya)?|ini)\s+(?:pak|bapak|ayah|abi|abah|papa|om|mas)\b/i.test(s) ||
+    /\b(?:saya|aku|ana|sy|panggil(?:\s+saya|\s+saja)?|sebut(?:\s+saya|\s+saja)?|ini)\s+(?:pak|bapak|ayah|abi|abah|papa|om|mas)\b/i.test(s) ||
     /\b(?:ayahnya|bapaknya|abinya|walinya\s+(?:pak|bapak))\b/i.test(s) ||
-    /\b(?:panggil|pangil)\s+pak\b/i.test(s);
+    /\b(?:panggil|pangil)(?:\s+saja)?\s+(?:pak|bapak)\b/i.test(s);
 
   const explicitFemale =
-    /\b(?:saya|aku|ana|sy|panggil(?:\s+saya)?|sebut(?:\s+saya)?|ini)\s+(?:bu|ibu|umi|ummi|mama|bunda|emak|mbak|tante)\b/i.test(s) ||
+    /\b(?:saya|aku|ana|sy|panggil(?:\s+saya|\s+saja)?|sebut(?:\s+saya|\s+saja)?|ini)\s+(?:bu|buk|ibu|umi|ummi|mama|bunda|emak|mbak|tante)\b/i.test(s) ||
     /\b(?:ibunya|umminya|uminya|bundanya|mamanya|walinya\s+(?:bu|ibu))\b/i.test(s) ||
-    /\b(?:panggil|pangil)\s+(?:bu|ibu)\b/i.test(s);
+    /\b(?:panggil|pangil)(?:\s+saja)?\s+(?:bu|buk|ibu)\b/i.test(s);
 
   if (explicitFemale && !explicitMale) return 'female';
   if (explicitMale && !explicitFemale) return 'male';

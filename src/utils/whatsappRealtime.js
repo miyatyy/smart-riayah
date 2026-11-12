@@ -30,6 +30,23 @@ export function getWhatsAppRealtimeChannel() {
   return realtimeChannel;
 }
 
+async function waitForChannelJoined(channel, timeoutMs = 2000) {
+  if (!channel) return false;
+  if (channel.state === 'joined') return true;
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const timer = setInterval(() => {
+      if (channel.state === 'joined') {
+        clearInterval(timer);
+        resolve(true);
+      } else if (Date.now() - start >= timeoutMs) {
+        clearInterval(timer);
+        resolve(false);
+      }
+    }, 60);
+  });
+}
+
 /**
  * Mengirimkan event broadcast ke channel 'whatsapp-room' di Supabase
  *
@@ -40,6 +57,7 @@ export function getWhatsAppRealtimeChannel() {
 export async function sendWhatsAppBroadcast(event, payload) {
   try {
     const channel = getWhatsAppRealtimeChannel();
+    await waitForChannelJoined(channel, 2000);
     await channel.send({
       type: 'broadcast',
       event,

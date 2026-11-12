@@ -161,10 +161,10 @@ export default function MusyrifDashboard() {
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
         <div className="scroll-row gap-2">
           {[
-            { id: 'approval', label: `Antrean Otorisasi (${pendingPermits.length})`, icon: ShieldCheck },
+            { id: 'active_permits', label: `📋 Papan Realtime & Log Book (${permits.length})`, icon: ClipboardList },
+            { id: 'approval', label: `👁️ Monitor Antrean (Baca Saja) (${pendingPermits.length})`, icon: ShieldCheck },
             { id: 'ai_santri', label: '🤖 AI Evaluasi Harian Santri', icon: Sparkles },
             { id: 'alarm_monitor', label: `🔔 Pantau & Alarm Pengingat (${warningPermitsCount})`, icon: BellRing },
-            { id: 'active_permits', label: `📋 Papan Realtime & Log Book (${permits.length})`, icon: ClipboardList },
             { id: 'points', label: 'Buku Induk Poin', icon: Award },
             { id: 'kamar', label: 'Kamar Asrama', icon: Home },
             { id: 'rfid_management', label: '💳 Master Kartu RFID', icon: CreditCard }

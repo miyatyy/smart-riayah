@@ -41,11 +41,11 @@ export default function LandingPage() {
       id: 'admin_riayah',
       roleNum: '02',
       title: 'Admin Ri\'ayah',
-      subtitle: 'Setting Builder Asrama & RFID',
-      desc: 'Pengaturan kuota kapasitas kamar asrama putra & putri, onboarding santri baru, serta layanan penggantian kartu RFID hilang (revocation).',
+      subtitle: 'Otorisasi Izin, Approval & Setting Builder',
+      desc: 'Pusat persetujuan (approval) surat izin santri & kunjungan wali hari kerja, pengaturan kuota kamar asrama, onboarding santri, serta manajemen kartu RFID.',
       icon: Wrench,
       iconColor: 'bg-emerald-50 text-emerald-600 border-emerald-200',
-      badge: 'Setting Builder',
+      badge: 'Otorisasi & Approval',
       badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200',
       hoverBorder: 'hover:border-emerald-400'
     },
@@ -65,11 +65,11 @@ export default function LandingPage() {
       id: 'musyrif',
       roleNum: '04',
       title: 'Musyrif / Musyrifah',
-      subtitle: 'Otorisasi Izin & Pembinaan Ri\'ayah',
-      desc: 'Verifikasi multi-tier permohonan izin santri/santriwati, pencatatan buku poin adab & pelanggaran, serta monitoring kamar asrama.',
+      subtitle: 'Pembinaan Adab & Monitoring Kamar',
+      desc: 'Monitoring status izin santri (mode baca), pencatatan buku poin adab & pelanggaran, alarm pengingat batas waktu, serta inspeksi kamar asrama.',
       icon: ShieldCheck,
       iconColor: 'bg-teal-50 text-teal-600 border-teal-200',
-      badge: 'Otorisasi Izin',
+      badge: 'Pembinaan Asrama',
       badgeColor: 'bg-teal-50 text-teal-700 border-teal-200',
       hoverBorder: 'hover:border-teal-400'
     },
@@ -108,13 +108,25 @@ export default function LandingPage() {
       badge: 'Decision Support',
       badgeColor: 'bg-amber-50 text-amber-700 border-amber-200',
       hoverBorder: 'hover:border-amber-400'
+    },
+    {
+      id: 'osis',
+      roleNum: '08',
+      title: 'Pengurus OSIS',
+      subtitle: 'Posko Kamtib & Ubudiyah Pondok',
+      desc: 'Input catatan kedisiplinan, pelanggaran tata tertib, dan apresiasi prestasi santri se-pondok untuk diverifikasi oleh Admin Ri\'ayah.',
+      icon: ShieldCheck,
+      iconColor: 'bg-teal-50 text-teal-600 border-teal-200',
+      badge: 'Posko OSIS',
+      badgeColor: 'bg-teal-50 text-teal-700 border-teal-200',
+      hoverBorder: 'hover:border-teal-400'
     }
   ];
 
   const pillarFeatures = [
     {
       title: 'Multi-Tier Digital Permit',
-      desc: 'Alur persetujuan terstruktur dari Wali Santri -> Musyrif Asrama -> Pos Keamanan Gate. Tidak ada lagi surat izin kertas yang mudah tercecer atau dipalsukan.',
+      desc: 'Alur persetujuan terstruktur dari Wali Santri -> Admin Ri\'ayah -> Pos Keamanan Gate. Tidak ada lagi surat izin kertas yang mudah tercecer atau dipalsukan.',
       icon: ShieldCheck,
       color: 'text-emerald-700 bg-emerald-50 border-emerald-200'
     },
@@ -175,7 +187,7 @@ export default function LandingPage() {
               className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition"
             >
               <Users className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Daftar 7 Role</span>
+              <span>Daftar 8 Role</span>
             </button>
 
             <button
@@ -242,7 +254,7 @@ export default function LandingPage() {
                   className="w-full sm:w-auto px-5 py-3 rounded-xl font-semibold text-xs sm:text-sm bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 flex items-center justify-center gap-2 transition shadow-xs"
                 >
                   <Layers className="w-4 h-4 text-emerald-600" />
-                  <span>Pilih 7 Hak Akses Role</span>
+                  <span>Pilih 8 Hak Akses Role</span>
                 </button>
               </div>
 
@@ -376,7 +388,7 @@ export default function LandingPage() {
                 <span>PILIH ROLE PENGGUNA</span>
               </div>
               <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-                Portal Akses Pengguna (7 Hak Akses Role)
+                Portal Akses Pengguna (8 Hak Akses Role)
               </h2>
               <p className="text-slate-500 text-xs sm:text-sm mt-1 max-w-xl">
                 Klik salah satu kartu role di bawah ini untuk langsung masuk ke Halaman Login dengan kredensial yang disesuaikan.

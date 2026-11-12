@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient.js';
 import { normalizePhone } from './phoneUtils.js';
+import { sendWhatsAppBroadcast } from './whatsappRealtime.js';
 
 /**
  * ============================================================================
@@ -751,12 +752,7 @@ export async function syncBookingStatusToSupabase(booking, reaction = 'VISIT_APP
     }
 
     // Broadcast across realtime channel 'whatsapp-room'
-    const channel = supabase.channel('whatsapp-room');
-    await channel.send({
-      type: 'broadcast',
-      event: 'whatsapp.visit_booking_updated',
-      payload: booking
-    });
+    await sendWhatsAppBroadcast('whatsapp.visit_booking_updated', booking);
     return { success: true };
   } catch (err) {
     console.warn('⚠️ [Supabase] syncBookingStatusToSupabase warning:', err.message);

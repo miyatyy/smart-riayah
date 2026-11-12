@@ -33,6 +33,7 @@ import {
   Sliders
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { resolveWaliAddressing } from '../../utils/phoneUtils';
 import { sound } from '../../utils/audio';
 import { getSantriActivityAnalytics } from '../../data/santriActivityData';
 import { 
@@ -316,7 +317,8 @@ _Dianalisis secara real-time via DeepSeek AI Agent_`;
   // Send WhatsApp to Wali Santri
   const handleSendWhatsAppToParent = () => {
     const data = evaluationResult || defaultAi;
-    const msg = `*Assalamu'alaikum Wr. Wb. Bapak/Ibu ${activeSantri.wali.nama}*
+    const waliAddr = resolveWaliAddressing(activeSantri.wali?.nama || 'Wali Santri', '', [], { namaWali: activeSantri.wali?.nama });
+    const msg = `*Assalamu'alaikum Wr. Wb. ${waliAddr.panggilan}*
 
 Berikut adalah ringkasan evaluasi otomatis *AI Agent Smart Riayah (DeepSeek Engine)* untuk ananda *${activeSantri.nama}* di Pondok Pesantren Modern Darul Ulum periode ${selectedMonth}:
 

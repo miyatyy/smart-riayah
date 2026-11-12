@@ -55,7 +55,7 @@ export default function ExpressPermitKiosk() {
     catatan: 'Diterbitkan via Kiosk Izin Cepat Mandiri'
   });
 
-  // Custom duration states for Musyrif/ah
+  // Custom duration states for Admin Ri'ayah
   const [durationMode, setDurationMode] = useState('PRESET'); // 'PRESET' | 'CUSTOM_UNIT' | 'EXACT_DATETIME'
   const [customValue, setCustomValue] = useState(4);
   const [customUnit, setCustomUnit] = useState('JAM'); // 'MENIT' | 'JAM' | 'HARI'
@@ -575,7 +575,7 @@ export default function ExpressPermitKiosk() {
                   />
                 </div>
 
-                {/* 3. Durasi & Batas Waktu Kembali (Full Custom Musyrif/ah) */}
+                {/* 3. Durasi & Batas Waktu Kembali (Full Custom Admin Ri'ayah) */}
                 <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4 space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-200">
                     <div>
@@ -583,7 +583,7 @@ export default function ExpressPermitKiosk() {
                         3. Durasi Izin & Batas Waktu Kembali:
                       </label>
                       <span className="text-[11px] text-slate-500">
-                        Pilih preset pondok atau atur durasi bebas kustom oleh Musyrif/ah
+                        Pilih preset pondok atau atur durasi bebas kustom oleh Admin Ri'ayah
                       </span>
                     </div>
 

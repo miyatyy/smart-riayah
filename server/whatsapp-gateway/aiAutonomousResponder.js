@@ -932,9 +932,12 @@ function parseScheduleDetailsFromText(combinedText, rtc) {
     if (!endPeriod && startMatch?.[3]) endPeriod = startMatch[3];
     jamSelesai = to24h(endMatch[1], endMatch[2] || '00', endPeriod);
   } else {
-    const [sh, sm] = jamMulai.split(':').map(Number);
-    const eh = Math.min(23, (sh || 14) + 1);
-    jamSelesai = `${String(eh).padStart(2, '0')}:${String(sm || 30).padStart(2, '0')}`;
+    const [sh, sm] = jamMulai.split(':').map((n) => parseInt(n, 10));
+    const startMinutes = (Number.isFinite(sh) ? sh : 14) * 60 + (Number.isFinite(sm) ? sm : 0);
+    const endMinutes = Math.min(23 * 60 + 59, startMinutes + 90);
+    const eh = Math.floor(endMinutes / 60);
+    const em = endMinutes % 60;
+    jamSelesai = `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}`;
   }
 
   let titipan = '-';
@@ -1250,10 +1253,10 @@ ATURAN BOOKING KUNJUNGAN:
 
         if (reply) {
           let bookingSaved = false;
-          const bookingMatch = reply.match(/<!--BOOKING_DATA:(.*?)-->/s);
+          const bookingMatch = reply.match(/<!--\s*BOOKING_DATA\s*:\s*(\{[\s\S]*?\})\s*-->/i);
           if (bookingMatch && bookingMatch[1]) {
             try {
-              const bData = JSON.parse(bookingMatch[1]);
+              const bData = JSON.parse(bookingMatch[1].trim());
               const rawBookingSantri = String(bData.nama_santri || '').trim();
               const rawBookingPenjenguk = String(bData.nama_penjenguk || '').trim();
 
@@ -1284,25 +1287,33 @@ ATURAN BOOKING KUNJUNGAN:
               console.warn('Booking JSON parse error:', pErr.message);
             }
 
-            reply = reply.replace(/<!--BOOKING_DATA:(.*?)-->/s, '').trim();
+            reply = reply.replace(/<!--\s*BOOKING_DATA\s*:[\s\S]*?-->/gi, '').trim();
           }
 
-          // Safeguard multi-turn: jika DeepSeek menjawab konfirmasi booking tanpa tag <!--BOOKING_DATA:...-->
-          if (!bookingSaved && (historyHasVisitContext || /jenguk|kunjung|sambang|besuk/i.test(incomingText))) {
-            const replyIndicatesBooked =
-              /sudah\s+(?:kami\s+)?(?:catat|terima|diteruskan|disetujui|diajukan)|menunggu\s+(?:persetujuan|approval)|admin\s+ri'ayah|gate\s+pass|gp-du-/i.test(reply);
-            if (replyIndicatesBooked || isConfirmationMessage(textLower)) {
-              const parsed = parseScheduleDetailsFromText(`${historyTextJoined} ${incomingText} ${reply}`, rtc);
-              await persistNormalizedBooking(
-                {
-                  ...parsed,
-                  nama_santri: waliData.santriNama !== 'Ananda' ? waliData.santriNama : 'Santri',
-                  kelas: waliData.kelas,
-                  nama_penjenguk: waliData.namaWali,
-                },
-                'WHATSAPP_AI_RECOVERY'
-              );
-            }
+          // Safeguard multi-turn (termasuk cold-start serverless saat recentHistory kosong):
+          // Jika wali konfirmasi ("oke/konfirmasi booking/iya jadi") ATAU balasan AI menyatakan booking dicatat/diteruskan ke Admin Ri'ayah
+          const replyIndicatesBooked =
+            /sudah\s+(?:kami\s+)?(?:catat|terima|diteruskan|disetujui|diajukan|diproses)|menunggu\s+(?:persetujuan|approval)|admin\s+ri'?ayah|gate\s+pass|gp-du-/i.test(reply);
+          const textHasBookingSignal =
+            /jenguk|kunjung|sambang|besuk|tengok|booking|jadwal/i.test(incomingText);
+          const isExplicitBookingConfirmation =
+            isConfirmationMessage(textLower) &&
+            (historyHasVisitContext || textHasBookingSignal || replyIndicatesBooked);
+
+          if (
+            !bookingSaved &&
+            (replyIndicatesBooked || isExplicitBookingConfirmation || (historyHasVisitContext && (textHasBookingSignal || isConfirmationMessage(textLower))))
+          ) {
+            const parsed = parseScheduleDetailsFromText(`${historyTextJoined} ${incomingText} ${reply}`, rtc);
+            await persistNormalizedBooking(
+              {
+                ...parsed,
+                nama_santri: waliData.santriNama !== 'Ananda' ? waliData.santriNama : 'Santri',
+                kelas: waliData.kelas,
+                nama_penjenguk: waliData.namaWali,
+              },
+              'WHATSAPP_AI_RECOVERY'
+            );
           }
 
           reply = sanitizeAutonomousReplyForPhone(reply, cleanPhone, waliData, addr);
@@ -1344,14 +1355,15 @@ ATURAN BOOKING KUNJUNGAN:
     return { reply: cleanReply, waliData, cleanPhone, addressing: addr };
   };
 
-  // A. INTENT KUNJUNGAN / SAMBANGAN / JENGUK (termasuk kelanjutan multi-turn & konfirmasi!)
+  // A. INTENT KUNJUNGAN / SAMBANGAN / JENGUK / BOOKING (termasuk kelanjutan multi-turn & cold-start konfirmasi)
   const hasVisitKeyword =
     textLower.includes('jenguk') ||
     textLower.includes('kunjung') ||
     textLower.includes('sambang') ||
     textLower.includes('besuk') ||
     textLower.includes('tengok') ||
-    textLower.includes('ketemu');
+    textLower.includes('ketemu') ||
+    textLower.includes('booking');
 
   const hasDayMention =
     /\b(senin|selasa|rabu|kamis|jumat|jum'at|sabtu|minggu|ahad|besok|lusa|hari ini)\b/i.test(textLower);
@@ -1363,7 +1375,8 @@ ATURAN BOOKING KUNJUNGAN:
 
   const isVisitingFlow =
     hasVisitKeyword ||
-    (historyHasVisitContext && (hasDayMention || hasTimeMention || isConfirmationTurn));
+    (historyHasVisitContext && (hasDayMention || hasTimeMention || isConfirmationTurn)) ||
+    (isConfirmationTurn && /\b(booking|konfirmasi|jadwal)\b/i.test(textLower));
 
   if (isVisitingFlow) {
     // KASUS 1: Baru bilang mau jenguk tanpa rincian hari/waktu & bukan konfirmasi jadwal sebelumnya

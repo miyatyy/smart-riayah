@@ -948,12 +948,12 @@ export default function RealtimePermitBoard() {
               {/* KOLOM TANDA TANGAN 3 PEJABAT */}
               <div className="grid grid-cols-3 gap-4 pt-8 text-center text-xs font-sans mt-4 border-t border-slate-300">
                 <div>
-                  <span className="text-slate-500 block text-[10px]">Mengetahui,</span>
-                  <b className="text-slate-800 block text-[11px] mt-0.5">Musyrif / Pengasuh Asrama</b>
+                  <span className="text-slate-500 block text-[10px]">Mengetahui &amp; Menyetujui,</span>
+                  <b className="text-slate-800 block text-[11px] mt-0.5">Admin Ri&apos;ayah / Kepala Biro Pengasuhan</b>
                   <div className="h-16 flex items-center justify-center">
                     <span className="text-[10px] text-slate-300 italic">[Tanda Tangan & Stempel]</span>
                   </div>
-                  <b className="underline text-[11px] text-slate-900 block">Ust. M. Syukron, M.Pd.</b>
+                  <b className="underline text-[11px] text-slate-900 block">Ust. Drs. H. Mustofa</b>
                   <span className="text-[10px] text-slate-500 font-mono">NIP: 19840512 201001 1 002</span>
                 </div>
 
@@ -1075,10 +1075,10 @@ export default function RealtimePermitBoard() {
         {/* TANDA TANGAN CETAK */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', textAlign: 'center', marginTop: '30px', pageBreakInside: 'avoid', fontFamily: 'sans-serif', fontSize: '9pt' }}>
           <div>
-            <span>Mengetahui,</span><br />
-            <b>Musyrif / Pengasuh Asrama</b>
+            <span>Mengetahui &amp; Menyetujui,</span><br />
+            <b>Admin Ri&apos;ayah / Kepala Biro Pengasuhan</b>
             <div style={{ height: '55px' }}></div>
-            <b style={{ textDecoration: 'underline' }}>Ust. M. Syukron, M.Pd.</b><br />
+            <b style={{ textDecoration: 'underline' }}>Ust. Drs. H. Mustofa</b><br />
             <span style={{ fontSize: '8pt', fontFamily: 'monospace' }}>NIP: 19840512 201001 1 002</span>
           </div>
 

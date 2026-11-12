@@ -131,7 +131,7 @@ export default async function handler(req, res) {
       try {
         await setManualTakeover(String(chatId), false);
       } catch (e) {}
-      aiReply = `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${senderName}.\n\nTerima kasih telah menghubungi layanan Pesantren Modern Darul Ulum. Ada yang bisa kami bantu? Silakan sampaikan keperluannya ya Bapak/Ibu. 🙏`;
+      aiReply = `Wa'alaikumsalam Warahmatullahi Wabarakatuh, ${senderName}.\n\nTerima kasih telah menghubungi layanan Pesantren Modern Darul Ulum. Ada yang bisa kami bantu? Silakan sampaikan keperluannya ya. 🙏`;
     } else {
       // 3. Cek apakah percakapan sedang diambil alih manual oleh Admin
       let inTakeover = false;

@@ -600,8 +600,8 @@ export default function RealtimeGateLogsManager() {
                   </div>
 
                   <div>
-                    <p className="text-slate-500 mb-1">Mengetahui Verifikasi:</p>
-                    <p className="font-bold text-slate-800">Musyrif Pengasuhan Asrama</p>
+                    <p className="text-slate-500 mb-1">Mengetahui Monitoring Asrama:</p>
+                    <p className="font-bold text-slate-800">Koordinator Musyrif Asrama</p>
                     <div className="h-16 flex items-end justify-center">
                       <span className="font-bold border-b border-slate-800 px-4 pb-0.5">( Ust. M. Syukron, M.Pd. )</span>
                     </div>
@@ -725,8 +725,8 @@ export default function RealtimeGateLogsManager() {
             </div>
 
             <div style={{ width: '30%' }}>
-              <p style={{ margin: 0 }}>Mengetahui Verifikasi:</p>
-              <p style={{ margin: '2px 0', fontWeight: 'bold' }}>Musyrif Pengasuhan Asrama</p>
+              <p style={{ margin: 0 }}>Mengetahui Monitoring Asrama:</p>
+              <p style={{ margin: '2px 0', fontWeight: 'bold' }}>Koordinator Musyrif Asrama</p>
               <div style={{ height: '50px' }}></div>
               <p style={{ margin: 0, fontWeight: 'bold', borderBottom: '1px solid #000', display: 'inline-block', padding: '0 10px' }}>
                 ( Ust. M. Syukron, M.Pd. )

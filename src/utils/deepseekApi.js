@@ -17,13 +17,13 @@ export const ROLE_PERSPECTIVES = {
   },
   musyrif: {
     title: 'Musyrif Asrama',
-    subtitle: 'Kedisiplinan Shalat Subuh, Pembinaan Kamar & Izin Pesiar',
-    focus: 'Kedisiplinan shalat fardhu di masjid terutama Subuh, keterlambatan bangun, kepatuhan kamar, pertimbangan kelayakan izin pesiar/pulang, dan bimbingan ta\'dib.'
+    subtitle: 'Kedisiplinan Shalat Subuh, Pembinaan Kamar & Monitoring Adab',
+    focus: 'Kedisiplinan shalat fardhu di masjid terutama Subuh, keterlambatan bangun, kepatuhan kamar, catatan kelayakan adab untuk rekomendasi Admin Ri\'ayah, dan bimbingan ta\'dib.'
   },
   admin_riayah: {
     title: 'Admin Ri\'ayah',
-    subtitle: 'Audit Kepatuhan Sistem, Tata Tertib & RFID POS',
-    focus: 'Kepatuhan aturan pondok, konsistensi tap turnstile gerbang & kantin, kontrol limit transaksi RFID, status administrasi santri.'
+    subtitle: 'Otorisasi Izin, Approval Kunjungan, Tata Tertib & RFID POS',
+    focus: 'Otorisasi persetujuan izin keluar/pulang & kunjungan santri, kepatuhan aturan pondok, konsistensi tap turnstile gerbang & kantin, kontrol limit transaksi RFID, status administrasi santri.'
   },
   poskestren: {
     title: 'Petugas Poskestren (Klinik)',
@@ -174,7 +174,7 @@ Struktur JSON yang WAJIB dipatuhi:
     }
   },
   "roleSpecificInsight": {
-    "badge": "<String label pendek untuk role ini, misal: 'Rekomendasi Musyrif' atau 'Saran Wali Santri' atau 'Indeks Medis'>",
+    "badge": "<String label pendek untuk role ini, misal: 'Catatan Pembinaan Musyrif' atau 'Otorisasi Admin Riayah' atau 'Saran Wali Santri' atau 'Indeks Medis'>",
     "highlight": "<String 1-2 kalimat temuan kunci paling esensial untuk role ${perspective.title}>",
     "actionVerdict": "<String status aksi, misal: 'IZIN LAYAK DIBERIKAN' / 'PERLU PENDAMPINGAN SUBUH' / 'APRESIASI TELADAN' / 'MONITOR POLA KANTIN'>"
   },

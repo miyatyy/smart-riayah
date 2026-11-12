@@ -816,11 +816,12 @@ export const AppProvider = ({ children }) => {
     });
 
     if (targetChat && (targetChat.phone || targetChat.sender_phone)) {
+      const addr = resolveWaliAddressing(targetChat.name || 'Wali Santri', replyText, [], { namaWali: targetChat.name });
       sendWhatsAppNotification(
         targetChat.name,
         targetChat.sender_phone || targetChat.phone,
         'ADMIN_MANUAL_REPLY',
-        `*[PESANTREN MODERN DARUL ULUM - BALASAN ADMIN]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu ${targetChat.name}.\n\n${replyText.trim()}\n\n_Pesan ini dikirim langsung oleh Pengasuhan/Admin Ri'ayah Pondok._`
+        `*[PESANTREN MODERN DARUL ULUM - BALASAN ADMIN]*\nAssalamu'alaikum Wr. Wb. ${addr.panggilan}.\n\n${replyText.trim()}\n\n_Pesan ini dikirim langsung oleh Pengasuhan/Admin Ri'ayah Pondok._`
       );
     }
 
@@ -1332,13 +1333,34 @@ export const AppProvider = ({ children }) => {
     // 1. Ambil data awal dari Supabase jika tersedia
     loadSupabaseSnapshot();
 
-    // Sinkronkan ulang ketika sesi autentikasi Supabase login / refresh
+    // Validasi sesi Supabase Auth agar token JWT & RLS selalu sinkron
+    supabase.auth.getSession()
+      .then(({ data }) => {
+        if (!isMounted) return;
+        if (!data?.session && localStorage.getItem('sr_is_authenticated') === 'true') {
+          console.warn('⚠️ [Auth] Sesi Supabase Auth belum aktif/kedaluwarsa; mengarahkan ke halaman login agar sinkronisasi RLS berjalan normal.');
+          setIsAuthenticated(false);
+          setCurrentUser(null);
+          setCurrentView('login');
+          try {
+            localStorage.removeItem('sr_is_authenticated');
+            localStorage.removeItem('sr_current_user');
+            localStorage.removeItem('sr_current_view');
+          } catch {}
+        }
+      })
+      .catch(() => {});
+
+    // Sinkronkan ulang ketika sesi autentikasi Supabase login / refresh / logout
     let authSubscription = null;
     try {
       const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
         if (!isMounted) return;
         if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
           loadSupabaseSnapshot();
+        } else if (event === 'SIGNED_OUT') {
+          setIsAuthenticated(false);
+          setCurrentUser(null);
         }
       });
       authSubscription = authListener?.subscription || null;
@@ -2398,11 +2420,12 @@ export const AppProvider = ({ children }) => {
       setGateLogs(prev => [newLog, ...prev]);
       syncGateLogToSupabase(newLog);
 
+      const waliAddr = resolveWaliAddressing(santri.wali?.nama || 'Wali Santri', '', [], { namaWali: santri.wali?.nama });
       sendWhatsAppNotification(
         `${santri.wali?.nama || 'Wali Santri'} (Wali ${santri.nama})`,
         resolveWaliPhone(santri),
         'GATE_EXIT',
-        `Assalamu'alaikum ${santri.wali?.nama || 'Bapak/Ibu Wali'}. PEMBERITAHUAN RESMI: Ananda ${santri.nama} (${santri.kelas}) telah mendapatkan IZIN CEPAT [${newPermit.kategori}] (${newPermit.keperluan}) dan telah melewati Gerbang Utama pada pukul ${jamKeluar}. Batas kembali: ${batasJam}. Terima kasih.`
+        `Assalamu'alaikum ${waliAddr.panggilan}. PEMBERITAHUAN RESMI: Ananda ${santri.nama} (${santri.kelas}) telah mendapatkan IZIN CEPAT [${newPermit.kategori}] (${newPermit.keperluan}) dan telah melewati Gerbang Utama pada pukul ${jamKeluar}. Batas kembali: ${batasJam}. Terima kasih.`
       );
 
       setTimeout(() => {
@@ -2418,11 +2441,12 @@ export const AppProvider = ({ children }) => {
       }, 4500);
 
     } else {
+      const waliAddr = resolveWaliAddressing(santri.wali?.nama || 'Wali Santri', '', [], { namaWali: santri.wali?.nama });
       sendWhatsAppNotification(
         `${santri.wali?.nama || 'Wali Santri'} (Wali ${santri.nama})`,
         resolveWaliPhone(santri),
         'PERMIT_APPROVED',
-        `Assalamu'alaikum ${santri.wali?.nama || 'Bapak/Ibu Wali'}. Pengajuan Izin Cepat [${newPermit.kategori}] (${newPermit.keperluan}) ananda ${santri.nama} telah DISETUJUI (APPROVED) dengan Token [${tokenIzin}]. Kartu RFID ananda kini AKTIF dan siap di-tap di Gerbang Utama.`
+        `Assalamu'alaikum ${waliAddr.panggilan}. Pengajuan Izin Cepat [${newPermit.kategori}] (${newPermit.keperluan}) ananda ${santri.nama} telah DISETUJUI (APPROVED) oleh Admin Ri'ayah dengan Token [${tokenIzin}]. Kartu RFID ananda kini AKTIF dan siap di-tap di Gerbang Utama.`
       );
     }
 
@@ -2575,7 +2599,7 @@ export const AppProvider = ({ children }) => {
             line2: `NAMA: ${santri.nama.toUpperCase()}`,
             line3: `STATUS: ${reasonText}`,
             line4: 'PALANG GERBANG TERKUNCI!',
-            line5: 'HARAP HUBUNGI MUSYRIF',
+            line5: "HUBUNGI ADMIN RI'AYAH",
             ledHijau: false,
             ledMerah: true,
             buzzer: true,
@@ -3014,7 +3038,7 @@ export const AppProvider = ({ children }) => {
           ? new Date(Date.now() - 3600 * 1000).toISOString()
           : new Date(Date.now() + 4 * 3600 * 1000).toISOString(),
         status: initialPermitStatus,
-        musyrifPenyetuju: initialPermitStatus !== 'PENDING' ? 'Ust. M. Syukron, M.Pd.' : null,
+        musyrifPenyetuju: initialPermitStatus !== 'PENDING' ? "Admin Ri'ayah (Ust. Drs. H. Mustofa)" : null,
         waktuApproval: initialPermitStatus !== 'PENDING' ? getIsoNow() : null,
         waktuKeluarAktual: (initialPermitStatus === 'ACTIVE' || initialPermitStatus === 'OVERDUE') ? getIsoNow() : null,
         waktuKembaliAktual: null,
@@ -3185,11 +3209,12 @@ export const AppProvider = ({ children }) => {
       setOledState(STANDBY_OLED);
     }, 4500);
 
+    const waliAddr = resolveWaliAddressing(santri.wali?.nama || 'Wali Santri', '', [], { namaWali: santri.wali?.nama });
     sendWhatsAppNotification(
       `${santri.wali?.nama || 'Wali Santri'} (Wali ${santri.nama})`,
       resolveWaliPhone(santri),
       'WARNING_30M',
-      `⏳ *[PENGINGAT SMART GATE - SISA WAKTU PERIZINAN]*\nAssalamu'alaikum Wr. Wb. Bpk/Ibu Wali dari *${santri.nama}* (${santri.kelas}).\nWaktu perizinan ananda (*${permit.kategori}*) tersisa *${sisaMenit} menit* lagi (Batas kembali: *${batasJam}*).\nMohon ananda segera bersiap kembali ke pesantren tepat waktu untuk menghindari catatan pelanggaran kedisiplinan. Syukron. — Musyrif Asrama Darul Ulum`
+      `⏳ *[PENGINGAT SMART GATE - SISA WAKTU PERIZINAN]*\nAssalamu'alaikum Wr. Wb. ${waliAddr.panggilan} (Wali dari *${santri.nama}* - ${santri.kelas}).\nWaktu perizinan ananda (*${permit.kategori}*) tersisa *${sisaMenit} menit* lagi (Batas kembali: *${batasJam}*).\nMohon ananda segera bersiap kembali ke pesantren tepat waktu untuk menghindari catatan pelanggaran kedisiplinan. Syukron. — Admin Ri'ayah Darul Ulum`
     );
 
     setPermits(prev => prev.map(p => {
@@ -3268,7 +3293,7 @@ export const AppProvider = ({ children }) => {
           waktuKeluarAktual: getIsoNow(),
           batasKembali: newBatas,
           status: 'ACTIVE',
-          musyrifPenyetuju: 'Ust. M. Syukron, M.Pd.',
+          musyrifPenyetuju: "Admin Ri'ayah (Ust. Drs. H. Mustofa)",
           waktuApproval: getIsoNow(),
           tokenIzin: `DU-${targetSantri.nis}-9988`,
           reminderSent: false
@@ -3555,6 +3580,14 @@ export const AppProvider = ({ children }) => {
 
   const logout = () => {
     sound.playBeep();
+    supabase.auth.signOut().catch(() => {});
+    try {
+      localStorage.removeItem('sr_is_authenticated');
+      localStorage.removeItem('sr_current_user');
+      localStorage.removeItem('sr_active_role');
+      localStorage.removeItem('sr_current_view');
+      window.history.replaceState({}, '', '/');
+    } catch {}
     setIsAuthenticated(false);
     setCurrentUser(null);
     setCurrentView('landing');
@@ -4627,11 +4660,12 @@ export const AppProvider = ({ children }) => {
 
       // 3. Kirim notifikasi WA ke nomor wali santri bahwa tamu telah check-in di pos gerbang
       if (updatedBooking.no_wa_penjenguk) {
+        const waliAddr = resolveWaliAddressing(updatedBooking.nama_penjenguk || 'Wali Santri', '', [], { namaWali: updatedBooking.nama_penjenguk });
         sendWhatsAppNotification(
           `${updatedBooking.nama_penjenguk} (Wali ${updatedBooking.nama_santri})`,
           updatedBooking.no_wa_penjenguk,
           'VISIT_CHECKIN_GATE',
-          `🚪 *[CHECK-IN GERBANG PONDOK BERHASIL]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${updatedBooking.nama_penjenguk}*.\n\nSelamat datang di Pesantren Modern Darul Ulum. Verifikasi E-Barcode gate pass untuk ananda *${updatedBooking.nama_santri}* (${updatedBooking.kelas}) telah *BERHASIL DICATAT* di Pos Jaga Satpam pada pukul *${clock.jam_menit} WITA*.\n\n⏳ Batas waktu kunjungan hingga pukul *${updatedBooking.jam_selesai || 'selesai'} WITA*. Mohon menjaga ketertiban dan adab bertamu di lingkungan asrama.`
+          `🚪 *[CHECK-IN GERBANG PONDOK BERHASIL]*\nAssalamu'alaikum Wr. Wb. *${waliAddr.panggilan}*.\n\nSelamat datang di Pesantren Modern Darul Ulum. Verifikasi E-Barcode gate pass untuk ananda *${updatedBooking.nama_santri}* (${updatedBooking.kelas}) telah *BERHASIL DICATAT* di Pos Jaga Satpam pada pukul *${clock.jam_menit} WITA*.\n\n⏳ Batas waktu kunjungan hingga pukul *${updatedBooking.jam_selesai || 'selesai'} WITA*. Mohon menjaga ketertiban dan adab bertamu di lingkungan asrama.`
         );
       }
     }
@@ -4669,11 +4703,12 @@ export const AppProvider = ({ children }) => {
 
       // 2. Kirim pesan terima kasih via WhatsApp ke wali santri
       if (updatedBooking.no_wa_penjenguk) {
+        const waliAddr = resolveWaliAddressing(updatedBooking.nama_penjenguk || 'Wali Santri', '', [], { namaWali: updatedBooking.nama_penjenguk });
         sendWhatsAppNotification(
           `${updatedBooking.nama_penjenguk} (Wali ${updatedBooking.nama_santri})`,
           updatedBooking.no_wa_penjenguk,
           'VISIT_CHECKOUT_GATE',
-          `✅ *[KUNJUNGAN SELESAI / CHECK-OUT]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${updatedBooking.nama_penjenguk}*.\n\nTerima kasih telah mengunjungi ananda *${updatedBooking.nama_santri}* di Pesantren Modern Darul Ulum. Data kepulangan/check-out telah dicatat sistem pada pukul *${clock.jam_menit} WITA*.\nSemoga ananda semakin betah dan bersemangat menuntut ilmu. Hati-hati di perjalanan pulang. Barakallahu fiikum.`
+          `✅ *[KUNJUNGAN SELESAI / CHECK-OUT]*\nAssalamu'alaikum Wr. Wb. *${waliAddr.panggilan}*.\n\nTerima kasih telah mengunjungi ananda *${updatedBooking.nama_santri}* di Pesantren Modern Darul Ulum. Data kepulangan/check-out telah dicatat sistem pada pukul *${clock.jam_menit} WITA*.\nSemoga ananda semakin betah dan bersemangat menuntut ilmu. Hati-hati di perjalanan pulang. Barakallahu fiikum.`
         );
       }
     }
@@ -4941,11 +4976,12 @@ export const AppProvider = ({ children }) => {
     } catch (e) {}
 
     if (updatedBooking.no_wa_penjenguk) {
+      const waliAddr = resolveWaliAddressing(updatedBooking.nama_penjenguk || 'Wali Santri', '', [], { namaWali: updatedBooking.nama_penjenguk });
       sendWhatsAppNotification(
         `${updatedBooking.nama_penjenguk} (Wali ${updatedBooking.nama_santri})`,
         updatedBooking.no_wa_penjenguk,
         'VISIT_CHECKIN_GATE',
-        `🚪 *[TIKET KUNJUNGAN BERHASIL DI-SCAN & CHECK-IN MASUK]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${updatedBooking.nama_penjenguk}*.\n\nE-Kupon Kunjungan untuk ananda *${updatedBooking.nama_santri}* (${updatedBooking.kelas}) telah *BERHASIL DI-SCAN* di sistem Smart Riayah pada pukul *${clock.jam_menit} WITA*.\n\n⏳ Batas durasi kunjungan hingga pukul *${updatedBooking.jam_selesai || '16:30'} WITA*. Silakan tunjukkan kupon digital kepada Satpam di Pos Jaga Gerbang.`
+        `🚪 *[TIKET KUNJUNGAN BERHASIL DI-SCAN & CHECK-IN MASUK]*\nAssalamu'alaikum Wr. Wb. *${waliAddr.panggilan}*.\n\nE-Kupon Kunjungan untuk ananda *${updatedBooking.nama_santri}* (${updatedBooking.kelas}) telah *BERHASIL DI-SCAN* di sistem Smart Riayah pada pukul *${clock.jam_menit} WITA*.\n\n⏳ Batas durasi kunjungan hingga pukul *${updatedBooking.jam_selesai || '16:30'} WITA*. Silakan tunjukkan kupon digital kepada Satpam di Pos Jaga Gerbang.`
       );
     }
     sound.playSuccess?.();
@@ -4987,7 +5023,8 @@ export const AppProvider = ({ children }) => {
     const targetPhone = normalizePhone(booking.no_wa_penjenguk || fonnteTargetNumber || '6285960213654') || '6285960213654';
     const waktuKirim = `${clock.jam_menit} WITA`;
 
-    const waMessage = `🎫 *[PENGIRIMAN ULANG TIKET BARCODE KUNJUNGAN - SMART RIAYAH]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${booking.nama_penjenguk}*.\n\nBerikut kami kirimkan ulang E-Barcode Gate Pass untuk kunjungan ananda *${booking.nama_santri}* (${booking.kelas || 'Santri'}):\n\n📅 *Jadwal Sambangan:* ${booking.hari_kunjungan}, ${booking.tanggal_kunjungan}\n⏰ *Jam Operasional:* ${booking.jam_kunjungan} - ${booking.jam_selesai || '16:30'} WITA\n📦 *Titipan Barang:* ${booking.titipan_barang || '-'} (${booking.berat_barang_kg || 0} Kg)\n🎫 *Kode Kupon Resmi:* *${token}*\n\n🔗 *Link Kupon & Status Scan (Bisa Diklik Langsung):*\n${gatePassUrl}\n\n📷 *Gambar Kupon QR Gate Pass (Bisa Di-scan Kamera HP):*\n${qrCodeUrl}\n\n_Catatan: Barcode dikirim ulang pada ${waktuKirim}. Tiket hanya berlaku selama jam kunjungan dan otomatis hangus setelah selesai check-out di Pos Satpam._`;
+    const waliAddr = resolveWaliAddressing(booking.nama_penjenguk || 'Wali Santri', '', [], { namaWali: booking.nama_penjenguk });
+    const waMessage = `🎫 *[PENGIRIMAN ULANG TIKET BARCODE KUNJUNGAN - SMART RIAYAH]*\nAssalamu'alaikum Wr. Wb. *${waliAddr.panggilan}*.\n\nBerikut kami kirimkan ulang E-Barcode Gate Pass untuk kunjungan ananda *${booking.nama_santri}* (${booking.kelas || 'Santri'}):\n\n📅 *Jadwal Sambangan:* ${booking.hari_kunjungan}, ${booking.tanggal_kunjungan}\n⏰ *Jam Operasional:* ${booking.jam_kunjungan} - ${booking.jam_selesai || '16:30'} WITA\n📦 *Titipan Barang:* ${booking.titipan_barang || '-'} (${booking.berat_barang_kg || 0} Kg)\n🎫 *Kode Kupon Resmi:* *${token}*\n\n🔗 *Link Kupon & Status Scan (Bisa Diklik Langsung):*\n${gatePassUrl}\n\n📷 *Gambar Kupon QR Gate Pass (Bisa Di-scan Kamera HP):*\n${qrCodeUrl}\n\n_Catatan: Barcode dikirim ulang pada ${waktuKirim}. Tiket hanya berlaku selama jam kunjungan dan otomatis hangus setelah selesai check-out di Pos Satpam._`;
 
     sendWhatsAppNotification(
       `${booking.nama_penjenguk} (Wali ${booking.nama_santri})`,
@@ -5330,11 +5367,12 @@ export const AppProvider = ({ children }) => {
         if (targetSantri.wali?.telepon || targetSantri.waliTelepon) {
           const noWa = targetSantri.wali?.telepon || targetSantri.waliTelepon;
           const statusIcon = poinValue < 0 ? '⚠️' : '🌟';
+          const waliAddr = resolveWaliAddressing(targetSantri.wali?.nama || 'Wali Santri', '', [], { namaWali: targetSantri.wali?.nama });
           sendWhatsAppNotification(
             `${targetSantri.wali?.nama || 'Wali Santri'} (Wali ${targetReport.santriNama})`,
             noWa,
             'DISCIPLINE_NOTICE',
-            `${statusIcon} *[CATATAN RESMI KEDISIPLINAN & PERILAKU SANTRI]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu Wali dari *${targetReport.santriNama}* (${targetReport.kelas || targetSantri.kelas}).\n\nTercatat laporan ${categoryLabel.toLowerCase()} santri oleh *${targetReport.bidangOsis}* yang telah diverifikasi resmi oleh Biro Pengasuhan Santri (Admin Ri'ayah):\n\n• *Perihal:* ${targetReport.jenis}\n• *Keterangan:* ${targetReport.keterangan}\n• *Penyesuaian Poin:* ${poinValue > 0 ? '+' : ''}${poinValue} Poin\n• *Sisa Poin Disiplin:* ${updatedPoints}/100 Poin\n${targetReport.tazir ? `• *Arahan / Tindakan:* ${targetReport.tazir}\n` : ''}\nMohon dukungan dan doa dari Bapak/Ibu agar ananda senantiasa istiqomah dalam menuntut ilmu dan berakhlak mulia di pondok.`
+            `${statusIcon} *[CATATAN RESMI KEDISIPLINAN & PERILAKU SANTRI]*\nAssalamu'alaikum Wr. Wb. *${waliAddr.panggilan}* (Wali dari *${targetReport.santriNama}* - ${targetReport.kelas || targetSantri.kelas}).\n\nTercatat laporan ${categoryLabel.toLowerCase()} santri oleh *${targetReport.bidangOsis}* yang telah diverifikasi resmi oleh Biro Pengasuhan Santri (Admin Ri'ayah):\n\n• *Perihal:* ${targetReport.jenis}\n• *Keterangan:* ${targetReport.keterangan}\n• *Penyesuaian Poin:* ${poinValue > 0 ? '+' : ''}${poinValue} Poin\n• *Sisa Poin Disiplin:* ${updatedPoints}/100 Poin\n${targetReport.tazir ? `• *Arahan / Tindakan:* ${targetReport.tazir}\n` : ''}\nMohon dukungan dan doa dari ${waliAddr.sapaan} agar ananda senantiasa istiqomah dalam menuntut ilmu dan berakhlak mulia di pondok.`
           );
         }
       }

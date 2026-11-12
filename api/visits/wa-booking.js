@@ -10,6 +10,7 @@ import {
   normalizePhone,
   resolveWaliIdentity,
   isPriorityNurmiyatyPhone,
+  saveBookingToSystem,
 } from '../../server/whatsapp-gateway/aiAutonomousResponder.js';
 import { resolveWaliAddressing } from '../../src/utils/phoneUtils.js';
 
@@ -109,6 +110,8 @@ export default async function handler(req, res) {
       status_kunjungan: statusKunjungan,
       created_at: new Date().toISOString()
     };
+
+    await saveBookingToSystem(bookingResult);
 
     return res.status(200).json({
       success: true,

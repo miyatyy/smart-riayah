@@ -32,7 +32,7 @@ import { sound } from '../../utils/audio';
 import DeleteConfirmModal from '../common/DeleteConfirmModal';
 import BulkCsvImportModal from '../common/BulkCsvImportModal';
 import { downloadCsvFile, getTemplateCsv } from '../../utils/csvUtils';
-import { normalizePhone } from '../../utils/phoneUtils';
+import { normalizePhone, resolveWaliAddressing } from '../../utils/phoneUtils';
 
 export default function RfidCardManager({ isModal = false, onClose = () => {}, defaultView = 'table' }) {
   const [activeSubTab, setActiveSubTab] = useState(defaultView);
@@ -213,7 +213,7 @@ export default function RfidCardManager({ isModal = false, onClose = () => {}, d
       kelas: newSantriForm.kelas,
       kamar: newSantriForm.kamar,
       gender: newSantriForm.gender,
-      waliNama: newSantriForm.waliNama || `Bapak/Ibu Wali dari ${newSantriForm.nama}`,
+      waliNama: newSantriForm.waliNama || `Wali dari ${newSantriForm.nama}`,
       waliTelepon: newSantriForm.waliTelepon || '0812-9988-7766'
     }, newSantriForm.initialPermitStatus);
 
@@ -297,11 +297,12 @@ export default function RfidCardManager({ isModal = false, onClose = () => {}, d
     }
     setIsTestingWa(true);
     sound.playWhatsApp();
+    const waliAddr = resolveWaliAddressing(editForm.waliNama || 'Wali Santri', '', [], { namaWali: editForm.waliNama });
     await sendWhatsAppNotification(
       `${editForm.waliNama || 'Wali'} (Wali ${editForm.nama})`,
       editForm.waliTelepon,
       'GATEWAY_TEST',
-      `📲 *[VERIFIKASI NOMOR WHATSAPP WALI SANTRI - DARUL ULUM]*\nAssalamu'alaikum Warahmatullahi Wabarakatuh.\nBpk/Ibu ${editForm.waliNama || 'Wali Santri'},\n\nNomor WhatsApp Anda telah BERHASIL DIPERBARUI dan diverifikasi di sistem Smart Ri'ayah & Smart Gate untuk ananda *${editForm.nama}* (NIS: ${editForm.nis || '-'}).\n\nNotifikasi perizinan santri, laporan tap gerbang RFID keluar/masuk, serta peringatan batas waktu akan otomatis dikirimkan ke nomor ini. Terima kasih.`
+      `📲 *[VERIFIKASI NOMOR WHATSAPP WALI SANTRI - DARUL ULUM]*\nAssalamu'alaikum Warahmatullahi Wabarakatuh.\n${waliAddr.panggilan},\n\nNomor WhatsApp Anda telah BERHASIL DIPERBARUI dan diverifikasi di sistem Smart Ri'ayah & Smart Gate untuk ananda *${editForm.nama}* (NIS: ${editForm.nis || '-'}).\n\nNotifikasi perizinan santri, laporan tap gerbang RFID keluar/masuk, serta peringatan batas waktu akan otomatis dikirimkan ke nomor ini. Terima kasih.`
     );
     setIsTestingWa(false);
     showNotification(`📲 Pesan tes WhatsApp berhasil dikirim ke nomor baru: ${editForm.waliTelepon}`);
@@ -1279,7 +1280,7 @@ export default function RfidCardManager({ isModal = false, onClose = () => {}, d
                 {/* Durasi Izin Custom Section */}
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2.5">
                   <div className="flex items-center justify-between pb-1.5 border-b border-slate-200 flex-wrap gap-2">
-                    <label className="block font-bold text-slate-800 text-xs">Durasi Izin (Kustom Musyrif):</label>
+                    <label className="block font-bold text-slate-800 text-xs">Durasi Izin (Kustom Admin Ri&apos;ayah):</label>
                     <div className="flex items-center gap-1 bg-white p-0.5 rounded-lg border border-slate-200 text-[10px] font-bold">
                       <button
                         type="button"
