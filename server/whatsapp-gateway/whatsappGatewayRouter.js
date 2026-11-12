@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import express from 'express';
 import { broadcastToSupabaseRealtime } from './supabaseBroadcaster.js';
 import { generateAutonomousReply, sendFonnteAutoReply, normalizePhone, setManualTakeover, isPhoneInManualTakeover } from './aiAutonomousResponder.js';
@@ -11,6 +12,49 @@ import { generateAutonomousReply, sendFonnteAutoReply, normalizePhone, setManual
  */
 
 const router = express.Router();
+
+/**
+ * VALIDASI SIGNATURE FONNTE/WABA
+ * Mencegah attacker mengirim payload palsu ke endpoint webhook.
+ */
+export function validateWaSignature(req, res, next) {
+  const rawHeader =
+    req.headers['x-fonnte-signature'] || req.headers['x-waba-signature']; // sesuaikan provider
+  const signatureHeader = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
+
+  const secret = process.env.WA_WEBHOOK_SECRET?.trim(); // SET INI DI .env BACKEND / RAILWAY / VERCEL
+
+  if (!signatureHeader || typeof signatureHeader !== 'string' || !signatureHeader.trim() || !secret) {
+    console.warn('⚠️ [WA Webhook] DITOLAK: Missing signature or secret');
+    return res.status(401).json({ error: 'Unauthorized - missing credentials' });
+  }
+
+  try {
+    // Fonnte standar: HMAC-SHA256(body, secret)
+    const bodyString =
+      typeof req.body === 'string' ? req.body : JSON.stringify(req.body ?? {});
+    const expectedSig = crypto
+      .createHmac('sha256', secret)
+      .update(bodyString)
+      .digest('hex');
+
+    // Perbandingan konstan-time untuk cegah timing attack
+    const sigBuffer = Buffer.from(signatureHeader.trim().toLowerCase(), 'utf8');
+    const expBuffer = Buffer.from(expectedSig, 'utf8');
+
+    if (
+      sigBuffer.length !== expBuffer.length ||
+      !crypto.timingSafeEqual(sigBuffer, expBuffer)
+    ) {
+      throw new Error('Invalid signature');
+    }
+
+    return next(); // Lanjut jika valid
+  } catch (err) {
+    console.error('❌ [WA Webhook] DITOLAK: Invalid signature (Possible Attack!)', err.message);
+    return res.status(403).json({ error: 'Forbidden - invalid signature' });
+  }
+}
 
 /**
  * GET /api/whatsapp/gateway-status
@@ -82,8 +126,8 @@ router.get('/webhook', (req, res) => {
  * Menerima callback webhook status pesan atau pesan masuk dari provider WA (Fonnte/Waba)
  * lalu menyiarkannya secara real-time via Supabase Realtime channel 'whatsapp-room'.
  */
-router.post('/webhook', async (req, res) => {
-  const payload = req.body;
+router.post('/webhook', validateWaSignature, async (req, res) => {
+  const payload = req.body || {};
   console.log('📥 [WhatsApp Webhook Received]:', payload);
 
   try {
@@ -117,6 +161,9 @@ router.post('/webhook', async (req, res) => {
     if (incomingText && sender) {
       const cleanSender = normalizePhone(sender);
       const nowWIB = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
+
+      // ✅ AMAN - Hanya catat audit, JANGAN pernah auto-update profiles.no_telepon dari payload webhook
+      console.log(`🔍 [WA Audit] Pesan masuk dari ${cleanSender}. Update kontak DINONAKTIFKAN demi keamanan.`);
 
       const incomingData = {
         id: payload.id || `IN-${Date.now()}`,
