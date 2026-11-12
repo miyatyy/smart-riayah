@@ -264,7 +264,7 @@ export default function ParentPortal() {
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-emerald-600" />
                 <span>
-                  <b>Alhamdulillah!</b> Formulir izin berhasil diajukan ke antrean Musyrif Asrama dan terhubung ke simulasi WhatsApp.
+                  <b>Alhamdulillah!</b> Formulir izin berhasil diajukan ke antrean Admin Ri'ayah dan terhubung ke WhatsApp Gateway.
                 </span>
               </div>
             </div>
@@ -357,7 +357,7 @@ export default function ParentPortal() {
                   required
                   value={formData.keperluan}
                   onChange={(e) => setFormData({ ...formData, keperluan: e.target.value })}
-                  placeholder="Jelaskan tujuan izin secara jelas untuk ditinjau oleh Musyrif Asrama..."
+                  placeholder="Jelaskan tujuan izin secara jelas untuk ditinjau oleh Admin Ri'ayah..."
                   className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl p-3 text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                 ></textarea>
               </div>
@@ -367,7 +367,7 @@ export default function ParentPortal() {
                 className="w-full sm:w-auto px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-md"
               >
                 <Send className="w-4 h-4" />
-                <span>Kirim Pengajuan Izin ke Musyrif Asrama</span>
+                <span>Kirim Pengajuan Izin ke Admin Ri'ayah</span>
               </button>
             </form>
           </div>

@@ -34,9 +34,9 @@ const MOBILE_NAV_CONFIG = {
     { id: 'ai_agent', label: 'AI Agent', icon: Sparkles, isAi: true },
   ],
   admin_riayah: [
+    { id: 'permit_approval', label: 'Approval', icon: ShieldCheck, hasBadge: 'pending' },
+    { id: 'visit_bookings', label: 'Kunjungan', icon: Calendar, hasBadge: 'visits' },
     { id: 'rooms', label: 'Gedung', icon: Building2 },
-    { id: 'onboarding', label: 'Santri', icon: UserPlus },
-    { id: 'rfid_cards', label: 'Kartu RFID', icon: CreditCard },
     { id: 'gate_logs', label: 'Log Gate', icon: ClipboardList },
   ],
   parent: [
@@ -46,9 +46,9 @@ const MOBILE_NAV_CONFIG = {
     { id: 'cashless', label: 'Dompet', icon: ShoppingBag },
   ],
   musyrif: [
-    { id: 'approval', label: 'Otorisasi', icon: ShieldCheck, hasBadge: 'pending' },
-    { id: 'alarm_monitor', label: 'Alarm', icon: BellRing, hasBadge: 'warning' },
     { id: 'active_permits', label: 'Papan Izin', icon: ClipboardList },
+    { id: 'alarm_monitor', label: 'Alarm', icon: BellRing, hasBadge: 'warning' },
+    { id: 'points', label: 'Poin', icon: Award },
     { id: 'ai_santri', label: 'AI Santri', icon: Sparkles, isAi: true },
   ],
   security: [
@@ -78,12 +78,16 @@ export default function MobileBottomNav({ onOpenFlutterModal }) {
     setActiveRoleTab,
     setIsMobileSidebarOpen,
     permits,
+    visitBookings,
     santriList,
     reminderThresholdMinutes
   } = useApp();
 
   // Badges calculation
-  const pendingPermitsCount = permits.filter(p => p.status === 'PENDING').length;
+  const pendingPermitsCount = permits.filter(p => p.status === 'PENDING' || p.status === 'EXTEND_REQUESTED').length;
+  const pendingVisitsCount = Array.isArray(visitBookings)
+    ? visitBookings.filter(b => String(b?.status_kunjungan || '').toLowerCase().includes('menunggu approval')).length
+    : 0;
   const santriDiLuar = santriList.filter(s => s.statusAsrama === 'DI_LUAR' || s.statusAsrama === 'TERLAMBAT').length;
   const now = Date.now();
   const warningPermitsCount = permits.filter(p => {
@@ -101,6 +105,7 @@ export default function MobileBottomNav({ onOpenFlutterModal }) {
 
   const getBadgeValue = (badgeType) => {
     if (badgeType === 'pending' && pendingPermitsCount > 0) return pendingPermitsCount;
+    if (badgeType === 'visits' && pendingVisitsCount > 0) return pendingVisitsCount;
     if (badgeType === 'warning' && warningPermitsCount > 0) return warningPermitsCount;
     if (badgeType === 'diluar' && santriDiLuar > 0) return santriDiLuar;
     return null;

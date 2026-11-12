@@ -152,7 +152,7 @@ export function dbToPermit(row) {
     extensionReason: row.extension_reason,
     requested_return_date: row.requested_return_date,
     requestedReturnDate: row.requested_return_date,
-    musyrifPenyetuju: row.status === 'APPROVED' ? 'Ust. M. Syukron, M.Pd.' : null,
+    musyrifPenyetuju: row.status === 'APPROVED' ? "Admin Ri'ayah" : null,
     waktuApproval: row.updated_at,
     waktuKeluarAktual: row.status === 'DI_LUAR' || row.status === 'COMPLETED' ? row.start_date : null,
     waktuKembaliAktual: row.status === 'COMPLETED' ? row.updated_at : null,

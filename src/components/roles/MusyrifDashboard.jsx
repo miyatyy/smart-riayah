@@ -31,8 +31,6 @@ export default function MusyrifDashboard() {
   const { 
     santriList, 
     permits, 
-    approvePermit, 
-    rejectPermit, 
     disciplineRecords,
     addDisciplineRecord,
     rooms,
@@ -45,7 +43,7 @@ export default function MusyrifDashboard() {
   const [editingRoom, setEditingRoom] = useState(null);
   const [filterKategori, setFilterKategori] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
-  const selectedTab = (activeRoleTab === 'approval' || activeRoleTab === 'active_permits' || activeRoleTab === 'points' || activeRoleTab === 'kamar' || activeRoleTab === 'alarm_monitor' || activeRoleTab === 'rfid_management' || activeRoleTab === 'ai_santri') ? activeRoleTab : 'approval';
+  const selectedTab = (activeRoleTab === 'approval' || activeRoleTab === 'active_permits' || activeRoleTab === 'points' || activeRoleTab === 'kamar' || activeRoleTab === 'alarm_monitor' || activeRoleTab === 'rfid_management' || activeRoleTab === 'ai_santri') ? activeRoleTab : 'active_permits';
   const setSelectedTab = setActiveRoleTab;
 
   // Modal State for adding point
@@ -110,21 +108,21 @@ export default function MusyrifDashboard() {
             </span>
             <span className="text-gold-300 text-xs flex items-center gap-1">
               <Sparkles className="w-3.5 h-3.5" />
-              Otorisasi Izin & Pembinaan Karakter
+              Pembinaan Karakter, Kamar &amp; Monitoring Izin
             </span>
           </div>
           <h1 className="text-2xl font-black tracking-tight text-white">
-            Pusat Pengasuhan Santri & Multi-Tier Approval
+            Pusat Pengasuhan &amp; Monitoring Asrama Musyrif
           </h1>
           <p className="text-xs text-teal-100 max-w-2xl mt-1">
-            Setujui izin dengan sinkronisasi instan ke IoT Turnstile Gate, kelola buku induk poin kedisiplinan santri, dan pantau kerapian kamar asrama.
+            Pantau status izin santri (approval penuh ditangani oleh Admin Ri&apos;ayah), kelola buku induk poin kedisiplinan santri, dan pantau kerapian kamar asrama.
           </p>
         </div>
 
         {/* Quick Pending Counter Pill */}
         <div className="flex items-center gap-3 bg-teal-950/70 p-3.5 rounded-xl border border-teal-600/40">
           <div className="text-right font-mono">
-            <span className="text-[10px] text-teal-300 block uppercase font-bold">Antrean Butuh Otorisasi</span>
+            <span className="text-[10px] text-teal-300 block uppercase font-bold">Menunggu Approval Admin Ri&apos;ayah</span>
             <span className="text-2xl font-black text-amber-300">
               {pendingPermits.length} <span className="text-xs text-teal-400 font-normal">Permintaan</span>
             </span>
@@ -201,16 +199,16 @@ export default function MusyrifDashboard() {
         )}
       </div>
 
-      {/* TAB 1: ANTREAN OTORISASI IZIN (1-TOUCH APPROVE/REJECT) */}
+      {/* TAB 1: MONITORING ANTREAN IZIN (APPROVAL OLEH ADMIN RI'AYAH) */}
       {selectedTab === 'approval' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
               <ShieldCheck className="w-5 h-5 text-teal-600" />
-              Antrean Permintaan Izin Masuk (Memerlukan Otorisasi Musyrif)
+              Monitoring Antrean Izin (Approval Ditangani oleh Admin Ri&apos;ayah)
             </h2>
-            <span className="text-xs text-slate-500">
-              Sinkronisasi real-time ke IoT Gate & WhatsApp Wali Santri
+            <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded-lg font-semibold">
+              Mode Baca Saja — Tombol Approve/Tolak hanya aktif pada akun Admin Ri&apos;ayah
             </span>
           </div>
 
@@ -296,33 +294,13 @@ export default function MusyrifDashboard() {
                       </div>
                     </div>
 
-                    {/* Action Buttons: 1-Touch Approve & Reject */}
-                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
-                      <button
-                        onClick={() => {
-                          const catatan = prompt('Masukkan catatan persetujuan untuk santri & wali:', 'Disetujui. Harap kembali tepat waktu sebelum bel tidur asrama berbunyi.');
-                          if (catatan !== null) {
-                            approvePermit(permit.id, catatan);
-                          }
-                        }}
-                        className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-3 rounded-xl text-xs transition shadow-sm"
-                      >
-                        <Check className="w-4 h-4" />
-                        <span>APPROVE (SETUJUI)</span>
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          const alasan = prompt('Alasan penolakan izin santri:', 'Jadwal asrama sedang padat atau alasan belum mendesak.');
-                          if (alasan) {
-                            rejectPermit(permit.id, alasan);
-                          }
-                        }}
-                        className="flex items-center justify-center gap-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-bold py-2.5 px-3 rounded-xl text-xs transition"
-                      >
-                        <X className="w-4 h-4" />
-                        <span>TOLAK IZIN</span>
-                      </button>
+                    {/* Status Monitoring: Approval oleh Admin Ri'ayah */}
+                    <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 font-bold">
+                        <Clock className="w-3.5 h-3.5" />
+                        Menunggu Approval Admin Ri&apos;ayah
+                      </span>
+                      <span className="text-slate-400 font-mono text-[10px]">Read-Only</span>
                     </div>
                   </div>
                 );

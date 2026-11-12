@@ -161,6 +161,7 @@ function getMenuItems(role, {
         { id: 'rfid_cards', label: 'Tabel RFID', icon: CreditCard, badge: `${santriList.length}` },
         { id: 'rfid_pairing', label: 'Scanner RFID', icon: Radio, badge: 'Scan' },
         { id: 'express_kiosk', label: 'Kiosk Izin', icon: Zap, badge: 'Cepat' },
+        { id: 'permit_approval', label: 'Approval Izin', icon: ShieldCheck, badge: pendingPermitsCount > 0 ? `${pendingPermitsCount} Menunggu` : `${permits.length}`, urgent: pendingPermitsCount > 0 },
         { id: 'visit_bookings', label: 'Kunjungan Tamu', icon: Calendar, badge: pendingVisitsCount > 0 ? `${pendingVisitsCount} Menunggu` : 'QR Pass', urgent: pendingVisitsCount > 0 },
         { id: 'osis_verification', label: 'Verifikasi OSIS', icon: Shield, badge: pendingOsisCount > 0 ? `${pendingOsisCount} Baru` : null, urgent: pendingOsisCount > 0 },
         { id: 'gate_logs', label: 'Log Gerbang', icon: ClipboardList, badge: `${gateLogs.length}` },
@@ -178,9 +179,9 @@ function getMenuItems(role, {
       ];
     case 'musyrif':
       return [
-        { id: 'approval', label: 'Otorisasi Izin', icon: ShieldCheck, badge: pendingPermitsCount > 0 ? `${pendingPermitsCount}` : null, urgent: pendingPermitsCount > 0 },
-        { id: 'alarm_monitor', label: 'Alarm Pantau', icon: BellRing, badge: warningPermitsCount > 0 ? `${warningPermitsCount}` : null, urgent: warningPermitsCount > 0 },
         { id: 'active_permits', label: 'Papan Real-Time', icon: ClipboardList, badge: `${permits.length}` },
+        { id: 'approval', label: 'Monitor Antrean', icon: ShieldCheck, badge: pendingPermitsCount > 0 ? `${pendingPermitsCount}` : null },
+        { id: 'alarm_monitor', label: 'Alarm Pantau', icon: BellRing, badge: warningPermitsCount > 0 ? `${warningPermitsCount}` : null, urgent: warningPermitsCount > 0 },
         { id: 'points', label: 'Buku Poin', icon: Award, badge: 'Disiplin' },
         { id: 'kamar', label: 'Inspeksi Kamar', icon: Home, badge: 'Kamar' },
         { id: 'ai_santri', label: 'AI Evaluasi', icon: Sparkles, badge: 'AI', highlight: true },
@@ -285,7 +286,7 @@ export default function Sidebar({ onOpenFlutterModal }) {
   const [hoveredItem, setHoveredItem] = useState(null);
 
   // Stats
-  const pendingPermitsCount = permits.filter(p => p.status === 'PENDING').length;
+  const pendingPermitsCount = permits.filter(p => p.status === 'PENDING' || p.status === 'EXTEND_REQUESTED').length;
   const santriDiLuar = santriList.filter(s => s.statusAsrama === 'DI_LUAR' || s.statusAsrama === 'TERLAMBAT').length;
   const pendingVisitsCount = Array.isArray(visitBookings) 
     ? visitBookings.filter(b => b.status_kunjungan === 'Menunggu Approval').length 

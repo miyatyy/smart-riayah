@@ -210,7 +210,7 @@ export default function RealtimePermitBoard() {
       'Batas Kembali',
       'Waktu Masuk',
       'Status Izin',
-      'Musyrif Penyetuju'
+      'Penyetuju (Admin Ri\'ayah)'
     ];
 
     const rows = permits.map((p, idx) => {
@@ -231,7 +231,7 @@ export default function RealtimePermitBoard() {
         formatTimeOnly(p.batasKembali),
         formatTimeOnly(p.waktuKembaliAktual),
         p.status,
-        `"${p.musyrifPenyetuju || 'Ust. M. Syukron'}"`
+        `"${p.musyrifPenyetuju || "Admin Ri'ayah"}"`
       ];
     });
 
@@ -827,7 +827,7 @@ export default function RealtimePermitBoard() {
                         </span>
                       </td>
                       <td className="py-3 px-3 text-[10px] text-slate-600 truncate max-w-[100px]">
-                        {p.musyrifPenyetuju || 'Ust. M. Syukron'}
+                        {p.musyrifPenyetuju || "Admin Ri'ayah"}
                       </td>
                     </tr>
                   );
@@ -937,7 +937,7 @@ export default function RealtimePermitBoard() {
                           <td className="border border-slate-400 py-1 px-2 text-center font-bold">{formatTimeOnly(p.batasKembali)}</td>
                           <td className="border border-slate-400 py-1 px-2 text-center">{formatTimeOnly(p.waktuKembaliAktual)}</td>
                           <td className="border border-slate-400 py-1 px-2 text-center font-bold uppercase">{p.status}</td>
-                          <td className="border border-slate-400 py-1 px-2 text-[9px]">{p.musyrifPenyetuju || 'Ust. M. Syukron'}</td>
+                          <td className="border border-slate-400 py-1 px-2 text-[9px]">{p.musyrifPenyetuju || "Admin Ri'ayah"}</td>
                         </tr>
                       );
                     })}

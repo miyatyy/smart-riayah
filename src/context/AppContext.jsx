@@ -461,7 +461,7 @@ export const AppProvider = ({ children }) => {
       case 'superadmin': return 'diagnostics';
       case 'admin_riayah': return 'rooms';
       case 'parent': return 'permit';
-      case 'musyrif': return 'approval';
+      case 'musyrif': return 'active_permits';
       case 'security': return 'gate';
       case 'poskestren': return 'rekam_medis';
       case 'kyai': return 'ringkasan';
@@ -2226,16 +2226,17 @@ export const AppProvider = ({ children }) => {
     syncPermitToSupabase(newPermit);
 
     // Push notification to WhatsApp
+    const submitAddr = resolveWaliAddressing(santri.wali?.nama || 'Wali Santri');
     sendWhatsAppNotification(
       `${santri.wali?.nama || 'Wali Santri'} (Wali ${santri.nama})`,
       resolveWaliPhone(santri),
       'PERMIT_SUBMITTED',
-      `Assalamu'alaikum ${santri.wali?.nama || 'Bapak/Ibu Wali'}, pengajuan izin ${data.kategori} ananda ${santri.nama} (${santri.kelas}) telah terkirim ke antrean pengasuh asrama. Status: MENUNGGU PERSETUJUAN (PENDING).`
+      `Assalamu'alaikum ${submitAddr.panggilan}, pengajuan izin ${data.kategori} ananda ${santri.nama} (${santri.kelas}) telah terkirim ke antrean Admin Ri'ayah. Status: MENUNGGU PERSETUJUAN (PENDING).`
     );
   };
 
-  // 2. Approve Permit (Role: Musyrif & Admin)
-  const approvePermit = (permitId, catatan = 'Disetujui. Harap jaga adab santri selama di luar pondok.', customBatasKembali = null) => {
+  // 2. Approve Permit (Role: Admin Ri'ayah)
+  const approvePermit = (permitId, catatan = 'Disetujui oleh Admin Ri\'ayah. Harap jaga adab santri selama di luar pondok.', customBatasKembali = null) => {
     sound.playSuccess();
     try {
       confetti({ particleCount: 60, spread: 60, origin: { y: 0.8 } });
@@ -2244,6 +2245,9 @@ export const AppProvider = ({ children }) => {
     const permit = permits.find(p => p.id === permitId);
     if (!permit) return;
     const santri = santriList.find(s => s.id === permit.santriId);
+    const approverLabel = currentUser?.role === 'admin_riayah'
+      ? (currentUser.nama || "Admin Ri'ayah (Ust. Drs. H. Mustofa)")
+      : "Admin Ri'ayah (Ust. Drs. H. Mustofa)";
 
     const isExtension = permit.status === 'EXTEND_REQUESTED' || permit.is_extension || permit.isExtension;
     const finalBatasKembali = customBatasKembali || permit.requested_return_date || permit.requestedReturnDate || permit.batasKembali;
@@ -2255,7 +2259,7 @@ export const AppProvider = ({ children }) => {
       isExtension: false,
       batasKembali: finalBatasKembali,
       return_date: finalBatasKembali,
-      musyrifPenyetuju: 'Ust. M. Syukron, M.Pd.',
+      musyrifPenyetuju: approverLabel,
       waktuApproval: getIsoNow(),
       catatanMusyrif: catatan
     };
@@ -2269,9 +2273,10 @@ export const AppProvider = ({ children }) => {
     }));
 
     if (santri) {
+      const approveAddr = resolveWaliAddressing(santri.wali?.nama || 'Wali Santri');
       const notifPesan = isExtension
-        ? `🕌 *[SMART PERMIT DARUL ULUM - PERPANJANGAN DISETUJUI]*\nAssalamu'alaikum Wali dari *${santri.nama}*, permohonan perpanjangan izin telah *DISETUJUI* sampai batas waktu baru: ${finalBatasKembali ? new Date(finalBatasKembali).toLocaleString('id-ID') : '-'}.`
-        : `🕌 *[SMART PERMIT DARUL ULUM - IZIN DISETUJUI]*\nAssalamu'alaikum Wali dari *${santri.nama}* (${santri.kelas || 'Santri'} / ${santri.kamar || 'Asrama'}), permohonan izin *${permit.kategori || permit.reason}* untuk keperluan *${permit.keperluan || permit.reason}* telah *DISETUJUI* oleh Musyrif. Santri sudah dapat melakukan Tap Kartu RFID di Smart Gate.`;
+        ? `🕌 *[SMART PERMIT DARUL ULUM - PERPANJANGAN DISETUJUI]*\nAssalamu'alaikum ${approveAddr.panggilan}, permohonan perpanjangan izin *${santri.nama}* telah *DISETUJUI* Admin Ri'ayah sampai batas waktu baru: ${finalBatasKembali ? new Date(finalBatasKembali).toLocaleString('id-ID') : '-'}.`
+        : `🕌 *[SMART PERMIT DARUL ULUM - IZIN DISETUJUI]*\nAssalamu'alaikum ${approveAddr.panggilan}, permohonan izin *${permit.kategori || permit.reason}* ananda *${santri.nama}* (${santri.kelas || 'Santri'}) untuk keperluan *${permit.keperluan || permit.reason}* telah *DISETUJUI* oleh Admin Ri'ayah. Santri sudah dapat Tap Kartu RFID di Smart Gate.`;
       sendWhatsAppNotification(
         `${santri.wali?.nama || 'Wali Santri'} (Wali ${santri.nama})`,
         resolveWaliPhone(santri),
@@ -2281,17 +2286,20 @@ export const AppProvider = ({ children }) => {
     }
   };
 
-  // 3. Reject Permit (Role: Musyrif)
+  // 3. Reject Permit (Role: Admin Ri'ayah)
   const rejectPermit = (permitId, alasan = 'Kegiatan asrama padat/alasan belum mendesak.') => {
     sound.playAccessDenied();
     const permit = permits.find(p => p.id === permitId);
     if (!permit) return;
     const santri = santriList.find(s => s.id === permit.santriId);
+    const approverLabel = currentUser?.role === 'admin_riayah'
+      ? (currentUser.nama || "Admin Ri'ayah (Ust. Drs. H. Mustofa)")
+      : "Admin Ri'ayah (Ust. Drs. H. Mustofa)";
 
     const updatedPermit = {
       ...permit,
       status: 'REJECTED',
-      musyrifPenyetuju: 'Ust. M. Syukron, M.Pd.',
+      musyrifPenyetuju: approverLabel,
       waktuApproval: getIsoNow(),
       catatanMusyrif: `DITOLAK: ${alasan}`
     };
@@ -2305,11 +2313,12 @@ export const AppProvider = ({ children }) => {
     }));
 
     if (santri) {
+      const rejectAddr = resolveWaliAddressing(santri.wali?.nama || 'Wali Santri');
       sendWhatsAppNotification(
         `${santri.wali?.nama || 'Wali Santri'} (Wali ${santri.nama})`,
         resolveWaliPhone(santri),
         'PERMIT_REJECTED',
-        `Assalamu'alaikum ${santri.wali?.nama || 'Bapak/Ibu Wali'}, mohon maaf pengajuan izin ${permit.kategori} ananda ${santri.nama} TIDAK DISETUJUI oleh Pengasuh Asrama. Alasan: "${alasan}".`
+        `Assalamu'alaikum ${rejectAddr.panggilan}, mohon maaf pengajuan izin ${permit.kategori} ananda ${santri.nama} TIDAK DISETUJUI oleh Admin Ri'ayah. Alasan: "${alasan}".`
       );
     }
   };
@@ -2326,16 +2335,16 @@ export const AppProvider = ({ children }) => {
       santriId: santri.id,
       kategori: data.kategori || 'PESIAR',
       keperluan: data.keperluan || 'Izin Cepat Santri',
-      penjemput: data.penjemput || 'Izin Mandiri / Musyrif On-Site',
+      penjemput: data.penjemput || "Izin Mandiri / Admin Ri'ayah",
       waktuKeluarRencana: data.waktuKeluarRencana || getIsoNow(),
       batasKembali: data.batasKembali || new Date(Date.now() + 3 * 3600 * 1000).toISOString(),
       status: openGateImmediately ? 'ACTIVE' : 'APPROVED',
-      musyrifPenyetuju: 'Ust. M. Syukron (Express Kiosk)',
+      musyrifPenyetuju: "Admin Ri'ayah (Express Kiosk)",
       waktuApproval: getIsoNow(),
       waktuKeluarAktual: openGateImmediately ? getIsoNow() : null,
       waktuKembaliAktual: null,
       tokenIzin: tokenIzin,
-      catatanMusyrif: data.catatan || 'Izin Cepat Kiosk / Admin On-Site'
+      catatanMusyrif: data.catatan || 'Izin Cepat Kiosk / Admin Ri\'ayah'
     };
 
     setPermits(prev => [newPermit, ...prev]);

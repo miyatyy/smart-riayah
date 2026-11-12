@@ -44,7 +44,7 @@ const ALL_ROLES_NAV = [
   { id: 'admin_riayah', name: "Admin Ri'ayah", emoji: '🏛️', desc: 'Biro Kamar, Santri & Approval' },
   { id: 'osis', name: 'Pengurus OSIS', emoji: '👮', desc: 'Input Pelanggaran/Prestasi Santri Se-Pondok', isNew: true },
   { id: 'security', name: 'Pos Satpam Gate', emoji: '🛡️', desc: 'Live Barcode Scanner & Kedatangan' },
-  { id: 'musyrif', name: 'Musyrif Asrama', emoji: '📋', desc: 'Otorisasi Izin & Pantau Santri' },
+  { id: 'musyrif', name: 'Musyrif Asrama', emoji: '📋', desc: 'Pantau Santri, Kamar & Poin' },
   { id: 'poskestren', name: 'Medis Poskestren', emoji: '🏥', desc: 'Rekam Medis & Kesehatan Santri' },
   { id: 'kyai', name: 'Pimpinan Pondok', emoji: '👳', desc: 'Executive Analytics & Mudir' },
   { id: 'parent', name: 'Wali Santri', emoji: '👨‍👩‍👧', desc: 'Pengajuan Izin & Info Santri' },
@@ -142,6 +142,7 @@ export default function Navbar({ onOpenFlutterModal }) {
     setIsSerialMonitorOpen,
     setIsAiAgentOpen,
     visitBookings,
+    permits,
     chatLogs,
     manualReplyNeededCount,
     lastChatPurgeSummary,
@@ -210,6 +211,10 @@ export default function Navbar({ onOpenFlutterModal }) {
     .filter(b => b.status_kunjungan === 'Sedang Berkunjung' || b.status_kunjungan?.includes('Sedang Berkunjung'))
     .slice(0, 5);
 
+  const pendingPermits = Array.isArray(permits)
+    ? permits.filter(p => p.status === 'PENDING' || p.status === 'EXTEND_REQUESTED')
+    : [];
+
   const pendingChats = Array.isArray(chatLogs) 
     ? chatLogs.filter(c => c.needs_manual_reply === true) 
     : [];
@@ -220,7 +225,7 @@ export default function Navbar({ onOpenFlutterModal }) {
     ? disciplineRecords.slice(0, 2) 
     : [];
 
-  const totalActionableCount = isDismissedAll ? 0 : (pendingVisits.length + pendingChats.length + pendingOsisReports.length);
+  const totalActionableCount = isDismissedAll ? 0 : (pendingVisits.length + pendingPermits.length + pendingChats.length + pendingOsisReports.length);
 
 
   return (
@@ -432,6 +437,46 @@ export default function Navbar({ onOpenFlutterModal }) {
                   </div>
 
                   <div className="space-y-3">
+                    {/* SEKSI A0: PERMOHONAN APPROVAL IZIN SANTRI (ADMIN RI'AYAH) */}
+                    {pendingPermits.length > 0 && (
+                      <div>
+                        <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 mb-1.5">
+                          <span className="flex items-center gap-1.5 text-emerald-700">
+                            <ShieldAlert className="w-3.5 h-3.5" />
+                            Approval Izin Santri ({pendingPermits.length})
+                          </span>
+                          <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 font-bold">
+                            Admin Ri&apos;ayah
+                          </span>
+                        </div>
+                        <div className="space-y-1.5">
+                          {pendingPermits.slice(0, 3).map(p => (
+                            <div key={p.id} className="p-2.5 rounded-xl bg-emerald-50/80 border border-emerald-200/80 text-xs flex items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="font-bold text-emerald-950 truncate">{p.santriNama || p.santriId} ({p.kategori})</div>
+                                <div className="text-[10px] text-emerald-800 truncate">{p.keperluan}</div>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setShowNotifications(false);
+                                  if (role !== 'admin_riayah' && role !== 'superadmin') {
+                                    setRole('admin_riayah');
+                                    setTimeout(() => setActiveRoleTab('permit_approval'), 30);
+                                  } else {
+                                    setActiveRoleTab('permit_approval');
+                                  }
+                                  sound.playBeep?.();
+                                }}
+                                className="shrink-0 px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] transition shadow-xs"
+                              >
+                                Approve Izin
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* SEKSI A: PERMOHONAN APPROVAL KUNJUNGAN (SENIN-KAMIS) */}
                     <div>
                       <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 mb-1.5">
@@ -460,7 +505,12 @@ export default function Navbar({ onOpenFlutterModal }) {
                               <button
                                 onClick={() => {
                                   setShowNotifications(false);
-                                  setActiveRoleTab('visit_bookings');
+                                  if (role !== 'admin_riayah' && role !== 'superadmin') {
+                                    setRole('admin_riayah');
+                                    setTimeout(() => setActiveRoleTab('visit_bookings'), 30);
+                                  } else {
+                                    setActiveRoleTab('visit_bookings');
+                                  }
                                   sound.playBeep?.();
                                 }}
                                 className="shrink-0 px-2 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] transition shadow-xs"

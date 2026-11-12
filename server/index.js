@@ -95,9 +95,9 @@ app.use(globalLimiter);
 // HELPER TOKEN, AUTH & RBAC MODUL VISITOR E-COUPON
 // -------------------------------------------------------------------------------------
 const ROLE_MATRIX = {
-  issue: ['superadmin', 'admin_riayah', 'musyrif', 'mudir'],
-  scan: ['satpam', 'superadmin', 'admin_riayah', 'musyrif'],
-  revoke: ['superadmin', 'admin_riayah', 'musyrif'],
+  issue: ['superadmin', 'admin_riayah', 'mudir'],
+  scan: ['satpam', 'superadmin', 'admin_riayah'],
+  revoke: ['superadmin', 'admin_riayah'],
 };
 
 const TOKEN_REGEX = /^[A-Za-z0-9_-]{32,64}$/;
