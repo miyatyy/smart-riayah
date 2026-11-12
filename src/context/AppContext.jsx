@@ -14,7 +14,7 @@ import { deleteRoomData } from '../utils/roomService';
 import { deleteSantriData } from '../utils/santriService';
 import { supabase } from '../utils/supabaseClient';
 import { sendWhatsAppBroadcast } from '../utils/whatsappRealtime';
-import { normalizePhone, isSamePhone } from '../utils/phoneUtils';
+import { normalizePhone, isSamePhone, resolveWaliAddressing } from '../utils/phoneUtils';
 import {
   fetchAllDataFromSupabase,
   subscribeToAllTablesRealtime,
@@ -83,6 +83,70 @@ const STANDBY_OLED = {
   lastCommandSent: null,
   activeSantri: null
 };
+
+const VISIT_STATUS_RANK = {
+  'Menunggu Approval': 1,
+  'Disetujui (Auto-Approved Weekend)': 2,
+  'Disetujui (Siap Datang)': 3,
+  'Sedang Berkunjung': 4,
+  'Selesai': 5,
+  'Ditolak': 5
+};
+
+function getVisitBookingTimestamp(b) {
+  if (!b || typeof b !== 'object') return 0;
+  return Math.max(
+    Date.parse(b.updated_at || 0) || 0,
+    Date.parse(b.waktu_disetujui || 0) || 0,
+    Date.parse(b.created_at || 0) || 0,
+    Date.parse(b.waktu_chat_masuk || 0) || 0
+  );
+}
+
+/**
+ * Menggabungkan daftar visitBookings tanpa menimpa booking WA terbaru oleh state /api/sync
+ * yang belum lengkap atau masih menggunakan data seed lama.
+ */
+function mergeVisitBookingsLists(currentList = [], incomingList = []) {
+  const mergedMap = new Map();
+
+  for (const item of Array.isArray(currentList) ? currentList : []) {
+    if (item?.id) mergedMap.set(String(item.id), item);
+  }
+
+  for (const candidate of Array.isArray(incomingList) ? incomingList : []) {
+    if (!candidate?.id) continue;
+    const key = String(candidate.id);
+    const existing = mergedMap.get(key);
+    if (!existing) {
+      mergedMap.set(key, candidate);
+      continue;
+    }
+
+    const existingRank = VISIT_STATUS_RANK[existing.status_kunjungan] || 0;
+    const candidateRank = VISIT_STATUS_RANK[candidate.status_kunjungan] || 0;
+    const existingTs = getVisitBookingTimestamp(existing);
+    const candidateTs = getVisitBookingTimestamp(candidate);
+
+    if (candidateRank > existingRank || (candidateRank === existingRank && candidateTs >= existingTs)) {
+      mergedMap.set(key, {
+        ...existing,
+        ...candidate,
+        _supabaseMessageId: candidate._supabaseMessageId || existing._supabaseMessageId
+      });
+    } else {
+      mergedMap.set(key, {
+        ...candidate,
+        ...existing,
+        _supabaseMessageId: existing._supabaseMessageId || candidate._supabaseMessageId
+      });
+    }
+  }
+
+  return Array.from(mergedMap.values()).sort(
+    (a, b) => getVisitBookingTimestamp(b) - getVisitBookingTimestamp(a)
+  );
+}
 
 // Utility: Consolidate duplicate Santri profiles (e.g. lowercase vs capitalized names)
 // and re-link all permits, logs, and RFID cards to the unified canonical profile.
@@ -1125,7 +1189,15 @@ export const AppProvider = ({ children }) => {
         const deletedSet = getDeletedOsisIds();
         setOsisReports(payload.osisReports.filter(r => r && !deletedSet.has(String(r.id))));
       }
-      if (Array.isArray(payload.visitBookings)) setVisitBookings(payload.visitBookings);
+      if (Array.isArray(payload.visitBookings)) {
+        setVisitBookings(prev => {
+          const merged = mergeVisitBookingsLists(prev, payload.visitBookings);
+          try {
+            localStorage.setItem('sr_visit_bookings', JSON.stringify(merged));
+          } catch {}
+          return merged;
+        });
+      }
       if (payload.reminderThresholdMinutes) setReminderThresholdMinutes(payload.reminderThresholdMinutes);
       if (payload.version) syncVersionRef.current = payload.version;
     } finally {
@@ -1199,17 +1271,10 @@ export const AppProvider = ({ children }) => {
       if (remoteData.mutabaahList?.length) setMutabaahList(remoteData.mutabaahList);
       if (remoteData.visitBookings?.length) {
         setVisitBookings(prev => {
-          const remoteMap = new Map();
-          remoteData.visitBookings.forEach(b => remoteMap.set(b.id, b));
-          const merged = [...remoteData.visitBookings];
-          (prev || []).forEach(local => {
-            if (!remoteMap.has(local.id)) {
-              merged.push(local);
-            }
-          });
+          const merged = mergeVisitBookingsLists(prev, remoteData.visitBookings);
           try {
             localStorage.setItem('sr_visit_bookings', JSON.stringify(merged));
-          } catch (e) {}
+          } catch {}
           return merged;
         });
       }
@@ -1393,22 +1458,13 @@ export const AppProvider = ({ children }) => {
               const bookingData = { ...booking, _supabaseMessageId: payload.new.id };
               if (payload.eventType === 'INSERT') {
                 sound.playSuccess?.();
+              }
+              if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
                 setVisitBookings(prev => {
-                  const exists = prev.some(item => item.id === booking.id);
-                  const updated = exists 
-                    ? prev.map(item => item.id === booking.id ? bookingData : item)
-                    : [bookingData, ...prev];
+                  const updated = mergeVisitBookingsLists(prev, [bookingData]);
                   try {
                     localStorage.setItem('sr_visit_bookings', JSON.stringify(updated));
-                  } catch (e) {}
-                  return updated;
-                });
-              } else if (payload.eventType === 'UPDATE') {
-                setVisitBookings(prev => {
-                  const updated = prev.map(item => item.id === booking.id ? bookingData : item);
-                  try {
-                    localStorage.setItem('sr_visit_bookings', JSON.stringify(updated));
-                  } catch (e) {}
+                  } catch {}
                   return updated;
                 });
               }
@@ -1593,9 +1649,7 @@ export const AppProvider = ({ children }) => {
         if (!isMounted || !payload?.id) return;
         sound.playSuccess?.();
         setVisitBookings(prev => {
-          const exists = prev.some(b => b.id === payload.id);
-          if (exists) return prev;
-          const updated = [payload, ...prev];
+          const updated = mergeVisitBookingsLists(prev, [payload]);
           try {
             localStorage.setItem('sr_visit_bookings', JSON.stringify(updated));
           } catch (e) {
@@ -1603,14 +1657,19 @@ export const AppProvider = ({ children }) => {
           }
           return updated;
         });
+        // Persist via authenticated browser session ke Supabase DB jika webhook serverless hanya punya key anon
+        syncBookingStatusToSupabase(
+          payload,
+          payload.is_weekday ? 'VISIT_MANUAL_WEEKDAY' : 'VISIT_AUTO_WEEKEND'
+        ).catch(() => {});
       })
       .on('broadcast', { event: 'whatsapp.visit_booking_updated' }, ({ payload }) => {
         if (!isMounted || !payload?.id) return;
         setVisitBookings(prev => {
-          const updated = prev.map(b => b.id === payload.id ? { ...b, ...payload } : b);
+          const updated = mergeVisitBookingsLists(prev, [payload]);
           try {
             localStorage.setItem('sr_visit_bookings', JSON.stringify(updated));
-          } catch (e) {}
+          } catch {}
           return updated;
         });
       })
@@ -1712,30 +1771,33 @@ export const AppProvider = ({ children }) => {
     };
   }, []);
 
-  // Direct instant fetch for visit_bookings_log & osis_reports (Supabase + MongoDB) on mount
+  // Direct instant fetch & periodic refresh for visit_bookings_log & osis_reports
   useEffect(() => {
     let isMounted = true;
-    fetchVisitBookingsFromSupabase()
-      .then(remoteBookings => {
-        if (!isMounted || !Array.isArray(remoteBookings) || remoteBookings.length === 0) return;
-        setVisitBookings(prev => {
-          const remoteMap = new Map();
-          remoteBookings.forEach(b => remoteMap.set(b.id, b));
-          const merged = [...remoteBookings];
-          (prev || []).forEach(local => {
-            if (!remoteMap.has(local.id)) {
-              merged.push(local);
-            }
+
+    const refreshVisitBookings = () => {
+      fetchVisitBookingsFromSupabase()
+        .then(remoteBookings => {
+          if (!isMounted || !Array.isArray(remoteBookings) || remoteBookings.length === 0) return;
+          setVisitBookings(prev => {
+            const merged = mergeVisitBookingsLists(prev, remoteBookings);
+            try {
+              localStorage.setItem('sr_visit_bookings', JSON.stringify(merged));
+            } catch {}
+            return merged;
           });
-          try {
-            localStorage.setItem('sr_visit_bookings', JSON.stringify(merged));
-          } catch (e) {}
-          return merged;
+        })
+        .catch(err => {
+          console.warn('Direct fetch visit bookings warning:', err);
         });
-      })
-      .catch(err => {
-        console.warn('Direct fetch visit bookings warning:', err);
-      });
+    };
+
+    refreshVisitBookings();
+    const visitRefreshTimer = setInterval(refreshVisitBookings, 15000);
+    const handleFocusRefresh = () => refreshVisitBookings();
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', handleFocusRefresh);
+    }
 
     fetchOsisReportsFromSupabase()
       .then(remoteReports => {
@@ -1768,7 +1830,13 @@ export const AppProvider = ({ children }) => {
         console.warn('Direct fetch OSIS reports warning:', err);
       });
 
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+      clearInterval(visitRefreshTimer);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', handleFocusRefresh);
+      }
+    };
   }, []);
 
   // Server-side sync via /api/sync (Cross-profile, cross-browser, incognito sync)
@@ -4407,6 +4475,7 @@ export const AppProvider = ({ children }) => {
 
     // Kirim notifikasi WhatsApp via Fonnte Gateway
     const targetPhone = newBooking.no_wa_penjenguk;
+    const newBookingAddr = resolveWaliAddressing(newBooking.nama_penjenguk);
     if (newBooking.booking_source?.includes('WHATSAPP')) {
       if (statusKunjungan === 'Disetujui (Siap Datang)') {
         const { qrCodeUrl, linearBarcodeUrl, gatePassUrl } = getVisitGatePassUrls(barcodeToken);
@@ -4418,7 +4487,7 @@ export const AppProvider = ({ children }) => {
           `${newBooking.nama_penjenguk} (Wali ${newBooking.nama_santri})`,
           targetPhone,
           'VISIT_AUTO_APPROVED',
-          `✅ *[BOOKING KUNJUNGAN DISETUJUI OTOMATIS - WEEKEND]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${newBooking.nama_penjenguk}*.\n\nPermohonan sambangan ananda *${newBooking.nama_santri}* (${newBooking.kelas}) pada hari *${hari}, ${tgl}* pukul *${newBooking.jam_kunjungan} - ${newBooking.jam_selesai} WIB* telah *DISETUJUI OTOMATIS*.\n\n📦 *Titipan Barang:* ${newBooking.titipan_barang} (${newBooking.berat_barang_kg} Kg)\n🎫 *Nomor Kupon Resmi:* *${barcodeToken}*\n\n🔗 *Link Kupon & Status Scan (Bisa Diklik Langsung):*\n${gatePassUrl}\n\n📷 *Gambar Kupon QR Gate Pass (Bisa Di-scan Kamera HP):*\n${qrCodeUrl}\n\nSilakan klik link di atas atau perlihatkan kupon QR Code kepada Satpam di Gerbang Utama Pesantren Modern Darul Ulum untuk verifikasi scan saat tiba di pondok.`,
+          `✅ *Booking Kunjungan Disetujui (Weekend)*\nAssalamu'alaikum ${newBookingAddr.panggilan}, kunjungan ananda *${newBooking.nama_santri}* (${newBooking.kelas}) pada *${hari}, ${tgl}* pukul *${newBooking.jam_kunjungan}-${newBooking.jam_selesai}* disetujui otomatis.\n\n🎫 Kupon: *${barcodeToken}*\n🔗 Gate Pass: ${gatePassUrl}\n📷 QR: ${qrCodeUrl}\nTunjukkan kupon ini ke Satpam Gerbang Utama.`,
           qrCodeUrl
         );
       } else {
@@ -4426,7 +4495,7 @@ export const AppProvider = ({ children }) => {
           `${newBooking.nama_penjenguk} (Wali ${newBooking.nama_santri})`,
           targetPhone,
           'VISIT_WAITING_APPROVAL',
-          `⏳ *[PERMOHONAN KUNJUNGAN TERCATAT - HARI KERJA]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${newBooking.nama_penjenguk}*.\n\nPermohonan kunjungan ananda *${newBooking.nama_santri}* untuk hari kerja (*${hari}, ${tgl}*) telah tercatat dan sedang *MENUNGGU PERSETUJUAN* Admin Ri'ayah.\n\nGambar Barcode Gate Pass resmi akan dikirimkan otomatis ke WhatsApp ini setelah permohonan disetujui Pengasuhan.`
+          `⏳ *Permohonan Kunjungan Tercatat (Hari Kerja)*\nAssalamu'alaikum ${newBookingAddr.panggilan}, booking kunjungan ananda *${newBooking.nama_santri}* untuk *${hari}, ${tgl}* (${newBooking.jam_kunjungan}-${newBooking.jam_selesai}) sudah masuk ke Admin Ri'ayah dan sedang menunggu persetujuan.\n\nBarcode Gate Pass akan dikirim otomatis setelah disetujui.`
         );
       }
     }
@@ -4443,6 +4512,7 @@ export const AppProvider = ({ children }) => {
     const cleanSantriName = (booking.nama_santri || 'Santri').replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase();
     const barcodeToken = booking.barcode_token || generateBarcodeToken(cleanSantriName);
     const { qrCodeUrl, linearBarcodeUrl, gatePassUrl } = getVisitGatePassUrls(barcodeToken);
+    const bookingAddr = resolveWaliAddressing(booking.nama_penjenguk);
 
     const updatedBooking = {
       ...booking,
@@ -4466,7 +4536,7 @@ export const AppProvider = ({ children }) => {
       `${booking.nama_penjenguk} (Wali ${booking.nama_santri})`,
       booking.no_wa_penjenguk,
       'VISIT_APPROVED_ADMIN',
-      `🎉 *[PERMOHONAN KUNJUNGAN DISETUJUI ADMIN RI'AYAH]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${booking.nama_penjenguk}*.\n\nPermohonan kunjungan ananda *${booking.nama_santri}* (${booking.kelas}) untuk hari *${booking.hari_kunjungan}, ${booking.tanggal_kunjungan}* pukul *${booking.jam_kunjungan} - ${booking.jam_selesai} WIB* telah *DISETUJUI* oleh Admin Ri'ayah Pondok.\n\n📦 *Titipan Barang:* ${booking.titipan_barang} (${booking.berat_barang_kg} Kg)\n🎫 *Nomor Kupon Resmi:* *${barcodeToken}*\n\n🔗 *Link Kupon & Status Scan (Bisa Diklik Langsung):*\n${gatePassUrl}\n\n📷 *Gambar Kupon QR Gate Pass (Bisa Di-scan Kamera HP):*\n${qrCodeUrl}\n\nSilakan klik link di atas atau perlihatkan kupon QR Code kepada Satpam di Pos Gerbang untuk verifikasi check-in masuk pondok.`,
+      `🎉 *Kunjungan Disetujui Admin Ri'ayah*\nAssalamu'alaikum ${bookingAddr.panggilan}, kunjungan ananda *${booking.nama_santri}* (${booking.kelas}) pada *${booking.hari_kunjungan}, ${booking.tanggal_kunjungan}* pukul *${booking.jam_kunjungan}-${booking.jam_selesai}* telah *DISETUJUI*.\n\n🎫 Kupon: *${barcodeToken}*\n🔗 Gate Pass: ${gatePassUrl}\n📷 QR: ${qrCodeUrl}\nTunjukkan QR/kupon ini kepada Satpam saat tiba di pondok.`,
       qrCodeUrl
     );
 
@@ -4480,6 +4550,7 @@ export const AppProvider = ({ children }) => {
     const booking = visitBookings.find(b => b.id === bookingId);
     if (!booking) return;
 
+    const bookingAddr = resolveWaliAddressing(booking.nama_penjenguk);
     const updatedBooking = {
       ...booking,
       status_kunjungan: 'Ditolak',
@@ -4498,7 +4569,7 @@ export const AppProvider = ({ children }) => {
       `${booking.nama_penjenguk} (Wali ${booking.nama_santri})`,
       booking.no_wa_penjenguk,
       'VISIT_REJECTED',
-      `❌ *[PERMOHONAN KUNJUNGAN BELUM DAPAT DISETUJUI]*\nAssalamu'alaikum Wr. Wb. Bapak/Ibu *${booking.nama_penjenguk}*.\n\nMohon maaf, permohonan kunjungan ananda *${booking.nama_santri}* untuk tanggal *${booking.tanggal_kunjungan}* belum dapat disetujui oleh Pengasuhan Pondok.\nAlasan: "${reason}".\nSilakan ajukan kembali pada hari berkunjung resmi (Jumat, Sabtu, atau Minggu).`
+      `❌ *Permohonan Kunjungan Ditolak*\nAssalamu'alaikum ${bookingAddr.panggilan}, mohon maaf permohonan kunjungan ananda *${booking.nama_santri}* (${booking.tanggal_kunjungan}) belum dapat disetujui.\nAlasan: "${reason}".\nSilakan ajukan ulang pada hari kunjungan resmi (Jumat–Minggu).`
     );
 
     // Sinkronkan ke Supabase & siarkan update

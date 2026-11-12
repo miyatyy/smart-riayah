@@ -78,7 +78,7 @@ import {
 } from 'recharts';
 import { sound } from '../../utils/audio';
 import { supabase } from '../../utils/supabaseClient';
-import { normalizePhone, isSamePhone } from '../../utils/phoneUtils';
+import { normalizePhone, isSamePhone, resolveWaliAddressing } from '../../utils/phoneUtils';
 import {
   fetchDeviceStatus,
   fetchQrCode,
@@ -2519,14 +2519,15 @@ function TabAiInbox({
     setTimeout(() => {
       let clientReply = '';
       const qLower = questionText.toLowerCase();
+      const addr = resolveWaliAddressing(resolvedWaliName, questionText, [], matchedSantri);
       if (qLower.includes('saldo')) {
-        clientReply = `Wa'alaikumsalam Warahmatullahi Wabarakatuh, Bapak/Ibu ${resolvedWaliName}.\n\nBerikut informasi dompet pintar cashless ananda *${resolvedSantriName}*:\n\n💳 *Sisa Saldo RFID:* *Rp ${resolvedSaldo}*\n📊 *Limit Jajan Harian:* Rp ${resolvedLimit}/hari\n🏢 *Lokasi Transaksi:* Kantin Asrama & Koperasi Ma'had\n\nUntuk pengisian saldo (Top Up), Bapak/Ibu dapat melakukan transfer Virtual Account atau melalui aplikasi Smart Ri'ayah.\n\n_— Smart Ri'ayah Cashless Gateway_`;
+        clientReply = `Wa'alaikumsalam ${addr.panggilan}. Saldo RFID *${resolvedSantriName}* saat ini *Rp ${resolvedSaldo}* dengan limit jajan harian *Rp ${resolvedLimit}*. Top up bisa melalui Virtual Account atau aplikasi Smart Ri'ayah.`;
       } else if (qLower.includes('izin') || qLower.includes('perpanjang')) {
-        clientReply = `Wa'alaikumsalam Warahmatullahi Wabarakatuh, Bapak/Ibu ${resolvedWaliName}.\n\nUntuk perizinan ananda *${resolvedSantriName}*:\n\n📋 *SOP Perizinan Santri:*\n1. Izin kepulangan/pesiar diajukan minimal H-1 oleh wali melalui menu *Perizinan* di aplikasi Smart Ri'ayah.\n2. Jika ananda sakit dan membutuhkan *Perpanjangan Liburan*, silakan klik tombol *Ajukan Perpanjangan Liburan* pada riwayat izin serta lampirkan foto surat dokter/keterangan medis.\n3. Musyrif & Mudir akan memverifikasi permohonan dalam waktu 1x24 jam.\n\nStatus izin ananda saat ini: *Tertib / Tidak ada pelanggaran*.\n\n_— Layanan Perizinan Digital DU-PERMIT_`;
+        clientReply = `Wa'alaikumsalam ${addr.panggilan}. Status izin *${resolvedSantriName}* saat ini tertib. Pengajuan izin/perpanjangan dapat dilakukan lewat menu Perizinan di aplikasi Smart Ri'ayah (maksimal H-1, sertakan surat dokter bila sakit).`;
       } else if (qLower.includes('sakit') || qLower.includes('sehat')) {
-        clientReply = `Wa'alaikumsalam Warahmatullahi Wabarakatuh, Bapak/Ibu ${resolvedWaliName}.\n\nLayanan Kesehatan Pesantren Modern Darul Ulum (Poskestren) siap siaga *24 jam* dengan tenaga medis asrama.\n\n🏥 Apabila ananda *${resolvedSantriName}* mengeluhkan sakit, ananda segera diperiksa di ruang rawat UKS dan diberikan istirahat serta pengobatan dokter.\n\nKondisi medis ananda saat ini: *Sehat & Terpantau Baik di Kamar ${resolvedKamar}*.\n\n_— Poskestren Darul Ulum Care_`;
+        clientReply = `Wa'alaikumsalam ${addr.panggilan}. Alhamdulillah *${resolvedSantriName}* terpantau sehat di Kamar ${resolvedKamar}. Poskestren Darul Ulum siap siaga 24 jam jika ananda membutuhkan pemeriksaan medis.`;
       } else {
-        clientReply = `Wa'alaikumsalam Warahmatullahi Wabarakatuh, Bapak/Ibu ${resolvedWaliName}.\n\n📅 *Jadwal Kunjungan (Sambangan) Wali Santri:*\n• *Hari:* Setiap Ahad (Minggu)\n• *Waktu:* Pukul 08.00 s/d 17.00 WIB\n• *Tempat:* Area Gazebo & Aula Kunjungan Ma'had Darul Ulum\n\nSaat berkunjung, mohon memarkir kendaraan di area parkir utama dan melapor singkat ke Pos Satpam.\n\n_— Tata Tertib Kunjungan Pesantren_`;
+        clientReply = `Wa'alaikumsalam ${addr.panggilan}. Jadwal kunjungan resmi pondok adalah Jumat–Minggu pukul 08.00–17.00 WIB. Jika ingin berkunjung hari ini atau menjadwalkan waktu khusus, cukup tulis hari dan jam kunjungannya ya ${addr.sapaan}.`;
       }
 
       const aiMsg = {

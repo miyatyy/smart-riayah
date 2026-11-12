@@ -13,6 +13,7 @@ import {
   resolveWaliIdentity,
   isPriorityNurmiyatyPhone,
 } from '../../server/whatsapp-gateway/aiAutonomousResponder.js';
+import { resolveWaliAddressing } from '../../src/utils/phoneUtils.js';
 
 const DEFAULT_DEEPSEEK_KEY = (process.env.DEEPSEEK_API_KEY || process.env.VITE_DEEPSEEK_API_KEY || '').trim();
 const DEFAULT_FONNTE_TOKEN = (process.env.FONNTE_TOKEN || process.env.VITE_FONNTE_TOKEN || '').trim();
@@ -95,8 +96,9 @@ export default async function handler(req, res) {
 
     const waktuSekarangStr = `${rtc.namaHari}, ${rtc.tanggalLengkap} • ${rtc.jamMenitDetik} WITA`;
 
+    const addr = resolveWaliAddressing(extracted.nama_penjenguk, messageText, [], resolvedIdentity);
     const hasSalam = /assalamu|aslam|mikum/i.test(messageText);
-    const greeting = hasSalam ? `Wa'alaikumsalam Bapak/Ibu *${extracted.nama_penjenguk}*.\n\n` : `Baik Bapak/Ibu *${extracted.nama_penjenguk}*,\n\n`;
+    const greeting = hasSalam ? `Wa'alaikumsalam *${addr.panggilan}*.\n\n` : `Baik *${addr.panggilan}*,\n\n`;
 
     // Validasi Jam Operasional Kunjungan
     let hoursWarning = '';

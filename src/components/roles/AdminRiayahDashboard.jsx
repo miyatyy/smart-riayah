@@ -94,8 +94,10 @@ export default function AdminRiayahDashboard() {
     verifyOsisReport
   } = useApp();
 
-  const pendingVisits = Array.isArray(visitBookings) 
-    ? visitBookings.filter(b => b.status_kunjungan === 'Menunggu Approval') 
+  const pendingVisits = Array.isArray(visitBookings)
+    ? visitBookings.filter(b =>
+        String(b?.status_kunjungan || '').toLowerCase().includes('menunggu approval')
+      )
     : [];
 
   const pendingOsisReports = Array.isArray(osisReports)

@@ -687,43 +687,66 @@ export async function fetchVisitBookingsFromSupabase() {
 
 export async function syncBookingStatusToSupabase(booking, reaction = 'VISIT_APPROVED') {
   try {
+    if (!booking?.id) return { success: false };
+    const serialized = JSON.stringify(booking);
+    const isResolved = booking.status_kunjungan && booking.status_kunjungan !== 'Menunggu Approval';
+
     if (booking._supabaseMessageId) {
-      await supabase
+      const { error } = await supabase
         .from('messages')
         .update({
-          message_text: JSON.stringify(booking),
+          message_text: serialized,
           reaction,
-          is_read: true
+          is_read: isResolved
         })
         .eq('id', booking._supabaseMessageId);
+      if (error) console.warn('⚠️ [Supabase] Update visit booking warning:', error.message);
     } else {
-      const { data: rows } = await supabase
+      const { data: rows, error: selErr } = await supabase
         .from('messages')
         .select('id, message_text')
         .eq('room_id', 'visit_bookings_log')
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(100);
 
-      if (rows && rows.length > 0) {
-        const found = rows.find(r => {
-          try {
-            const p = JSON.parse(r.message_text);
-            return p.id === booking.id;
-          } catch {
-            return false;
-          }
-        });
+      if (selErr) {
+        console.warn('⚠️ [Supabase] Query visit_bookings_log warning:', selErr.message);
+      }
 
-        if (found) {
-          await supabase
-            .from('messages')
-            .update({
-              message_text: JSON.stringify(booking),
-              reaction,
-              is_read: true
-            })
-            .eq('id', found.id);
-        }
+      const found = Array.isArray(rows)
+        ? rows.find(r => {
+            try {
+              const p = JSON.parse(r.message_text);
+              return p.id === booking.id;
+            } catch {
+              return false;
+            }
+          })
+        : null;
+
+      if (found) {
+        const { error: updErr } = await supabase
+          .from('messages')
+          .update({
+            message_text: serialized,
+            reaction,
+            is_read: isResolved
+          })
+          .eq('id', found.id);
+        if (updErr) console.warn('⚠️ [Supabase] Update visit booking row warning:', updErr.message);
+      } else {
+        const { error: insErr } = await supabase
+          .from('messages')
+          .insert([{
+            room_id: 'visit_bookings_log',
+            sender_email: 'ai@smartriayah.com',
+            sender_name: 'Smart Riayah AI Gate Pass',
+            sender_role: 'system',
+            message_text: serialized,
+            reaction: reaction || (booking.is_weekday ? 'VISIT_MANUAL_WEEKDAY' : 'VISIT_AUTO_WEEKEND'),
+            is_read: isResolved
+          }]);
+        if (insErr) console.warn('⚠️ [Supabase] Insert visit booking row warning:', insErr.message);
       }
     }
 
@@ -734,8 +757,10 @@ export async function syncBookingStatusToSupabase(booking, reaction = 'VISIT_APP
       event: 'whatsapp.visit_booking_updated',
       payload: booking
     });
+    return { success: true };
   } catch (err) {
     console.warn('⚠️ [Supabase] syncBookingStatusToSupabase warning:', err.message);
+    return { success: false, error: err.message };
   }
 }
 

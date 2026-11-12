@@ -11,6 +11,7 @@ import {
   resolveWaliIdentity,
   isPriorityNurmiyatyPhone,
 } from '../../server/whatsapp-gateway/aiAutonomousResponder.js';
+import { resolveWaliAddressing } from '../../src/utils/phoneUtils.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -56,6 +57,7 @@ export default async function handler(req, res) {
 
     const isWeekend = ['Jumat', 'Sabtu', 'Minggu'].includes(hariKunjungan);
     const bookingId = `VST-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
+    const addr = resolveWaliAddressing(extracted.nama_penjenguk, messageText, [], resolvedIdentity);
 
     let approvalType = 'MANUAL_WEEKDAY';
     let statusKunjungan = 'Menunggu Approval';
@@ -69,7 +71,7 @@ export default async function handler(req, res) {
       barcodeToken = `GP-DU-${extracted.nama_santri.replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
       replyText = `✅ *[BOOKING KUNJUNGAN DISETUJUI OTOMATIS - WEEKEND]*\n` +
-        `Assalamu'alaikum Wr. Wb. Bapak/Ibu *${extracted.nama_penjenguk}*.\n\n` +
+        `Assalamu'alaikum *${addr.panggilan}*.\n\n` +
         `Permohonan sambangan santri *${extracted.nama_santri}* (${extracted.kelas}) pada hari *${hariKunjungan}, ${extracted.tanggal_kunjungan}* pukul *${extracted.jam_kunjungan} - ${extracted.jam_selesai} WIB* telah *DISETUJUI OTOMATIS*.\n\n` +
         `📦 *Titipan Barang:* ${extracted.titipan_barang || '-'} (${extracted.berat_barang_kg || 0} Kg)\n` +
         `🎫 *Barcode Gate Pass:* *${barcodeToken}*\n\n` +
@@ -81,7 +83,7 @@ export default async function handler(req, res) {
       barcodeToken = null;
 
       replyText = `⏳ *[PERMOHONAN KUNJUNGAN TERCATAT - HARI KERJA]*\n` +
-        `Assalamu'alaikum Wr. Wb. Bapak/Ibu *${extracted.nama_penjenguk}*.\n\n` +
+        `Assalamu'alaikum *${addr.panggilan}*.\n\n` +
         `Permohonan kunjungan santri *${extracted.nama_santri}* untuk hari kerja (*${hariKunjungan}, ${extracted.tanggal_kunjungan}*) telah tercatat dan sedang *MENUNGGU PERSETUJUAN* Admin Ri'ayah.\n\n` +
         `Barcode kunjungan resmi akan dikirimkan ke nomor WhatsApp ini setelah disetujui oleh pengasuhan pondok.`;
     }
