@@ -197,7 +197,10 @@ export default function Navbar({ onOpenFlutterModal }) {
   // Deduplikasi pending visits agar 1 booking session konsisten (Anti-Doubling)
   const pendingVisitsMap = new Map();
   (Array.isArray(visitBookings) ? visitBookings : [])
-    .filter(b => b.status_kunjungan === 'Menunggu Approval')
+    .filter(b => {
+      const s = String(b?.status_kunjungan || b?.status || '').toLowerCase();
+      return s.includes('menunggu approval') || s.includes('menunggu') || s === 'pending';
+    })
     .forEach(b => {
       const key = b.id || `${b.nama_santri}_${b.tanggal_kunjungan}`;
       if (!pendingVisitsMap.has(key)) {

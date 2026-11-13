@@ -112,6 +112,11 @@ export async function broadcastToSupabaseRealtime(event, payload) {
               event,
               payload,
             },
+            {
+              topic: 'realtime:whatsapp-room',
+              event,
+              payload,
+            },
           ],
         }),
       });

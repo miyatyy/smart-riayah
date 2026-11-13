@@ -99,9 +99,10 @@ export default function AdminRiayahDashboard() {
   } = useApp();
 
   const pendingVisits = Array.isArray(visitBookings)
-    ? visitBookings.filter(b =>
-        String(b?.status_kunjungan || '').toLowerCase().includes('menunggu approval')
-      )
+    ? visitBookings.filter(b => {
+        const s = String(b?.status_kunjungan || b?.status || '').toLowerCase();
+        return s.includes('menunggu approval') || s.includes('menunggu') || s === 'pending';
+      })
     : [];
 
   const pendingPermits = Array.isArray(permits)

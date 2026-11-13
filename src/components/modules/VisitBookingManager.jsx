@@ -117,16 +117,18 @@ export default function VisitBookingManager({ isCompact = false }) {
   const bookings = Array.isArray(visitBookings) ? visitBookings : [];
   const todayStr = new Date().toISOString().slice(0, 10);
   
-  const isPendingApprovalStatus = (status) =>
-    String(status || '').toLowerCase().includes('menunggu approval');
+  const isPendingApprovalStatus = (status) => {
+    const s = String(status || '').toLowerCase();
+    return s.includes('menunggu approval') || s.includes('menunggu') || s === 'pending';
+  };
 
   const totalHariIni = bookings.filter(b => b.tanggal_kunjungan === todayStr || b.status_kunjungan === 'Sedang Berkunjung').length;
-  const pendingWeekday = bookings.filter(b => isPendingApprovalStatus(b.status_kunjungan)).length;
+  const pendingWeekday = bookings.filter(b => isPendingApprovalStatus(b.status_kunjungan || b.status)).length;
   const autoApprovedWeekend = bookings.filter(b => b.approval_type === 'AUTO_WEEKEND').length;
   const approvedVisitsCount = bookings.filter(b => 
     b.status_kunjungan === 'Disetujui (Siap Datang)' || 
     b.approval_type === 'AUTO_WEEKEND' || 
-    (b.barcode_token && !isPendingApprovalStatus(b.status_kunjungan) && b.status_kunjungan !== 'Ditolak')
+    (b.barcode_token && !isPendingApprovalStatus(b.status_kunjungan || b.status) && b.status_kunjungan !== 'Ditolak')
   ).length;
   const totalBeratTitipan = bookings.reduce((sum, b) => sum + (Number(b.berat_barang_kg) || 0), 0).toFixed(1);
 
@@ -136,9 +138,9 @@ export default function VisitBookingManager({ isCompact = false }) {
     if (activeFilter === 'APPROVED_LOGS' && !(
       b.status_kunjungan === 'Disetujui (Siap Datang)' || 
       b.approval_type === 'AUTO_WEEKEND' || 
-      (b.barcode_token && !isPendingApprovalStatus(b.status_kunjungan) && b.status_kunjungan !== 'Ditolak')
+      (b.barcode_token && !isPendingApprovalStatus(b.status_kunjungan || b.status) && b.status_kunjungan !== 'Ditolak')
     )) return false;
-    if (activeFilter === 'PENDING' && !isPendingApprovalStatus(b.status_kunjungan)) return false;
+    if (activeFilter === 'PENDING' && !isPendingApprovalStatus(b.status_kunjungan || b.status)) return false;
     if (activeFilter === 'WEEKEND' && b.approval_type !== 'AUTO_WEEKEND') return false;
     if (activeFilter === 'SATPAM' && b.booking_source !== 'MANUAL_SATPAM') return false;
     if (activeFilter === 'ACTIVE' && b.status_kunjungan !== 'Sedang Berkunjung') return false;
@@ -591,7 +593,7 @@ export default function VisitBookingManager({ isCompact = false }) {
                 </tr>
               ) : (
                 filteredBookings.map((b) => {
-                  const isWaiting = isPendingApprovalStatus(b.status_kunjungan);
+                  const isWaiting = isPendingApprovalStatus(b.status_kunjungan || b.status);
                   const isWeekend = b.approval_type === 'AUTO_WEEKEND' || ['Jumat', 'Sabtu', 'Minggu'].includes(b.hari_kunjungan);
                   const isOngoing = b.status_kunjungan === 'Sedang Berkunjung';
                   const isCompleted = b.status_kunjungan === 'Selesai';

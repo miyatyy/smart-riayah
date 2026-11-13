@@ -11,6 +11,7 @@ import {
   resolveWaliIdentity,
   isPriorityNurmiyatyPhone,
   saveBookingToSystem,
+  getAuthenticatedSupabaseClient,
 } from '../../server/whatsapp-gateway/aiAutonomousResponder.js';
 import { resolveWaliAddressing } from '../../src/utils/phoneUtils.js';
 
@@ -24,19 +25,114 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'GET') {
-    return res.status(200).json({
-      status: 'active',
-      service: 'Smart Riayah Visit Booking & QR Gate Pass Engine',
-      rules: {
-        weekday: 'Senin - Kamis (Requires Manual Admin Ri\'ayah Approval)',
-        weekend: 'Jumat - Minggu (Auto-Approved Gate Pass with Barcode)'
-      },
-      timestamp: new Date().toISOString()
-    });
+    try {
+      const client = await getAuthenticatedSupabaseClient();
+      const { data, error } = await client
+        .from('messages')
+        .select('*')
+        .eq('room_id', 'visit_bookings_log')
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      const bookings = [];
+      if (!error && Array.isArray(data)) {
+        for (const row of data) {
+          try {
+            const parsed = JSON.parse(row.message_text);
+            if (parsed && parsed.id) {
+              bookings.push({
+                ...parsed,
+                _supabaseMessageId: row.id
+              });
+            }
+          } catch {}
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        status: 'active',
+        service: 'Smart Riayah Visit Booking & QR Gate Pass Engine',
+        bookings,
+        count: bookings.length,
+        rules: {
+          weekday: 'Senin - Kamis (Requires Manual Admin Ri\'ayah Approval)',
+          weekend: 'Jumat - Minggu (Auto-Approved Gate Pass with Barcode)'
+        },
+        timestamp: new Date().toISOString()
+      });
+    } catch (err) {
+      return res.status(200).json({
+        success: false,
+        bookings: [],
+        error: err.message,
+        timestamp: new Date().toISOString()
+      });
+    }
   }
 
   try {
-    const payload = req.body || {};
+    let payload = req.body || {};
+    if (typeof payload === 'string') {
+      try { payload = JSON.parse(payload); } catch {}
+    }
+
+    // 0. Aksi khusus dari Frontend (Admin Ri'ayah Approval / Status Update)
+    if (payload.action === 'UPDATE_STATUS' && payload.booking) {
+      const client = await getAuthenticatedSupabaseClient();
+      const booking = payload.booking;
+      const serialized = JSON.stringify(booking);
+      const isResolved = booking.status_kunjungan && !String(booking.status_kunjungan).toLowerCase().includes('menunggu');
+
+      if (booking._supabaseMessageId) {
+        await client
+          .from('messages')
+          .update({
+            message_text: serialized,
+            reaction: payload.reaction || 'VISIT_APPROVED',
+            is_read: isResolved
+          })
+          .eq('id', booking._supabaseMessageId);
+      } else {
+        const { data: rows } = await client
+          .from('messages')
+          .select('id, message_text')
+          .eq('room_id', 'visit_bookings_log')
+          .order('created_at', { ascending: false })
+          .limit(100);
+
+        const found = Array.isArray(rows)
+          ? rows.find(r => {
+              try {
+                return JSON.parse(r.message_text).id === booking.id;
+              } catch {
+                return false;
+              }
+            })
+          : null;
+
+        if (found) {
+          await client
+            .from('messages')
+            .update({
+              message_text: serialized,
+              reaction: payload.reaction || 'VISIT_APPROVED',
+              is_read: isResolved
+            })
+            .eq('id', found.id);
+        }
+      }
+
+      try {
+        const { broadcastToSupabaseRealtime } = await import('../../server/whatsapp-gateway/supabaseBroadcaster.js');
+        await broadcastToSupabaseRealtime('whatsapp.visit_booking_updated', booking);
+      } catch (bcErr) {
+        console.warn('Realtime broadcast warning:', bcErr.message);
+      }
+
+      return res.status(200).json({ success: true, booking });
+    }
+
     const messageText = payload.message || payload.text || '';
     const rawSender = payload.sender || payload.phone || payload.target || '';
     const cleanSender = normalizePhone(rawSender);

@@ -289,7 +289,10 @@ export default function Sidebar({ onOpenFlutterModal }) {
   const pendingPermitsCount = permits.filter(p => p.status === 'PENDING' || p.status === 'EXTEND_REQUESTED').length;
   const santriDiLuar = santriList.filter(s => s.statusAsrama === 'DI_LUAR' || s.statusAsrama === 'TERLAMBAT').length;
   const pendingVisitsCount = Array.isArray(visitBookings) 
-    ? visitBookings.filter(b => b.status_kunjungan === 'Menunggu Approval').length 
+    ? visitBookings.filter(b => {
+        const s = String(b?.status_kunjungan || b?.status || '').toLowerCase();
+        return s.includes('menunggu approval') || s.includes('menunggu') || s === 'pending';
+      }).length 
     : 0;
   const pendingOsisCount = Array.isArray(osisReports)
     ? osisReports.filter(r => r.status === 'PENDING_ADMIN').length

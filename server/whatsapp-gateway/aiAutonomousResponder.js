@@ -73,6 +73,56 @@ if (supabaseUrl && supabaseKey) {
   }
 }
 
+let authenticatedSupabase = null;
+let authClientPromise = null;
+
+export async function getAuthenticatedSupabaseClient() {
+  const url = resolveSupabaseUrl();
+  const key = resolveSupabaseKey();
+  if (!url || !key) return createFallbackSupabaseStub();
+
+  if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if (!authenticatedSupabase) {
+      authenticatedSupabase = createClient(url, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+        auth: { persistSession: false, autoRefreshToken: false }
+      });
+    }
+    return authenticatedSupabase;
+  }
+
+  if (authenticatedSupabase) {
+    try {
+      const { data: { session } } = await authenticatedSupabase.auth.getSession();
+      if (session) return authenticatedSupabase;
+    } catch {}
+  }
+
+  if (!authClientPromise) {
+    authClientPromise = (async () => {
+      const client = createClient(url, key, {
+        auth: { persistSession: false, autoRefreshToken: true }
+      });
+      const { error } = await client.auth.signInWithPassword({
+        email: 'adminriayah@smartriayah.sch.id',
+        password: 'Riayah2026!'
+      }).catch(err => ({ error: err }));
+
+      if (error) {
+        console.warn('⚠️ [AI Responder] Auth adminriayah failed, trying superadmin:', error.message);
+        await client.auth.signInWithPassword({
+          email: 'superadmin@smartriayah.sch.id',
+          password: 'Riayah2026!'
+        }).catch(() => {});
+      }
+      authenticatedSupabase = client;
+      supabase = client;
+      authClientPromise = null;
+      return client;
+    })();
+  }
+  return authClientPromise;
+}
+
 const DEFAULT_FONNTE_TOKEN = (process.env.FONNTE_TOKEN || process.env.VITE_FONNTE_TOKEN || '').trim();
 
 /**
@@ -107,22 +157,26 @@ export async function setManualTakeover(phone, isManual) {
   if (!digits) return false;
   const last8 = digits.slice(-8);
 
+  const db = await getAuthenticatedSupabaseClient();
+  const { data: userData } = await db.auth.getUser().catch(() => ({ data: {} }));
+  const systemEmail = userData?.user?.email || 'adminriayah@smartriayah.sch.id';
+
   if (isManual) {
     manualTakeoverPhones.add(clean);
     try {
       // 1. Bersihkan record lama untuk nomor ini di Supabase messages table
-      await supabase
+      await db
         .from('messages')
         .delete()
         .eq('room_id', 'whatsapp_takeover')
         .like('message_text', `%${last8}%`);
 
       // 2. Insert record baru sebagai penanda bahwa nomor ini sedang di-takeover manual
-      const { error } = await supabase
+      const { error } = await db
         .from('messages')
         .insert([{
           room_id: 'whatsapp_takeover',
-          sender_email: 'admin@smartriayah.com',
+          sender_email: systemEmail,
           sender_name: 'Admin Ri\'ayah',
           sender_role: 'admin',
           message_text: clean,
@@ -146,7 +200,7 @@ export async function setManualTakeover(phone, isManual) {
 
     try {
       // Hapus status takeover dari Supabase messages table
-      const { error } = await supabase
+      const { error } = await db
         .from('messages')
         .delete()
         .eq('room_id', 'whatsapp_takeover')
@@ -183,7 +237,8 @@ export async function isPhoneInManualTakeover(phone) {
 
   // 2. Cek Supabase (persistent across all Vercel Serverless Lambdas)
   try {
-    const { data, error } = await supabase
+    const db = await getAuthenticatedSupabaseClient();
+    const { data, error } = await db
       .from('messages')
       .select('message_text, reaction')
       .eq('room_id', 'whatsapp_takeover');
@@ -466,7 +521,7 @@ export function selectBestSantriCandidate(rows, senderPhone) {
  * dan prioritas pengikatan 628813576012/08813576012 -> Nurmiyaty.
  */
 export async function findLiveSantriByPhone(cleanPhone, clientOverride = null) {
-  const db = clientOverride || supabase;
+  const db = clientOverride || (await getAuthenticatedSupabaseClient());
   const priorityPhone = isPriorityNurmiyatyPhone(cleanPhone);
 
   try {
@@ -715,7 +770,7 @@ function getRecentBookingMemoryStore() {
  * Ambil riwayat chat terakhir untuk nomor HP ini (mencakup room wa_628... & wa_08... + memory fallback)
  */
 export async function getRecentChatHistory(cleanPhone, clientOverride = null) {
-  const db = clientOverride || supabase;
+  const db = clientOverride || (await getAuthenticatedSupabaseClient());
   const normalized = normalizePhone(cleanPhone) || String(cleanPhone || '').trim();
   const priorityPhone = isPriorityNurmiyatyPhone(cleanPhone);
 
@@ -772,7 +827,7 @@ export async function getRecentChatHistory(cleanPhone, clientOverride = null) {
  * Simpan pesan chat ke tabel messages Supabase pada room kanonik wa_628... & in-memory cache
  */
 export async function recordChatMessage(cleanPhone, role, text, senderName, clientOverride = null) {
-  const db = clientOverride || supabase;
+  const db = clientOverride || (await getAuthenticatedSupabaseClient());
   const normalized = normalizePhone(cleanPhone) || String(cleanPhone || '').trim();
   const priorityPhone = isPriorityNurmiyatyPhone(normalized);
   const safeSenderName = isPoisonedFallbackName(senderName)
@@ -789,9 +844,12 @@ export async function recordChatMessage(cleanPhone, role, text, senderName, clie
   }
 
   try {
+    const { data: userData } = await db.auth.getUser().catch(() => ({ data: {} }));
+    const systemEmail = userData?.user?.email || 'adminriayah@smartriayah.sch.id';
+
     const { error } = await db.from('messages').insert([{
       room_id: `wa_${normalized}`,
-      sender_email: role === 'user' ? `${normalized}@whatsapp.user` : 'ai@smartriayah.com',
+      sender_email: systemEmail,
       sender_name: safeSenderName,
       sender_role: role,
       message_text: text,
@@ -976,9 +1034,13 @@ export async function saveBookingToSystem(bookingData) {
       console.warn('⚠️ [Broadcast whatsapp.visit_booking warning]:', broadcastRes?.error || broadcastRes);
     }
 
-    const { error: insertErr } = await supabase.from('messages').insert([{
+    const client = await getAuthenticatedSupabaseClient();
+    const { data: userData } = await client.auth.getUser().catch(() => ({ data: {} }));
+    const systemEmail = userData?.user?.email || 'adminriayah@smartriayah.sch.id';
+
+    const { error: insertErr } = await client.from('messages').insert([{
       room_id: 'visit_bookings_log',
-      sender_email: 'ai@smartriayah.com',
+      sender_email: systemEmail,
       sender_name: 'Smart Riayah AI Gate Pass',
       sender_role: 'system',
       message_text: JSON.stringify(bookingData),

@@ -658,13 +658,8 @@ export async function fetchVisitBookingsFromSupabase() {
       .order('created_at', { ascending: false })
       .limit(100);
 
-    if (error) {
-      console.warn('⚠️ [Supabase] Gagal mengambil visit_bookings_log:', error.message);
-      return [];
-    }
-
     const bookings = [];
-    if (Array.isArray(data)) {
+    if (!error && Array.isArray(data) && data.length > 0) {
       for (const row of data) {
         try {
           const parsed = JSON.parse(row.message_text);
@@ -678,10 +673,34 @@ export async function fetchVisitBookingsFromSupabase() {
           console.warn('Gagal parse visit booking JSON dari Supabase messages:', row.id, e);
         }
       }
+      return bookings;
     }
+
+    // Fallback: Jika direct Supabase query kosong/terkendala RLS anon, ambil dari endpoint backend /api/visits/wa-booking
+    try {
+      const apiRes = await fetch('/api/visits/wa-booking');
+      if (apiRes.ok) {
+        const json = await apiRes.json();
+        if (json?.success && Array.isArray(json.bookings) && json.bookings.length > 0) {
+          return json.bookings;
+        }
+      }
+    } catch (apiErr) {
+      // safe fallback
+    }
+
     return bookings;
   } catch (err) {
     console.warn('fetchVisitBookingsFromSupabase error:', err);
+    try {
+      const apiRes = await fetch('/api/visits/wa-booking');
+      if (apiRes.ok) {
+        const json = await apiRes.json();
+        if (json?.success && Array.isArray(json.bookings)) {
+          return json.bookings;
+        }
+      }
+    } catch {}
     return [];
   }
 }
@@ -690,64 +709,80 @@ export async function syncBookingStatusToSupabase(booking, reaction = 'VISIT_APP
   try {
     if (!booking?.id) return { success: false };
     const serialized = JSON.stringify(booking);
-    const isResolved = booking.status_kunjungan && booking.status_kunjungan !== 'Menunggu Approval';
+    const isResolved = booking.status_kunjungan && !String(booking.status_kunjungan).toLowerCase().includes('menunggu');
 
-    if (booking._supabaseMessageId) {
-      const { error } = await supabase
-        .from('messages')
-        .update({
-          message_text: serialized,
-          reaction,
-          is_read: isResolved
-        })
-        .eq('id', booking._supabaseMessageId);
-      if (error) console.warn('⚠️ [Supabase] Update visit booking warning:', error.message);
-    } else {
-      const { data: rows, error: selErr } = await supabase
-        .from('messages')
-        .select('id, message_text')
-        .eq('room_id', 'visit_bookings_log')
-        .order('created_at', { ascending: false })
-        .limit(100);
+    let directSuccess = false;
+    try {
+      const { data: userData } = await supabase.auth.getUser().catch(() => ({ data: {} }));
+      const senderEmail = userData?.user?.email || 'adminriayah@smartriayah.sch.id';
 
-      if (selErr) {
-        console.warn('⚠️ [Supabase] Query visit_bookings_log warning:', selErr.message);
-      }
-
-      const found = Array.isArray(rows)
-        ? rows.find(r => {
-            try {
-              const p = JSON.parse(r.message_text);
-              return p.id === booking.id;
-            } catch {
-              return false;
-            }
-          })
-        : null;
-
-      if (found) {
-        const { error: updErr } = await supabase
+      if (booking._supabaseMessageId) {
+        const { error } = await supabase
           .from('messages')
           .update({
             message_text: serialized,
             reaction,
             is_read: isResolved
           })
-          .eq('id', found.id);
-        if (updErr) console.warn('⚠️ [Supabase] Update visit booking row warning:', updErr.message);
+          .eq('id', booking._supabaseMessageId);
+        if (!error) directSuccess = true;
       } else {
-        const { error: insErr } = await supabase
+        const { data: rows, error: selErr } = await supabase
           .from('messages')
-          .insert([{
-            room_id: 'visit_bookings_log',
-            sender_email: 'ai@smartriayah.com',
-            sender_name: 'Smart Riayah AI Gate Pass',
-            sender_role: 'system',
-            message_text: serialized,
-            reaction: reaction || (booking.is_weekday ? 'VISIT_MANUAL_WEEKDAY' : 'VISIT_AUTO_WEEKEND'),
-            is_read: isResolved
-          }]);
-        if (insErr) console.warn('⚠️ [Supabase] Insert visit booking row warning:', insErr.message);
+          .select('id, message_text')
+          .eq('room_id', 'visit_bookings_log')
+          .order('created_at', { ascending: false })
+          .limit(100);
+
+        const found = Array.isArray(rows)
+          ? rows.find(r => {
+              try {
+                return JSON.parse(r.message_text).id === booking.id;
+              } catch {
+                return false;
+              }
+            })
+          : null;
+
+        if (found) {
+          const { error: updErr } = await supabase
+            .from('messages')
+            .update({
+              message_text: serialized,
+              reaction,
+              is_read: isResolved
+            })
+            .eq('id', found.id);
+          if (!updErr) directSuccess = true;
+        } else {
+          const { error: insErr } = await supabase
+            .from('messages')
+            .insert([{
+              room_id: 'visit_bookings_log',
+              sender_email: senderEmail,
+              sender_name: 'Smart Riayah AI Gate Pass',
+              sender_role: 'system',
+              message_text: serialized,
+              reaction: reaction || (booking.is_weekday ? 'VISIT_MANUAL_WEEKDAY' : 'VISIT_AUTO_WEEKEND'),
+              is_read: isResolved
+            }]);
+          if (!insErr) directSuccess = true;
+        }
+      }
+    } catch (directErr) {
+      console.warn('⚠️ [Supabase] Direct sync warning:', directErr.message);
+    }
+
+    // Fallback: update via serverless API if direct update was restricted
+    if (!directSuccess && typeof fetch !== 'undefined') {
+      try {
+        await fetch('/api/visits/wa-booking', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'UPDATE_STATUS', booking, reaction })
+        });
+      } catch (apiErr) {
+        console.warn('⚠️ [API] syncBookingStatus fallback error:', apiErr.message);
       }
     }
 
