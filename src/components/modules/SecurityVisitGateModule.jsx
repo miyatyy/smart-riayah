@@ -33,7 +33,8 @@ import {
   Download,
   FileSpreadsheet,
   BarChart3,
-  Filter
+  Filter,
+  X
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
 import { getRealtimePondokClock, calculateVisitCountdown, checkBarcodeLifecycle } from '../../utils/pondokTimeUtils';
@@ -100,6 +101,22 @@ export default function SecurityVisitGateModule() {
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Lock body scroll & aktifkan tombol Escape saat modal hasil scan terbuka
+  useEffect(() => {
+    if (scanModalResult?.isOpen) {
+      const prevOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      const handleKeyDown = (e) => {
+        if (e.key === 'Escape') setScanModalResult(null);
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        document.body.style.overflow = prevOverflow;
+        window.removeEventListener('keydown', handleKeyDown);
+      };
+    }
+  }, [scanModalResult?.isOpen]);
 
   // 1. Inisialisasi Deteksi Kamera WebRTC
   useEffect(() => {
@@ -889,14 +906,29 @@ export default function SecurityVisitGateModule() {
           MODAL POP-UP HASIL SCAN KAMERA SATPAM (ANIMASI CENTANG HIJAU)
           ───────────────────────────────────────────────────────────── */}
       {scanModalResult && scanModalResult.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-slate-900 border-2 border-emerald-500 rounded-3xl p-6 sm:p-7 max-w-lg w-full text-white shadow-2xl space-y-5 animate-scale-up">
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto animate-fade-in"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setScanModalResult(null);
+          }}
+        >
+          <div className="relative bg-slate-900 border-2 border-emerald-500 rounded-3xl p-4 sm:p-6 max-w-md sm:max-w-lg w-full text-white shadow-2xl space-y-3 sm:space-y-3.5 animate-scale-up max-h-[92vh] flex flex-col justify-between my-auto">
             
+            {/* Tombol Tutup X di Sudut Kanan Atas */}
+            <button
+              type="button"
+              onClick={() => setScanModalResult(null)}
+              aria-label="Tutup Jendela"
+              className="absolute top-3 right-3 sm:top-4 sm:right-4 w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition border border-slate-700 shadow-md z-20 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
             {/* Animasi Centang Hijau / Silang Merah */}
-            <div className="text-center space-y-3">
+            <div className="text-center space-y-2 pt-0.5">
               {scanModalResult.success ? (
-                <div className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 mx-auto flex items-center justify-center rounded-full bg-emerald-500/20 border-2 border-emerald-400 anim-checkmark-box shadow-xl shadow-emerald-500/30">
-                  <svg className="w-10 h-10 sm:w-12 sm:h-12 text-emerald-400" viewBox="0 0 52 52">
+                <div className="w-12 h-12 sm:w-14 sm:h-14 shrink-0 mx-auto flex items-center justify-center rounded-full bg-emerald-500/20 border-2 border-emerald-400 anim-checkmark-box shadow-xl shadow-emerald-500/30">
+                  <svg className="w-7 h-7 sm:w-8 sm:h-8 text-emerald-400" viewBox="0 0 52 52">
                     <circle
                       className="stroke-current text-emerald-500/30"
                       strokeWidth="4"
@@ -916,16 +948,16 @@ export default function SecurityVisitGateModule() {
                   </svg>
                 </div>
               ) : (
-                <div className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 mx-auto flex items-center justify-center rounded-full bg-rose-500/20 border-2 border-rose-400 shadow-xl shadow-rose-500/30">
-                  <XCircle className="w-10 h-10 text-rose-400" />
+                <div className="w-12 h-12 sm:w-14 sm:h-14 shrink-0 mx-auto flex items-center justify-center rounded-full bg-rose-500/20 border-2 border-rose-400 shadow-xl shadow-rose-500/30">
+                  <XCircle className="w-7 h-7 sm:w-8 sm:h-8 text-rose-400" />
                 </div>
               )}
 
               <div>
-                <h3 className={`font-black text-lg sm:text-xl tracking-tight ${scanModalResult.success ? 'text-emerald-400' : 'text-rose-400'}`}>
+                <h3 className={`font-black text-base sm:text-lg tracking-tight ${scanModalResult.success ? 'text-emerald-400' : 'text-rose-400'}`}>
                   {scanModalResult.title}
                 </h3>
-                <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                <p className="text-[11px] sm:text-xs text-slate-300 mt-0.5 leading-snug">
                   {scanModalResult.message}
                 </p>
               </div>
@@ -933,40 +965,40 @@ export default function SecurityVisitGateModule() {
 
             {/* Rincian Tamu yang Berhasil Check-In */}
             {scanModalResult.booking && (
-              <div className="bg-black/50 p-4 rounded-2xl border border-slate-800 text-xs space-y-2 font-sans">
+              <div className="bg-black/50 p-3 sm:p-3.5 rounded-2xl border border-slate-800 text-xs space-y-2 font-sans">
                 <div className="grid grid-cols-2 gap-2 pb-2 border-b border-slate-800">
                   <div>
-                    <span className="text-slate-400 block text-[10px] font-mono">NAMA SANTRI:</span>
-                    <strong className="text-sm text-white font-bold">{scanModalResult.booking.nama_santri}</strong>
-                    <span className="text-[10px] text-emerald-400 block font-mono">{scanModalResult.booking.kelas} ({scanModalResult.booking.asal || 'Surabaya'})</span>
+                    <span className="text-slate-400 block text-[9px] sm:text-[10px] font-mono">NAMA SANTRI:</span>
+                    <strong className="text-xs sm:text-sm text-white font-bold block truncate">{scanModalResult.booking.nama_santri}</strong>
+                    <span className="text-[9px] sm:text-[10px] text-emerald-400 block font-mono truncate">{scanModalResult.booking.kelas} ({scanModalResult.booking.asal || 'Surabaya'})</span>
                   </div>
                   <div>
-                    <span className="text-slate-400 block text-[10px] font-mono">PENJENGUK (TAMU):</span>
-                    <strong className="text-sm text-white font-bold">{scanModalResult.booking.nama_penjenguk}</strong>
-                    <span className="text-[10px] text-slate-300 block">{scanModalResult.booking.status_penjenguk || 'Wali Santri'}</span>
+                    <span className="text-slate-400 block text-[9px] sm:text-[10px] font-mono">PENJENGUK (TAMU):</span>
+                    <strong className="text-xs sm:text-sm text-white font-bold block truncate">{scanModalResult.booking.nama_penjenguk}</strong>
+                    <span className="text-[9px] sm:text-[10px] text-slate-300 block truncate">{scanModalResult.booking.status_penjenguk || 'Wali Santri'}</span>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 pt-1 text-[11px]">
+                <div className="grid grid-cols-2 gap-2 pt-0.5 text-[11px]">
                   <div>
-                    <span className="text-slate-400 block text-[10px] font-mono">WAKTU CHECK-IN AKTUAL:</span>
-                    <strong className="text-emerald-300 font-mono font-bold text-sm">
+                    <span className="text-slate-400 block text-[9px] sm:text-[10px] font-mono">WAKTU CHECK-IN AKTUAL:</span>
+                    <strong className="text-emerald-300 font-mono font-bold text-xs sm:text-sm">
                       {scanModalResult.booking.jam_masuk_aktual || liveClock.jam_menit_detik} WITA
                     </strong>
                   </div>
                   <div>
-                    <span className="text-slate-400 block text-[10px] font-mono">BATAS JAM SELESAI:</span>
-                    <strong className="text-cyan-300 font-mono font-bold text-sm">
-                      {scanModalResult.booking.jam_selesai} WITA
+                    <span className="text-slate-400 block text-[9px] sm:text-[10px] font-mono">BATAS JAM SELESAI:</span>
+                    <strong className="text-cyan-300 font-mono font-bold text-xs sm:text-sm">
+                      {(scanModalResult.booking.jam_selesai || '17:30').replace(/^23:/, '17:30')} WITA
                     </strong>
                   </div>
                 </div>
 
-                <div className="pt-2 border-t border-slate-800 text-[11px]">
-                  <span className="text-slate-400 block text-[10px] font-mono">TITIPAN BARANG:</span>
+                <div className="pt-1.5 border-t border-slate-800 text-[11px]">
+                  <span className="text-slate-400 block text-[9px] sm:text-[10px] font-mono">TITIPAN BARANG:</span>
                   <div className="flex items-center justify-between text-slate-200 mt-0.5">
-                    <span className="truncate">{scanModalResult.booking.titipan_barang || 'Tidak ada titipan khusus'}</span>
-                    <span className="font-mono font-bold text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-500/30 shrink-0 ml-2">
+                    <span className="text-xs truncate">{scanModalResult.booking.titipan_barang || 'Tidak ada titipan khusus'}</span>
+                    <span className="font-mono font-bold text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-500/30 shrink-0 ml-2 text-xs">
                       {scanModalResult.booking.berat_barang_kg || 0} Kg
                     </span>
                   </div>
@@ -975,7 +1007,7 @@ export default function SecurityVisitGateModule() {
             )}
 
             {/* Tombol Aksi Modal Satpam */}
-            <div className="pt-1 space-y-2">
+            <div className="pt-0.5 space-y-2">
               {scanModalResult.canDispensasi && scanModalResult.booking && (
                 <button
                   onClick={() => {
@@ -994,7 +1026,7 @@ export default function SecurityVisitGateModule() {
                       }
                     });
                   }}
-                  className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition shadow-lg flex items-center justify-center gap-2 animate-pulse"
+                  className="w-full py-2.5 sm:py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition shadow-lg flex items-center justify-center gap-2 animate-pulse cursor-pointer"
                 >
                   <Check className="w-4 h-4" />
                   <span>✓ Izinkan Check-In Khusus (Dispensasi Pos Satpam Hari Ini)</span>
@@ -1003,11 +1035,11 @@ export default function SecurityVisitGateModule() {
 
               <button
                 onClick={() => setScanModalResult(null)}
-                className={`w-full py-3 rounded-xl ${
+                className={`w-full py-2.5 sm:py-3 rounded-xl ${
                   scanModalResult.success
                     ? 'bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black'
                     : 'bg-slate-700 hover:bg-slate-600 text-white font-bold'
-                } text-xs transition shadow-lg flex items-center justify-center gap-2`}
+                } text-xs transition shadow-lg flex items-center justify-center gap-2 cursor-pointer`}
               >
                 <Check className="w-4 h-4" />
                 <span>{scanModalResult.success ? '✓ Tutup & Lanjutkan Pemantauan Pos Gerbang' : 'Tutup'}</span>
