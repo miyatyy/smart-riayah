@@ -419,9 +419,16 @@ export default function GatePassVerificationPage({ token }) {
       ctx.font = 'bold 15px sans-serif';
       ctx.fillText(`${booking.hari_kunjungan || 'Sabtu'}, ${booking.tanggal_kunjungan || clock.tanggal_lengkap}`, 370, 294);
 
+      const displayJamMulai = booking.jam_kunjungan || '09:00';
+      let displayJamSelesai = booking.jam_selesai;
+      const isWeekendSchedule = booking.approval_type === 'AUTO_WEEKEND' || ['Jumat', 'Sabtu', 'Minggu'].includes(booking.hari_kunjungan);
+      if (!displayJamSelesai || displayJamSelesai === displayJamMulai || (isWeekendSchedule && displayJamSelesai === '10:00')) {
+        displayJamSelesai = isWeekendSchedule ? '17:00' : '15:30';
+      }
+
       ctx.fillStyle = '#0284C7';
       ctx.font = 'bold 14px monospace';
-      ctx.fillText(`Pukul: ${booking.jam_kunjungan || '14:00'} s/d ${booking.jam_selesai || '15:30'} WIB`, 370, 314);
+      ctx.fillText(`Pukul: ${displayJamMulai} s/d ${displayJamSelesai} WIB`, 370, 314);
 
       // Garis Pemisah 2
       ctx.beginPath();

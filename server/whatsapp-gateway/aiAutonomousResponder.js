@@ -942,81 +942,209 @@ export function normalizeBookingWeekdayAndStatus(rawData = {}, rtc = getRealtime
   };
 }
 
-function parseScheduleDetailsFromText(combinedText, rtc) {
-  const lower = String(combinedText || '').toLowerCase();
+/**
+ * Pembersih tag internal booking (<!--BOOKING_DATA:...-->) agar tidak pernah bocor ke WhatsApp wali santri.
+ */
+export function stripInternalBookingTags(text) {
+  if (!text) return '';
+  let out = String(text);
+  // 1. Hapus tag BOOKING_DATA lengkap maupun yang terpotong di akhir tanpa -->
+  out = out.replace(/<!--\s*BOOKING_DATA[\s\S]*?(?:-->|$)/gi, '');
+  // 2. Hapus semua komentar HTML lainnya
+  out = out.replace(/<!--[\s\S]*?(?:-->|$)/gi, '');
+  // 3. Hapus jika ada raw JSON booking tersisa di akhir
+  out = out.replace(/\{"nama_santri"[\s\S]*$/gi, '');
+  // 4. Rapikan baris kosong berlebih
+  return out.replace(/\n\s*\n\s*\n+/g, '\n\n').trim();
+}
 
-  let targetDay = rtc.namaHari;
-  let targetYmd = rtc.ymd;
+/**
+ * Ekstraktor data booking yang tangguh dari balasan DeepSeek AI,
+ * mendukung format tag lengkap, tag terpotong, maupun fallback regex individual.
+ */
+export function extractBookingDataFromReply(reply) {
+  if (!reply) return null;
 
-  if (/\bsenin\b/.test(lower)) targetDay = 'Senin';
-  else if (/\bselasa\b/.test(lower)) targetDay = 'Selasa';
-  else if (/\brabu\b/.test(lower)) targetDay = 'Rabu';
-  else if (/\bkamis\b/.test(lower)) targetDay = 'Kamis';
-  else if (/\bjumat\b|\bjum'at\b/.test(lower)) targetDay = 'Jumat';
-  else if (/\bsabtu\b/.test(lower)) targetDay = 'Sabtu';
-  else if (/\bminggu\b|\bahad\b/.test(lower)) targetDay = 'Minggu';
-  else if (/\blusa\b/.test(lower)) {
-    const r = rtc.refDays.find((d) => d.offset === 2);
-    if (r) { targetDay = r.hari; targetYmd = r.tanggal; }
-  } else if (/\bbesok\b/.test(lower)) {
-    const r = rtc.refDays.find((d) => d.offset === 1);
-    if (r) { targetDay = r.hari; targetYmd = r.tanggal; }
+  // 1. Coba match tag lengkap <!--BOOKING_DATA:{...}-->
+  const fullMatch = reply.match(/<!--\s*BOOKING_DATA\s*:\s*(\{[\s\S]*?\})\s*-->/i);
+  if (fullMatch && fullMatch[1]) {
+    try {
+      return JSON.parse(fullMatch[1].trim());
+    } catch {}
   }
 
-  const matchedRef = rtc.refDays.find((r) => r.hari.toLowerCase() === targetDay.toLowerCase());
-  if (matchedRef) targetYmd = matchedRef.tanggal;
+  // 2. Coba match jika tag terpotong di akhir (misal karena token limit atau tanpa -->)
+  const partialMatch = reply.match(/<!--\s*BOOKING_DATA\s*:\s*(\{[\s\S]*)/i);
+  if (partialMatch && partialMatch[1]) {
+    const rawBlock = partialMatch[1].trim();
+    const lastBraceIndex = rawBlock.lastIndexOf('}');
+    if (lastBraceIndex !== -1) {
+      try {
+        return JSON.parse(rawBlock.slice(0, lastBraceIndex + 1));
+      } catch {}
+    }
 
-  const to24h = (hourNum, minStr = '00', period = '') => {
-    let h = parseInt(hourNum, 10);
-    const p = String(period || '').toLowerCase();
-    if ((p === 'siang' || p === 'sore') && h >= 1 && h <= 11) h += 12;
-    else if (p === 'malam' && h >= 1 && h <= 11) h += 12;
-    h = Math.max(0, Math.min(23, h));
-    return `${String(h).padStart(2, '0')}:${String(minStr).padStart(2, '0')}`;
+    // 3. Fallback ekstraksi regex per field jika JSON terpotong di tengah jalan
+    const santriM = rawBlock.match(/"nama_santri"\s*:\s*"([^"]+)"/i);
+    const kelasM = rawBlock.match(/"kelas"\s*:\s*"([^"]+)"/i);
+    const hariM = rawBlock.match(/"hari_kunjungan"\s*:\s*"([^"]+)"/i);
+    const tglM = rawBlock.match(/"tanggal_kunjungan"\s*:\s*"([^"]+)"/i);
+    const jamMulaiM = rawBlock.match(/"jam_kunjungan"\s*:\s*"([^"]+)"/i);
+    const jamSelesaiM = rawBlock.match(/"jam_selesai"\s*:\s*"([^"]+)"/i);
+    const titipanM = rawBlock.match(/"titipan_barang"\s*:\s*"([^"]*)"/i);
+    const beratM = rawBlock.match(/"berat_barang_kg"\s*:\s*(\d+(?:\.\d+)?)/i);
+    const penjengukM = rawBlock.match(/"nama_penjenguk"\s*:\s*"([^"]+)"/i);
+    const isWeekdayM = rawBlock.match(/"is_weekday"\s*:\s*(true|false)/i);
+    const tokenM = rawBlock.match(/"barcode_token"\s*:\s*"([^"]+)"/i);
+
+    if (santriM || jamMulaiM || hariM) {
+      return {
+        nama_santri: santriM ? santriM[1] : '',
+        kelas: kelasM ? kelasM[1] : '',
+        hari_kunjungan: hariM ? hariM[1] : '',
+        tanggal_kunjungan: tglM ? tglM[1] : '',
+        jam_kunjungan: jamMulaiM ? jamMulaiM[1] : '',
+        jam_selesai: jamSelesaiM ? jamSelesaiM[1] : '',
+        titipan_barang: titipanM ? titipanM[1] : '',
+        berat_barang_kg: beratM ? Number(beratM[1]) : 0,
+        nama_penjenguk: penjengukM ? penjengukM[1] : '',
+        is_weekday: isWeekdayM ? isWeekdayM[1] === 'true' : false,
+        barcode_token: tokenM ? tokenM[1] : '',
+      };
+    }
+  }
+
+  return null;
+}
+
+export function parseScheduleDetailsFromText(primaryText, secondaryText = '', rtc = getRealtimePondokClockBackend()) {
+  let refRtc = rtc;
+  let textP = primaryText || '';
+  let textS = secondaryText || '';
+  if (secondaryText && typeof secondaryText === 'object' && secondaryText.refDays) {
+    refRtc = secondaryText;
+    textS = '';
+  }
+
+  // Prioritaskan pesan terkini wali santri & balasan bot terkini (primaryText)
+  const lowerPrimary = String(textP).toLowerCase();
+  const lowerSecondary = String(textS).toLowerCase();
+
+  const getDayAndDate = (txt) => {
+    let d = '';
+    let y = '';
+    if (/\bsenin\b/.test(txt)) d = 'Senin';
+    else if (/\bselasa\b/.test(txt)) d = 'Selasa';
+    else if (/\brabu\b/.test(txt)) d = 'Rabu';
+    else if (/\bkamis\b/.test(txt)) d = 'Kamis';
+    else if (/\bjumat\b|\bjum'at\b/.test(txt)) d = 'Jumat';
+    else if (/\bsabtu\b/.test(txt)) d = 'Sabtu';
+    else if (/\bminggu\b|\bahad\b/.test(txt)) d = 'Minggu';
+    else if (/\blusa\b/.test(txt)) {
+      const r = refRtc.refDays.find((item) => item.offset === 2);
+      if (r) { d = r.hari; y = r.tanggal; }
+    } else if (/\bbesok\b/.test(txt)) {
+      const r = refRtc.refDays.find((item) => item.offset === 1);
+      if (r) { d = r.hari; y = r.tanggal; }
+    }
+    if (d && !y) {
+      const matchedRef = refRtc.refDays.find((r) => r.hari.toLowerCase() === d.toLowerCase());
+      if (matchedRef) y = matchedRef.tanggal;
+    }
+    return { day: d, date: y };
   };
 
-  let jamMulai = '';
-  let jamSelesai = '';
-
-  const startMatch = lower.match(/(?:jam|pukul)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(pagi|siang|sore|malam)?/i);
-  if (startMatch) {
-    jamMulai = to24h(startMatch[1], startMatch[2] || '00', startMatch[3] || '');
-  } else if (/\bpagi\b/.test(lower)) {
-    jamMulai = '09:00';
-  } else if (/\bsiang\b/.test(lower)) {
-    jamMulai = '13:30';
-  } else if (/\bsore\b/.test(lower)) {
-    jamMulai = '15:00';
-  } else if (/\bmalam\b/.test(lower)) {
-    jamMulai = '19:30';
-  } else {
-    jamMulai = '14:00';
+  let dayInfo = getDayAndDate(lowerPrimary);
+  if (!dayInfo.day && lowerSecondary) {
+    dayInfo = getDayAndDate(lowerSecondary);
   }
+  const targetDay = dayInfo.day || refRtc.namaHari;
+  const targetYmd = dayInfo.date || refRtc.ymd;
 
-  const endMatch = lower.match(/(?:sampai|sampe|s\/d|hingga|-)\s*(?:jam|pukul)?\s*(\d{1,2})(?:[:.](\d{2}))?\s*(pagi|siang|sore|malam)?/i);
-  if (endMatch) {
-    let endPeriod = endMatch[3] || '';
-    if (!endPeriod && startMatch?.[3]) endPeriod = startMatch[3];
-    jamSelesai = to24h(endMatch[1], endMatch[2] || '00', endPeriod);
-  } else {
-    const [sh, sm] = jamMulai.split(':').map((n) => parseInt(n, 10));
-    const startMinutes = (Number.isFinite(sh) ? sh : 14) * 60 + (Number.isFinite(sm) ? sm : 0);
-    const endMinutes = Math.min(23 * 60 + 59, startMinutes + 90);
-    const eh = Math.floor(endMinutes / 60);
-    const em = endMinutes % 60;
-    jamSelesai = `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}`;
-  }
+  const to24h = (hourNum, minStr = '00', period = '', defaultPeriod = '') => {
+    let h = parseInt(hourNum, 10);
+    let p = String(period || defaultPeriod || '').toLowerCase();
+    if ((p === 'siang' || p === 'sore') && h >= 1 && h <= 7) h += 12;
+    else if (p === 'malam' && h >= 1 && h <= 11) h += 12;
+    else if (p === 'pagi' && h === 12) h = 0;
+    else if (!p) {
+      if (h >= 1 && h <= 6) h += 12;
+    }
+    h = Math.max(0, Math.min(23, h));
+    return `${String(h).padStart(2, '0')}:${String(minStr || '00').padStart(2, '0')}`;
+  };
 
+  const getTimeRange = (txt) => {
+    if (!txt) return null;
+    let norm = txt.toLowerCase();
+    // Normalisasi 'pagi jam 9' -> 'jam 9 pagi'
+    norm = norm.replace(/(pagi|siang|sore|malam)\s+(?:jam|pukul)?\s*(\d{1,2}(?:[:.]\d{2})?)/gi, 'jam $2 $1');
+
+    // 1. Rentang waktu eksplisit: "jam 9 - 5 sore", "09.00–17.00", "09:00 s/d 17:00", dsb.
+    const rangeRegex = /(?:jam|pukul)?\s*(\d{1,2})(?:[:.](\d{2}))?\s*(pagi|siang|sore|malam)?\s*(?:sampai|sampe|s\/d|hingga|[-–—~])\s*(?:jam|pukul)?\s*(\d{1,2})(?:[:.](\d{2}))?\s*(pagi|siang|sore|malam)?/i;
+    const match = norm.match(rangeRegex);
+    if (match) {
+      const startH = match[1];
+      const startM = match[2] || '00';
+      let startP = match[3] || '';
+      const endH = match[4];
+      const endM = match[5] || '00';
+      const endP = match[6] || '';
+
+      if (!startP && endP) {
+        if ((endP === 'sore' || endP === 'siang') && parseInt(startH, 10) >= 7 && parseInt(startH, 10) <= 11) {
+          startP = 'pagi';
+        }
+      }
+      const jMulai = to24h(startH, startM, startP, parseInt(startH, 10) >= 7 && parseInt(startH, 10) <= 11 ? 'pagi' : '');
+      const jSelesai = to24h(endH, endM, endP, 'sore');
+      return { jamMulai: jMulai, jamSelesai: jSelesai };
+    }
+
+    // 2. Jam tunggal: "jam 9", "pukul 14.30"
+    const singleMatch = norm.match(/(?:jam|pukul)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(pagi|siang|sore|malam)?/i);
+    if (singleMatch) {
+      const jMulai = to24h(singleMatch[1], singleMatch[2] || '00', singleMatch[3] || '');
+      const [sh, sm] = jMulai.split(':').map((n) => parseInt(n, 10));
+      const startMinutes = (Number.isFinite(sh) ? sh : 14) * 60 + (Number.isFinite(sm) ? sm : 0);
+      const isWeekendDay = ['Jumat', 'Sabtu', 'Minggu'].includes(targetDay);
+      let eh, em;
+      if (isWeekendDay && sh <= 11) {
+        eh = 17;
+        em = 0;
+      } else {
+        const endMinutes = Math.min(23 * 60 + 59, startMinutes + 90);
+        eh = Math.floor(endMinutes / 60);
+        em = endMinutes % 60;
+      }
+      return { jamMulai: jMulai, jamSelesai: `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}` };
+    }
+
+    // 3. Keterangan waktu deskriptif
+    if (/\bpagi\b/.test(norm)) return { jamMulai: '09:00', jamSelesai: ['Jumat', 'Sabtu', 'Minggu'].includes(targetDay) ? '17:00' : '11:00' };
+    if (/\bsiang\b/.test(norm)) return { jamMulai: '13:30', jamSelesai: '16:00' };
+    if (/\bsore\b/.test(norm)) return { jamMulai: '15:00', jamSelesai: '17:30' };
+    if (/\bmalam\b/.test(norm)) return { jamMulai: '19:30', jamSelesai: '21:00' };
+
+    return null;
+  };
+
+  const parsedTime = getTimeRange(lowerPrimary) || (lowerSecondary ? getTimeRange(lowerSecondary) : null) || {
+    jamMulai: '09:00',
+    jamSelesai: ['Jumat', 'Sabtu', 'Minggu'].includes(targetDay) ? '17:00' : '10:30'
+  };
+
+  const combinedLower = `${lowerPrimary} ${lowerSecondary}`;
   let titipan = '-';
-  if (/\bmakan|snack|kue|roti|buah|nasi\b/.test(lower)) titipan = 'Makanan / Snack';
-  else if (/\bbaju|pakaian|seragam|sarung|mukena\b/.test(lower)) titipan = 'Pakaian & Perlengkapan';
-  else if (/\bobat|vitamin|madu\b/.test(lower)) titipan = 'Obat / Vitamin';
+  if (/\bmakan|snack|kue|roti|buah|nasi\b/.test(combinedLower)) titipan = 'Makanan / Snack';
+  else if (/\bbaju|pakaian|seragam|sarung|mukena\b/.test(combinedLower)) titipan = 'Pakaian & Perlengkapan';
+  else if (/\bobat|vitamin|madu\b/.test(combinedLower)) titipan = 'Obat / Vitamin';
 
   return {
     hari_kunjungan: targetDay,
     tanggal_kunjungan: targetYmd,
-    jam_kunjungan: jamMulai,
-    jam_selesai: jamSelesai,
+    jam_kunjungan: parsedTime.jamMulai,
+    jam_selesai: parsedTime.jamSelesai,
     titipan_barang: titipan,
     berat_barang_kg: titipan === '-' ? 0 : 2,
   };
@@ -1091,7 +1219,7 @@ export async function saveBookingToSystem(bookingData) {
 }
 
 function sanitizeAutonomousReplyForPhone(replyText, cleanPhone, waliData, addr = null) {
-  let out = String(replyText || '').trim();
+  let out = stripInternalBookingTags(replyText);
   if (!out) return out;
 
   if (isPriorityNurmiyatyPhone(cleanPhone)) {
@@ -1109,7 +1237,7 @@ function sanitizeAutonomousReplyForPhone(replyText, cleanPhone, waliData, addr =
     out = applySapaanToText(out, addr);
   }
 
-  return out;
+  return stripInternalBookingTags(out);
 }
 
 /**
@@ -1324,7 +1452,7 @@ ATURAN BOOKING KUNJUNGAN:
           model: 'deepseek-chat',
           messages: messagesPayload,
           temperature: 0.25,
-          max_tokens: 220
+          max_tokens: 700
         })
       });
 
@@ -1338,10 +1466,9 @@ ATURAN BOOKING KUNJUNGAN:
           const candidateToken = replyTokenMatch ? replyTokenMatch[1].trim().toUpperCase() : pregeneratedWeekendToken;
 
           let bookingSaved = false;
-          const bookingMatch = reply.match(/<!--\s*BOOKING_DATA\s*:\s*(\{[\s\S]*?\})\s*-->/i);
-          if (bookingMatch && bookingMatch[1]) {
+          const bData = extractBookingDataFromReply(reply);
+          if (bData) {
             try {
-              const bData = JSON.parse(bookingMatch[1].trim());
               const rawBookingSantri = String(bData.nama_santri || '').trim();
               const rawBookingPenjenguk = String(bData.nama_penjenguk || '').trim();
 
@@ -1372,9 +1499,10 @@ ATURAN BOOKING KUNJUNGAN:
             } catch (pErr) {
               console.warn('Booking JSON parse error:', pErr.message);
             }
-
-            reply = reply.replace(/<!--\s*BOOKING_DATA\s*:[\s\S]*?-->/gi, '').trim();
           }
+
+          // Segera bersihkan tag komentar booking dari teks balasan
+          reply = stripInternalBookingTags(reply);
 
           // Safeguard multi-turn (termasuk cold-start serverless saat recentHistory kosong):
           // Jika wali konfirmasi ("oke/konfirmasi booking/iya jadi") ATAU balasan AI menyatakan booking dicatat/diteruskan ke Admin Ri'ayah
@@ -1390,7 +1518,7 @@ ATURAN BOOKING KUNJUNGAN:
             !bookingSaved &&
             (replyIndicatesBooked || isExplicitBookingConfirmation || (historyHasVisitContext && (textHasBookingSignal || isConfirmationMessage(textLower))))
           ) {
-            const parsed = parseScheduleDetailsFromText(`${historyTextJoined} ${incomingText} ${reply}`, rtc);
+            const parsed = parseScheduleDetailsFromText(`${incomingText} ${reply}`, historyTextJoined, rtc);
             await persistNormalizedBooking(
               {
                 ...parsed,
@@ -1412,6 +1540,7 @@ ATURAN BOOKING KUNJUNGAN:
           }
 
           reply = sanitizeAutonomousReplyForPhone(reply, cleanPhone, waliData, addr);
+          reply = stripInternalBookingTags(reply);
 
           await recordChatMessage(cleanPhone, 'assistant', reply, 'Smart Ri\'ayah AI');
           await saveAiDocument('ai_chat_logs', {
@@ -1485,7 +1614,7 @@ ATURAN BOOKING KUNJUNGAN:
     }
 
     // KASUS 2: Cek apakah perlu menanyakan jam/hari jika baru sebut salah satu secara sangat samar, atau langsung catat
-    const parsedSchedule = parseScheduleDetailsFromText(`${historyTextJoined} ${incomingText}`, rtc);
+    const parsedSchedule = parseScheduleDetailsFromText(incomingText, historyTextJoined, rtc);
     const { bookingRecord, deduplicated } = await persistNormalizedBooking(
       {
         ...parsedSchedule,
@@ -1568,7 +1697,7 @@ export async function sendFonnteAutoReply(targetPhone, replyText, customToken = 
   try {
     const formData = new FormData();
     formData.append('target', cleanTarget);
-    formData.append('message', replyText);
+    formData.append('message', stripInternalBookingTags(replyText));
     formData.append('countryCode', '62');
     formData.append('preview', 'false');
     if (mediaUrl) {

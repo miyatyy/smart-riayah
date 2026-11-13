@@ -135,14 +135,15 @@ export default async function handler(req, res) {
       statusKunjungan = 'Disetujui (Auto-Approved Weekend)';
       barcodeToken = `GP-DU-${cleanSantriName}-${Math.floor(1000 + Math.random() * 9000)}`;
       const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(barcodeToken)}&format=png`;
+      const gatePassUrl = `https://smart-riayah.vercel.app/?gatepass=${encodeURIComponent(barcodeToken)}`;
 
       replyWaText = `✅ *[BOOKING KUNJUNGAN DISETUJUI OTOMATIS - WEEKEND]*\n` +
         greeting +
         `Permohonan sambangan santri *${extracted.nama_santri}* (${extracted.kelas}) pada hari *${hariKunjunganNormalized}, ${extracted.tanggal_kunjungan}* pukul *${extracted.jam_kunjungan} - ${extracted.jam_selesai} WITA* telah *DISETUJUI OTOMATIS*.\n\n` +
         `📦 *Titipan Barang:* ${extracted.titipan_barang || '-'} (${extracted.berat_barang_kg || 0} Kg - Batas Max 5 Kg)\n` +
-        `🎫 *Kode Gate Pass:* *${barcodeToken}*\n\n` +
-        `📷 *Gambar Barcode Gate Pass (Bisa Di-scan):*\n${qrImageUrl}\n\n` +
-        `⚖️ *Tata Tertib:* Wajib menunjukkan gambar Barcode ini atau *Tap Kartu RFID* di Pos Jaga Satpam saat tiba di Gerbang Utama. Durasi maksimal kunjungan 90 menit.` + hoursWarning;
+        `🎫 *Kode Gate Pass:* *${barcodeToken}*\n` +
+        `🔗 *Buka E-Kupon Barcode:* ${gatePassUrl}\n\n` +
+        `⚖️ *Tata Tertib:* Tunjukkan barcode atau buka link kupon di atas kepada Satpam saat tiba di Gerbang Utama.` + hoursWarning;
     }
 
     const bookingRecord = {
@@ -162,6 +163,8 @@ export default async function handler(req, res) {
       no_wa_penjenguk: cleanSender || normalizePhone(extracted.no_wa_penjenguk || '') || '',
       rfid_uid: resolvedIdentity?.rfidUid || null,
       barcode_token: barcodeToken,
+      barcode_image_url: barcodeToken ? qrImageUrl : null,
+      gate_pass_url: barcodeToken ? gatePassUrl : null,
       approval_type: approvalType,
       status_kunjungan: statusKunjungan,
       is_weekday: isWeekday,
