@@ -110,6 +110,7 @@ export default function SecurityVisitGateModule() {
 
   // Verification & Camera States
   const [barcodeInput, setBarcodeInput] = useState('');
+  const [activeVisitorTab, setActiveVisitorTab] = useState('ACTIVE_VISITS'); // 'ACTIVE_VISITS' | 'ALARM_CONFIG' | 'LOGS_ARCHIVE' | 'ALL'
   const [activeTabSub, setActiveTabSub] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'PENDING' | 'DONE'
   const [searchTable, setSearchTable] = useState('');
 
@@ -1128,8 +1129,93 @@ export default function SecurityVisitGateModule() {
         </div>
       )}
 
+      {/* ─────────────────────────────────────────────────────────────
+          NAVIGASI TAB KONTEN POS KUNJUNGAN (HEMAT RUANG & COMPACT)
+          ───────────────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900 border border-slate-800 p-2 sm:p-2.5 rounded-2xl shadow-xl">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setActiveVisitorTab('ACTIVE_VISITS')}
+            className={`px-3.5 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 cursor-pointer ${
+              activeVisitorTab === 'ACTIVE_VISITS'
+                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/40'
+                : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white'
+            }`}
+          >
+            <Users className="w-4 h-4 text-emerald-300" />
+            <span>📋 Daftar Tamu Aktif ({activeVisitingGuests.length})</span>
+            {warningGuests.length > 0 && (
+              <span className="px-1.5 py-0.5 text-[10px] bg-amber-500 text-slate-950 rounded-full font-black animate-pulse">
+                {warningGuests.length} Kritis
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveVisitorTab('ALARM_CONFIG')}
+            className={`px-3.5 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 cursor-pointer ${
+              activeVisitorTab === 'ALARM_CONFIG'
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-950/40'
+                : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white'
+            }`}
+          >
+            <BellRing className={`w-4 h-4 ${activeVisitorTab === 'ALARM_CONFIG' ? 'text-slate-950' : 'text-amber-400'}`} />
+            <span>🔔 Kontrol &amp; Uji Pengingat</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+              activeVisitorTab === 'ALARM_CONFIG' ? 'bg-amber-600 text-white' : 'bg-amber-500/20 text-amber-300'
+            }`}>
+              H-{reminderThresholdMinutes}M
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveVisitorTab('LOGS_ARCHIVE')}
+            className={`px-3.5 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 cursor-pointer ${
+              activeVisitorTab === 'LOGS_ARCHIVE'
+                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/40'
+                : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white'
+            }`}
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-300" />
+            <span>📜 Arsip Log &amp; Rekap ({bookings.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveVisitorTab('ALL')}
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+              activeVisitorTab === 'ALL'
+                ? 'bg-slate-700 text-white shadow-md'
+                : 'bg-slate-800/50 hover:bg-slate-800 text-slate-400 hover:text-slate-200'
+            }`}
+            title="Tampilkan semua tabel & kontrol di satu layar"
+          >
+            <span>📑 Semua</span>
+          </button>
+        </div>
+
+        <div className="hidden md:flex items-center gap-2 text-[11px] font-mono text-slate-400 pr-2">
+          <span>Status Pengingat:</span>
+          <span className="inline-flex items-center gap-1 font-bold text-amber-400">
+            <Clock className="w-3 h-3" />
+            H-{reminderThresholdMinutes}M
+          </span>
+          <span className="text-slate-600">•</span>
+          <span className={isAlarmSoundEnabled ? 'text-emerald-400' : 'text-slate-500'}>
+            Audio: {isAlarmSoundEnabled ? 'ON' : 'MUTE'}
+          </span>
+          <span className="text-slate-600">•</span>
+          <span className={isAutoSendWaReminder ? 'text-emerald-400' : 'text-slate-500'}>
+            Auto-WA: {isAutoSendWaReminder ? 'ON' : 'OFF'}
+          </span>
+        </div>
+      </div>
+
       {/* ─── BANNER OVERSTAY JIKA ADA TAMU MELEWATI BATAS WAKTU ─── */}
-      {overdueGuests.length > 0 && (
+      {overdueGuests.length > 0 && (activeVisitorTab === 'ACTIVE_VISITS' || activeVisitorTab === 'ALL') && (
         <div className="bg-gradient-to-r from-rose-950 via-slate-900 to-rose-950 border-2 border-rose-500/80 rounded-3xl p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-rose-200 shadow-xl animate-pulse">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-2xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-lg shadow-rose-500/40">
@@ -1153,240 +1239,273 @@ export default function SecurityVisitGateModule() {
       )}
 
       {/* ─── BANNER EARLY WARNING JIKA ADA TAMU MENDEKATI BATAS WAKTU (H-15 MENIT ATAU KUSTOM) ─── */}
-      {warningGuests.length > 0 && (
-        <div className="bg-gradient-to-r from-amber-950 via-slate-900 to-amber-950 border-2 border-amber-500/80 rounded-3xl p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-amber-200 shadow-xl animate-pulse">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/40">
-              <BellRing className="w-6 h-6 animate-bounce" />
+      {warningGuests.length > 0 && (activeVisitorTab === 'ACTIVE_VISITS' || activeVisitorTab === 'ALL') && (
+        <div className="bg-gradient-to-r from-amber-950 via-slate-900 to-amber-950 border-2 border-amber-500/80 rounded-2xl p-3.5 sm:p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-amber-200 shadow-xl animate-pulse">
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/40">
+              <BellRing className="w-5 h-5 animate-bounce" />
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-black bg-amber-500 text-slate-950 uppercase tracking-wider">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-black bg-amber-500 text-slate-950 uppercase tracking-wider">
                   ⏳ PERINGATAN DINI SATPAM (H-{reminderThresholdMinutes} MENIT)
                 </span>
                 <span className="text-xs font-extrabold text-amber-300 font-mono">
                   {warningGuests.length} Tamu Mendekati Batas Akhir Kunjungan
                 </span>
               </div>
-              <p className="text-xs text-amber-100/90 mt-1 leading-snug">
-                Waktu berkunjung segera berakhir. Satpam dapat mengirimkan pesan pengingat resmi ke nomor WhatsApp wali santri agar bersiap menuju pos gerbang.
+              <p className="text-xs text-amber-100/90 mt-0.5 leading-snug">
+                Waktu berkunjung segera berakhir. Kirimkan pengingat WhatsApp resmi ke wali santri agar bersiap menuju pos gerbang.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
             <button
               onClick={() => {
                 const count = broadcastAllVisitWarningReminders?.() || warningGuests.length;
                 showAlarmToast(`Pesan pengingat batas waktu kunjungan berhasil dikirim ke ${count} wali santri via WhatsApp!`);
               }}
-              className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition shadow-lg flex items-center gap-2 cursor-pointer active:scale-95"
+              className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition shadow-lg flex items-center gap-1.5 cursor-pointer active:scale-95"
             >
-              <Send className="w-4 h-4" />
+              <Send className="w-3.5 h-3.5" />
               <span>Kirim WA Pengingat ke Semua ({warningGuests.length})</span>
+            </button>
+            <button
+              onClick={() => setActiveVisitorTab('ALARM_CONFIG')}
+              className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-400/40 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <Sliders className="w-3.5 h-3.5" />
+              <span>Atur Alarm</span>
             </button>
           </div>
         </div>
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          PANEL KONTROL ALARM & PENGINGAT BATAS KUNJUNGAN (MINIMAL 15 MENIT)
+          PANEL KONTROL ALARM & PENGINGAT BATAS KUNJUNGAN (COMPACT & SLIM)
           ───────────────────────────────────────────────────────────── */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl text-white space-y-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-400 shrink-0">
-              <BellRing className="w-5 h-5 animate-pulse" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h4 className="font-black text-sm sm:text-base text-white tracking-tight">
-                  🔔 Panel Kontrol Alarm &amp; Pengingat Batas Kunjungan
-                </h4>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-400/40">
-                  Minimal 15 Menit
-                </span>
+      {(activeVisitorTab === 'ALARM_CONFIG' || activeVisitorTab === 'ALL') && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl text-white space-y-3.5 animate-fade-in">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-400 shrink-0">
+                <BellRing className="w-4 h-4 animate-pulse" />
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Konfigurasi alarm audio &amp; notifikasi WhatsApp otomatis saat waktu kunjungan wali santri tersisa H-X menit.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              type="button"
-              onClick={() => sound.playReminderChime?.()}
-              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 text-xs font-bold transition flex items-center gap-1.5"
-              title="Uji bunyi lonceng pengingat"
-            >
-              <Volume2 className="w-4 h-4 text-amber-400" />
-              <span>Tes Lonceng</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => sound.playOverdueAlarm?.()}
-              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-rose-300 border border-rose-500/30 text-xs font-bold transition flex items-center gap-1.5"
-              title="Uji bunyi sirine overdue"
-            >
-              <AlertTriangle className="w-4 h-4 text-rose-400" />
-              <span>Tes Sirine Overdue</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                simulateVisitNearExpiry?.(10);
-                showAlarmToast('Simulasi tamu kritis (<10 Menit) berhasil dipicu untuk pengujian alarm!');
-              }}
-              className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm active:scale-95"
-              title="Simulasikan kunjungan yang sisa waktunya < 10 menit"
-            >
-              <span>🧪 Uji Simulasi Tamu Kritis</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Preset & Custom Minutes Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
-          
-          {/* Preset Buttons */}
-          <div className="lg:col-span-7 space-y-1.5">
-            <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider font-mono">
-              Preset Cepat Ambang Batas Pengingat:
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {[
-                { min: 15, label: 'H-15 Menit', desc: 'Minimal & Default' },
-                { min: 30, label: 'H-30 Menit', desc: 'Standar Pondok' },
-                { min: 45, label: 'H-45 Menit', desc: 'Waktu Longgar' },
-                { min: 60, label: 'H-60 Menit', desc: '1 Jam Sebelum' }
-              ].map(preset => (
-                <button
-                  key={preset.min}
-                  type="button"
-                  onClick={() => {
-                    setReminderThresholdMinutes(preset.min);
-                    setCustomMinutesInput(String(preset.min));
-                    showAlarmToast(`Ambang batas pengingat diatur ke ${preset.label}`);
-                  }}
-                  className={`p-2.5 rounded-2xl border text-left transition ${
-                    reminderThresholdMinutes === preset.min
-                      ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md font-bold'
-                      : 'bg-slate-800 hover:bg-slate-700/80 text-slate-200 border-slate-700'
-                  }`}
-                >
-                  <span className="block text-xs font-black">{preset.label}</span>
-                  <span className={`block text-[10px] mt-0.5 ${reminderThresholdMinutes === preset.min ? 'text-amber-950 font-bold' : 'text-slate-400'}`}>
-                    {preset.desc}
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="font-black text-xs sm:text-sm text-white tracking-tight">
+                    🔔 Panel Kontrol Alarm &amp; Pengingat Batas Kunjungan
+                  </h4>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                    Aktif H-{reminderThresholdMinutes}M
                   </span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Konfigurasi alarm audio &amp; notifikasi WhatsApp otomatis saat waktu kunjungan wali santri tersisa H-X menit.
+                </p>
+              </div>
+            </div>
+
+            {/* Quick Test Buttons */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => sound.playReminderChime?.()}
+                className="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+                title="Uji bunyi lonceng pengingat"
+              >
+                <Volume2 className="w-3.5 h-3.5 text-amber-400" />
+                <span>Tes Lonceng</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => sound.playOverdueAlarm?.()}
+                className="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-rose-300 border border-rose-500/30 text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+                title="Uji bunyi sirine overdue"
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                <span>Tes Sirine</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  simulateVisitNearExpiry?.(10);
+                  showAlarmToast('Simulasi tamu kritis (<10 Menit) berhasil dipicu untuk pengujian alarm!');
+                }}
+                className="px-2.5 py-1 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer active:scale-95"
+                title="Simulasikan kunjungan yang sisa waktunya < 10 menit"
+              >
+                <span>🧪 Uji Tamu Kritis</span>
+              </button>
+              {activeVisitorTab === 'ALARM_CONFIG' && (
+                <button
+                  type="button"
+                  onClick={() => setActiveVisitorTab('ACTIVE_VISITS')}
+                  className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                  title="Kembali melihat tabel tamu aktif"
+                >
+                  <span>← Tabel Tamu Aktif</span>
                 </button>
-              ))}
+              )}
             </div>
           </div>
 
-          {/* Form Menit Kustom */}
-          <div className="lg:col-span-5 bg-slate-800/80 p-3.5 rounded-2xl border border-slate-700 space-y-1.5">
-            <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider font-mono">
-              Atur Menit Kustom (Minimal 15 Menit):
-            </label>
-            <form onSubmit={handleApplyCustomMinutes} className="flex items-center gap-2">
-              <input
-                type="number"
-                min="15"
-                max="360"
-                value={customMinutesInput}
-                onChange={(e) => setCustomMinutesInput(e.target.value)}
-                placeholder="Minimal 15 menit..."
-                className="w-full bg-slate-900 border border-slate-600 rounded-xl px-3 py-1.5 text-xs font-bold text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 font-mono"
-              />
-              <button
-                type="submit"
-                className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-black shrink-0 transition cursor-pointer"
-              >
-                Terapkan
-              </button>
-            </form>
-            <span className="text-[10px] text-slate-400 block">
-              Saat ini aktif: Peringatan dipicu <b>{reminderThresholdMinutes} menit</b> (minimal 15 menit) sebelum jam selesai.
-            </span>
+          {/* Preset & Custom Minutes Grid (Diperkecil & Ramping) */}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+            
+            {/* Preset Buttons */}
+            <div className="md:col-span-7 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider font-mono block">
+                Preset Cepat Ambang Batas:
+              </span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {[
+                  { min: 15, label: 'H-15 Menit', badge: 'Min/Default' },
+                  { min: 30, label: 'H-30 Menit', badge: 'Standar' },
+                  { min: 45, label: 'H-45 Menit', badge: 'Longgar' },
+                  { min: 60, label: 'H-60 Menit', badge: '1 Jam' }
+                ].map(preset => (
+                  <button
+                    key={preset.min}
+                    type="button"
+                    onClick={() => {
+                      setReminderThresholdMinutes(preset.min);
+                      setCustomMinutesInput(String(preset.min));
+                      showAlarmToast(`Ambang batas pengingat diatur ke ${preset.label}`);
+                    }}
+                    className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                      reminderThresholdMinutes === preset.min
+                        ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md font-black'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                    }`}
+                  >
+                    <span>{preset.label}</span>
+                    <span className={`text-[9px] px-1 rounded font-mono ${
+                      reminderThresholdMinutes === preset.min ? 'bg-amber-600 text-white' : 'bg-slate-900 text-slate-400'
+                    }`}>
+                      {preset.badge}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Form Menit Kustom */}
+            <div className="md:col-span-5 bg-slate-800/70 p-2.5 rounded-xl border border-slate-700 space-y-1">
+              <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider font-mono block">
+                Atur Menit Kustom (Minimal 15 Menit):
+              </span>
+              <form onSubmit={handleApplyCustomMinutes} className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  min="15"
+                  max="360"
+                  value={customMinutesInput}
+                  onChange={(e) => setCustomMinutesInput(e.target.value)}
+                  placeholder="Min 15..."
+                  className="w-full bg-slate-900 border border-slate-600 rounded-lg px-2.5 py-1 text-xs font-bold text-white focus:outline-none focus:border-amber-400 font-mono"
+                />
+                <button
+                  type="submit"
+                  className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-xs font-black shrink-0 transition cursor-pointer"
+                >
+                  Terapkan
+                </button>
+              </form>
+            </div>
+
+          </div>
+
+          {/* Status Sakelar & Toggles (Horizontal Ramping) */}
+          <div className="pt-2 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+            <div className="flex flex-wrap items-center gap-3.5">
+              <label className="flex items-center gap-1.5 cursor-pointer font-bold text-slate-300 text-[11px]">
+                <input
+                  type="checkbox"
+                  checked={isAlarmSoundEnabled}
+                  onChange={(e) => {
+                    setIsAlarmSoundEnabled(e.target.checked);
+                    showAlarmToast(e.target.checked ? '🔊 Alarm Suara Browser: DIAKTIFKAN' : '🔇 Alarm Suara Browser: DIMUTE');
+                  }}
+                  className="w-3.5 h-3.5 text-amber-500 rounded"
+                />
+                <span className="flex items-center gap-1">
+                  {isAlarmSoundEnabled ? <Volume2 className="w-3 h-3 text-amber-400" /> : <VolumeX className="w-3 h-3 text-slate-500" />}
+                  <span>Alarm Audio {isAlarmSoundEnabled ? '(Aktif)' : '(Mute)'}</span>
+                </span>
+              </label>
+
+              <label className="flex items-center gap-1.5 cursor-pointer font-bold text-slate-300 text-[11px]">
+                <input
+                  type="checkbox"
+                  checked={isAutoSendWaReminder}
+                  onChange={(e) => {
+                    setIsAutoSendWaReminder(e.target.checked);
+                    showAlarmToast(e.target.checked ? '📲 Kirim Otomatis WA: DIAKTIFKAN' : '📲 Kirim Otomatis WA: DIMATIKAN');
+                  }}
+                  className="w-3.5 h-3.5 text-emerald-500 rounded"
+                />
+                <span className="flex items-center gap-1">
+                  <Send className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Kirim Otomatis WA {isAutoSendWaReminder ? '(Aktif)' : '(Nonaktif)'}</span>
+                </span>
+              </label>
+            </div>
+
+            <div className="text-[10px] font-mono text-slate-400">
+              <span>Tamu Kritis (&lt;{reminderThresholdMinutes}M): </span>
+              <strong className={warningGuests.length > 0 ? 'text-amber-400 font-bold' : 'text-slate-300'}>{warningGuests.length}</strong>
+              <span className="mx-1">•</span>
+              <span>Overstay: </span>
+              <strong className={overdueGuests.length > 0 ? 'text-rose-400 font-bold' : 'text-slate-300'}>{overdueGuests.length}</strong>
+            </div>
           </div>
 
         </div>
-
-        {/* Status Sakelar & Toggles */}
-        <div className="pt-2 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex flex-wrap items-center gap-4">
-            <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-300">
-              <input
-                type="checkbox"
-                checked={isAlarmSoundEnabled}
-                onChange={(e) => {
-                  setIsAlarmSoundEnabled(e.target.checked);
-                  showAlarmToast(e.target.checked ? '🔊 Alarm Suara Browser: DIAKTIFKAN' : '🔇 Alarm Suara Browser: DIMUTE');
-                }}
-                className="w-4 h-4 text-amber-500 rounded"
-              />
-              <span className="flex items-center gap-1.5">
-                {isAlarmSoundEnabled ? <Volume2 className="w-3.5 h-3.5 text-amber-400" /> : <VolumeX className="w-3.5 h-3.5 text-slate-500" />}
-                <span>Alarm Audio Browser {isAlarmSoundEnabled ? '(Aktif)' : '(Mute)'}</span>
-              </span>
-            </label>
-
-            <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-300">
-              <input
-                type="checkbox"
-                checked={isAutoSendWaReminder}
-                onChange={(e) => {
-                  setIsAutoSendWaReminder(e.target.checked);
-                  showAlarmToast(e.target.checked ? '📲 Kirim Otomatis WA Pengingat: DIAKTIFKAN' : '📲 Kirim Otomatis WA Pengingat: DIMATIKAN');
-                }}
-                className="w-4 h-4 text-emerald-500 rounded"
-              />
-              <span className="flex items-center gap-1.5">
-                <Send className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Kirim Otomatis WA Pengingat {isAutoSendWaReminder ? '(Aktif)' : '(Nonaktif)'}</span>
-              </span>
-            </label>
-          </div>
-
-          <div className="text-[11px] font-mono text-slate-400">
-            <span>Tamu Kritis (&lt;{reminderThresholdMinutes}M): </span>
-            <strong className={warningGuests.length > 0 ? 'text-amber-400' : 'text-slate-300'}>{warningGuests.length}</strong>
-            <span className="mx-1.5">•</span>
-            <span>Overstay: </span>
-            <strong className={overdueGuests.length > 0 ? 'text-rose-400' : 'text-slate-300'}>{overdueGuests.length}</strong>
-          </div>
-        </div>
-
-      </div>
+      )}
 
       {/* ─────────────────────────────────────────────────────────────
           TABEL UTAMA: DAFTAR REAL-TIME WALI SANTRI SEDANG CHECK-IN HARI INI
           (TERVERIFIKASI KAMERA / SATPAM DENGAN HITUNG MUNDUR SISA WAKTU)
           ───────────────────────────────────────────────────────────── */}
-      <div className="bg-white rounded-3xl border-2 border-emerald-500/40 shadow-md overflow-hidden space-y-0">
-        
-        {/* Header Tabel Pengunjung Aktif Hari Ini */}
-        <div className="p-4 sm:p-5 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-b border-emerald-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow-xs">
-              <Users className="w-4 h-4" />
+      {(activeVisitorTab === 'ACTIVE_VISITS' || activeVisitorTab === 'ALL') && (
+        <div className="bg-white rounded-3xl border-2 border-emerald-500/40 shadow-md overflow-hidden space-y-0">
+          
+          {/* Header Tabel Pengunjung Aktif Hari Ini */}
+          <div className="p-4 sm:p-5 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-b border-emerald-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow-xs">
+                <Users className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="font-black text-sm text-slate-900 tracking-tight flex items-center gap-2">
+                  <span>📋 Daftar Real-Time Wali Santri Sedang Check-In Hari Ini ({liveClock.nama_hari}, {liveClock.tanggal_lengkap})</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping inline-block" />
+                </h4>
+                <p className="text-[11px] text-slate-500">
+                  Data real-time tamu yang berkunjung hari ini di pondok. Tamu yang berhasil di-scan otomatis muncul di baris teratas dengan hitung mundur.
+                </p>
+              </div>
             </div>
-            <div>
-              <h4 className="font-black text-sm text-slate-900 tracking-tight flex items-center gap-2">
-                <span>📋 Daftar Real-Time Wali Santri Sedang Check-In Hari Ini ({liveClock.nama_hari}, {liveClock.tanggal_lengkap})</span>
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping inline-block" />
-              </h4>
-              <p className="text-[11px] text-slate-500">
-                Data real-time tamu yang berkunjung hari ini di pondok. Tamu yang berhasil di-scan otomatis muncul di baris teratas dengan hitung mundur.
-              </p>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setActiveVisitorTab('ALARM_CONFIG')}
+                className="px-2.5 py-1 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-900 border border-amber-300 text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                title="Buka panel konfigurasi ambang batas & uji alarm"
+              >
+                <BellRing className="w-3.5 h-3.5 text-amber-600" />
+                <span>Alarm: H-{reminderThresholdMinutes}M</span>
+                <span className="text-[10px] text-amber-700 underline font-normal">Ubah</span>
+              </button>
+
+              <span className="px-3 py-1 rounded-full bg-emerald-600 text-white text-xs font-mono font-black shadow-xs">
+                {activeVisitingGuests.length} Tamu Aktif Hari Ini
+              </span>
             </div>
           </div>
-
-          <span className="px-3 py-1 rounded-full bg-emerald-600 text-white text-xs font-mono font-black shadow-xs">
-            {activeVisitingGuests.length} Tamu Aktif Hari Ini
-          </span>
-        </div>
 
         {/* Tabel Pengunjung Aktif */}
         <div className="overflow-x-auto">
@@ -1532,7 +1651,21 @@ export default function SecurityVisitGateModule() {
           </table>
         </div>
 
+        {/* Footer Shortcut ke Arsip */}
+        <div className="p-3.5 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
+          <span>Menampilkan daftar tamu yang sedang berada di dalam area pondok hari ini.</span>
+          <button
+            type="button"
+            onClick={() => setActiveVisitorTab('LOGS_ARCHIVE')}
+            className="font-bold text-emerald-700 hover:text-emerald-900 flex items-center gap-1 cursor-pointer transition"
+          >
+            <span>Buka Arsip Seluruh Log &amp; Rekap Bulanan ({bookings.length})</span>
+            <span>→</span>
+          </button>
+        </div>
+
       </div>
+      )}
 
       {/* ─── FORM INPUT WALK-IN MANUAL SATPAM (MODAL TOGGLE) ─── */}
       {isManualFormOpen && (
@@ -1726,7 +1859,8 @@ export default function SecurityVisitGateModule() {
       {/* ─────────────────────────────────────────────────────────────
           TABEL ARSIP LOG SELURUH KUNJUNGAN POS JAGA & REKAP BULANAN
           ───────────────────────────────────────────────────────────── */}
-      <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden space-y-0">
+      {(activeVisitorTab === 'LOGS_ARCHIVE' || activeVisitorTab === 'ALL') && (
+        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden space-y-0">
         <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <h4 className="font-black text-sm text-slate-900 tracking-tight">
@@ -1952,6 +2086,7 @@ export default function SecurityVisitGateModule() {
           </table>
         </div>
       </div>
+      )}
 
     </div>
   );
