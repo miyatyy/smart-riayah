@@ -28,11 +28,17 @@ import {
   Upload,
   CheckCircle2,
   Scan,
-  Maximize2
+  Maximize2,
+  Calendar,
+  Download,
+  FileSpreadsheet,
+  BarChart3,
+  Filter
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
 import { getRealtimePondokClock, calculateVisitCountdown, checkBarcodeLifecycle } from '../../utils/pondokTimeUtils';
 import { getVisitGatePassUrls } from '../../utils/barcodeUtils';
+import { downloadCsvFile, generateCsv } from '../../utils/csvUtils';
 import { Html5Qrcode } from 'html5-qrcode';
 
 // Ekstraksi Pintar Kode Barcode (Mendukung Raw SR-..., URL ?gatepass=SR-..., dan /gate-pass/SR-...)
@@ -484,10 +490,16 @@ export default function SecurityVisitGateModule() {
   };
 
   const bookings = Array.isArray(visitBookings) ? visitBookings : [];
+  const todayYmd = liveClock.tanggal_ymd;
 
-  // DAFTAR PENGUNJUNG YANG SEDANG BERKUNJUNG (AKTIF DI AREA / SUDAH DI-SCAN)
+  // DAFTAR PENGUNJUNG YANG SEDANG BERKUNJUNG HARI INI SAJA (REAL-TIME POS GERBANG SESUAI HARI INI)
   const activeVisitingGuests = bookings
-    .filter(b => b.status_kunjungan === 'Sedang Berkunjung' || b.status_kunjungan?.includes('Sedang Berkunjung'))
+    .filter(b => {
+      const isOngoing = b.status_kunjungan === 'Sedang Berkunjung' || b.status_kunjungan?.includes('Sedang Berkunjung');
+      if (!isOngoing) return false;
+      const bDate = b.tanggal_kunjungan || b.tanggal_masuk || (b.jam_masuk_aktual ? todayYmd : '');
+      return bDate === todayYmd;
+    })
     .sort((a, b) => {
       // Yang baru di-scan ditaruh paling atas
       const timeA = a.jam_masuk_aktual || a.jam_checkin_aktual || '00:00';
@@ -495,9 +507,92 @@ export default function SecurityVisitGateModule() {
       return timeB.localeCompare(timeA);
     });
 
+  // Deteksi kunjungan hari lampau yang belum selesai (agar tidak overstay ribuan menit)
+  const stalePastVisits = bookings.filter(b => {
+    const isOngoing = b.status_kunjungan === 'Sedang Berkunjung' || b.status_kunjungan?.includes('Sedang Berkunjung');
+    if (!isOngoing) return false;
+    const bDate = b.tanggal_kunjungan || b.tanggal_masuk;
+    return bDate && bDate < todayYmd;
+  });
+
+  const handleResolvePastVisits = () => {
+    if (stalePastVisits.length === 0) return;
+    if (window.confirm(`Tutup & arsipkan otomatis ${stalePastVisits.length} kunjungan dari hari sebelumnya yang belum di-check out?`)) {
+      stalePastVisits.forEach(v => {
+        checkOutVisitBooking(v.id);
+      });
+      sound.playSuccess?.();
+    }
+  };
+
+  // State & Perhitungan Rekap Bulanan Otomatis Satpam
+  const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7)); // 'YYYY-MM'
+
+  const monthlyBookings = bookings.filter(b => {
+    const d = b.tanggal_kunjungan || b.tanggal_masuk || b.created_at?.slice(0, 10);
+    return d && d.startsWith(selectedMonth);
+  });
+
+  const monthlyMetrics = {
+    total: monthlyBookings.length,
+    selesai: monthlyBookings.filter(b => b.status_kunjungan === 'Selesai').length,
+    aktif: monthlyBookings.filter(b => b.status_kunjungan === 'Sedang Berkunjung' || b.status_kunjungan?.includes('Sedang Berkunjung')).length,
+    titipanKg: monthlyBookings.reduce((sum, b) => sum + (Number(b.berat_barang_kg) || 0), 0).toFixed(1),
+    weekend: monthlyBookings.filter(b => b.approval_type === 'AUTO_WEEKEND' || ['Jumat', 'Sabtu', 'Minggu', 'Ahad'].includes(b.hari_kunjungan)).length,
+  };
+
+  const handleExportMonthlyCsvSatpam = () => {
+    const headers = [
+      'No',
+      'ID Kunjungan',
+      'Tanggal',
+      'Hari',
+      'Nama Santri',
+      'Kelas',
+      'Kamar',
+      'Nama Penjenguk',
+      'Status Penjenguk',
+      'No WA',
+      'Jam Masuk',
+      'Jam Selesai',
+      'Barang Titipan',
+      'Berat (Kg)',
+      'Status Kunjungan',
+      'Sumber Booking',
+      'Kode Barcode'
+    ];
+
+    const rows = monthlyBookings.map((b, idx) => ({
+      'No': idx + 1,
+      'ID Kunjungan': b.id,
+      'Tanggal': b.tanggal_kunjungan || '-',
+      'Hari': b.hari_kunjungan || '-',
+      'Nama Santri': b.nama_santri || '-',
+      'Kelas': b.kelas || '-',
+      'Kamar': b.kamar || '-',
+      'Nama Penjenguk': b.nama_penjenguk || '-',
+      'Status Penjenguk': b.status_penjenguk || '-',
+      'No WA': b.no_wa_penjenguk || '-',
+      'Jam Masuk': b.jam_masuk_aktual || b.jam_checkin_aktual || b.jam_kunjungan || '-',
+      'Jam Selesai': b.jam_selesai || '-',
+      'Barang Titipan': b.titipan_barang || '-',
+      'Berat (Kg)': b.berat_barang_kg || 0,
+      'Status Kunjungan': b.status_kunjungan || '-',
+      'Sumber Booking': b.booking_source || (b.barcode_token ? 'WhatsApp' : 'Manual Satpam'),
+      'Kode Barcode': b.barcode_token || '-'
+    }));
+
+    const csv = generateCsv(headers, rows);
+    downloadCsvFile(`Rekap_Kunjungan_Satpam_${selectedMonth}`, csv);
+    sound.playSuccess?.();
+  };
+
   // Filter untuk tabel arsip umum di bawah
-  const filteredList = bookings.filter(b => {
+  const filteredList = (activeTabSub === 'MONTHLY_RECAP' ? monthlyBookings : bookings).filter(b => {
     const bOngoing = b.status_kunjungan === 'Sedang Berkunjung' || b.status_kunjungan?.includes('Sedang Berkunjung');
+    const bDate = b.tanggal_kunjungan || b.tanggal_masuk || (b.jam_masuk_aktual ? todayYmd : '');
+
+    if (activeTabSub === 'TODAY' && bDate !== todayYmd) return false;
     if (activeTabSub === 'ACTIVE' && !bOngoing) return false;
     if (activeTabSub === 'PENDING' && b.status_kunjungan !== 'Menunggu Approval') return false;
     if (activeTabSub === 'DONE' && b.status_kunjungan !== 'Selesai') return false;
@@ -923,13 +1018,35 @@ export default function SecurityVisitGateModule() {
         </div>
       )}
 
+      {/* ─── BANNER PERINGATAN KUNJUNGAN HARI LAMPAU YANG BELUM CHECK-OUT ─── */}
+      {stalePastVisits.length > 0 && (
+        <div className="bg-amber-500/10 border-2 border-amber-500/40 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-900 shadow-sm animate-fade-in">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 animate-bounce" />
+            <div className="text-xs">
+              <span className="font-bold">⚠️ Perhatian Pos Satpam:</span>
+              <span className="ml-1">
+                Terdapat <strong>{stalePastVisits.length}</strong> kunjungan dari hari lampau yang belum di-check out (tersangkut di sistem).
+              </span>
+            </div>
+          </div>
+          <button
+            onClick={handleResolvePastVisits}
+            className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition shadow-sm shrink-0 flex items-center gap-1.5 active:scale-95"
+          >
+            <CheckCircle className="w-4 h-4" />
+            <span>Tutup &amp; Arsipkan Selesai ({stalePastVisits.length})</span>
+          </button>
+        </div>
+      )}
+
       {/* ─────────────────────────────────────────────────────────────
-          TABEL UTAMA: DAFTAR OTOMATIS WALI SANTRI YANG SEDANG BERKUNJUNG
+          TABEL UTAMA: DAFTAR REAL-TIME WALI SANTRI SEDANG CHECK-IN HARI INI
           (TERVERIFIKASI KAMERA / SATPAM DENGAN HITUNG MUNDUR SISA WAKTU)
           ───────────────────────────────────────────────────────────── */}
       <div className="bg-white rounded-3xl border-2 border-emerald-500/40 shadow-md overflow-hidden space-y-0">
         
-        {/* Header Tabel Pengunjung Aktif */}
+        {/* Header Tabel Pengunjung Aktif Hari Ini */}
         <div className="p-4 sm:p-5 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-b border-emerald-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow-xs">
@@ -937,17 +1054,17 @@ export default function SecurityVisitGateModule() {
             </div>
             <div>
               <h4 className="font-black text-sm text-slate-900 tracking-tight flex items-center gap-2">
-                <span>📋 Daftar Otomatis Wali Santri yang Sedang Berkunjung (Terverifikasi Kamera/Satpam)</span>
+                <span>📋 Daftar Real-Time Wali Santri Sedang Check-In Hari Ini ({liveClock.nama_hari}, {liveClock.tanggal_lengkap})</span>
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping inline-block" />
               </h4>
               <p className="text-[11px] text-slate-500">
-                Tamu yang berhasil di-scan otomatis muncul di baris teratas dengan hitung mundur sisa waktu kunjungan.
+                Data real-time tamu yang berkunjung hari ini di pondok. Tamu yang berhasil di-scan otomatis muncul di baris teratas dengan hitung mundur.
               </p>
             </div>
           </div>
 
           <span className="px-3 py-1 rounded-full bg-emerald-600 text-white text-xs font-mono font-black shadow-xs">
-            {activeVisitingGuests.length} Tamu Aktif di Pondok
+            {activeVisitingGuests.length} Tamu Aktif Hari Ini
           </span>
         </div>
 
@@ -1244,21 +1361,21 @@ export default function SecurityVisitGateModule() {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          TABEL ARSIP LOG SELURUH KUNJUNGAN POS JAGA
+          TABEL ARSIP LOG SELURUH KUNJUNGAN POS JAGA & REKAP BULANAN
           ───────────────────────────────────────────────────────────── */}
       <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden space-y-0">
-        <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <h4 className="font-black text-sm text-slate-900 tracking-tight">
-              Arsip Seluruh Log Kunjungan Pos Jaga Keamanan
+              {activeTabSub === 'MONTHLY_RECAP' ? '📊 Rekap Bulanan Otomatis Kunjungan Pos Satpam' : 'Arsip Seluruh Log Kunjungan Pos Jaga Keamanan'}
             </h4>
             <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
               {filteredList.length} Catatan
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="relative w-56">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative w-48 sm:w-56">
               <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
@@ -1269,18 +1386,20 @@ export default function SecurityVisitGateModule() {
               />
             </div>
 
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl overflow-x-auto">
               {[
                 { id: 'ALL', label: 'Semua' },
+                { id: 'TODAY', label: 'Hari Ini' },
                 { id: 'ACTIVE', label: 'Aktif di Area' },
                 { id: 'PENDING', label: 'Menunggu' },
-                { id: 'DONE', label: 'Selesai' }
+                { id: 'DONE', label: 'Selesai' },
+                { id: 'MONTHLY_RECAP', label: '📊 Rekap Bulanan' }
               ].map(sub => (
                 <button
                   key={sub.id}
                   onClick={() => setActiveTabSub(sub.id)}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition ${
-                    activeTabSub === sub.id ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition whitespace-nowrap ${
+                    activeTabSub === sub.id ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
                   {sub.label}
@@ -1289,6 +1408,60 @@ export default function SecurityVisitGateModule() {
             </div>
           </div>
         </div>
+
+        {/* JIKA MEMILIH TAB REKAP BULANAN: TAMPILKAN CONTROLLER BULAN + KPI CARDS + TOMBOL CSV */}
+        {activeTabSub === 'MONTHLY_RECAP' && (
+          <div className="p-4 sm:p-5 bg-gradient-to-r from-emerald-50/70 via-teal-50/50 to-slate-50 border-b border-emerald-100 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-emerald-600" />
+                  <span className="text-xs font-bold text-slate-700">Pilih Periode Bulan:</span>
+                </div>
+                <input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="px-3 py-1.5 text-xs rounded-xl border border-emerald-300 bg-white font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExportMonthlyCsvSatpam}
+                  className="px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm active:scale-95"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>📥 Unduh Rekap CSV ({selectedMonth})</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 5 KPI Ringkasan Bulanan */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 pt-1">
+              <div className="bg-white p-3 rounded-2xl border border-emerald-100 shadow-2xs">
+                <span className="text-[10px] text-slate-400 font-mono block uppercase">TOTAL TAMU BULAN INI</span>
+                <span className="text-lg font-black text-slate-800 font-mono mt-0.5 block">{monthlyMetrics.total}</span>
+              </div>
+              <div className="bg-white p-3 rounded-2xl border border-emerald-100 shadow-2xs">
+                <span className="text-[10px] text-emerald-600 font-mono block uppercase">SELESAI (CHECK-OUT)</span>
+                <span className="text-lg font-black text-emerald-700 font-mono mt-0.5 block">{monthlyMetrics.selesai}</span>
+              </div>
+              <div className="bg-white p-3 rounded-2xl border border-emerald-100 shadow-2xs">
+                <span className="text-[10px] text-teal-600 font-mono block uppercase">SEDANG AKTIF</span>
+                <span className="text-lg font-black text-teal-700 font-mono mt-0.5 block">{monthlyMetrics.aktif}</span>
+              </div>
+              <div className="bg-white p-3 rounded-2xl border border-emerald-100 shadow-2xs">
+                <span className="text-[10px] text-cyan-600 font-mono block uppercase">TOTAL TITIPAN</span>
+                <span className="text-lg font-black text-cyan-700 font-mono mt-0.5 block">{monthlyMetrics.titipanKg} Kg</span>
+              </div>
+              <div className="bg-white p-3 rounded-2xl border border-emerald-100 shadow-2xs col-span-2 sm:col-span-1">
+                <span className="text-[10px] text-indigo-600 font-mono block uppercase">KUNJUNGAN WEEKEND</span>
+                <span className="text-lg font-black text-indigo-700 font-mono mt-0.5 block">{monthlyMetrics.weekend}</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">

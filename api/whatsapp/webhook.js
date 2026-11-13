@@ -99,8 +99,11 @@ export default async function handler(req, res) {
       const aiResult = await generateAutonomousReplyWithContext(cleanSender, incomingText, displayWaliName, resolvedIdentity);
       const aiReply = aiResult.reply;
 
-      // Kirim balasan aktif ke Fonnte API secara langsung
-      const dispatchResult = await sendFonnteAutoReply(cleanSender, aiReply);
+      // Kirim balasan aktif ke Fonnte API secara langsung (sertakan QR Code gambar jika auto-approval weekend)
+      const mediaUrl = (!aiResult.bookingRecord?.is_weekday && aiResult.bookingRecord?.barcode_image_url)
+        ? aiResult.bookingRecord.barcode_image_url
+        : null;
+      const dispatchResult = await sendFonnteAutoReply(cleanSender, aiReply, null, mediaUrl);
 
       const aiReplyData = {
         id: `AI-${Date.now()}`,

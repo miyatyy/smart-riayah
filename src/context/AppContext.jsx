@@ -86,8 +86,10 @@ const STANDBY_OLED = {
 
 const VISIT_STATUS_RANK = {
   'Menunggu Approval': 1,
-  'Disetujui (Auto-Approved Weekend)': 2,
+  'Menunggu Approval Admin Ri\'ayah': 1,
+  'Disetujui (Auto-Approved Weekend)': 3,
   'Disetujui (Siap Datang)': 3,
+  'Disetujui': 3,
   'Sedang Berkunjung': 4,
   'Selesai': 5,
   'Ditolak': 5

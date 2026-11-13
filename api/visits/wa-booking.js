@@ -161,18 +161,24 @@ export default async function handler(req, res) {
     let barcodeToken = null;
     let replyText = '';
 
+    let gatePassUrl = null;
+    let barcodeImageUrl = null;
+
     if (isWeekend) {
       // JUMAT, SABTU, MINGGU (Weekend) -> AUTO-APPROVED
       approvalType = 'AUTO_WEEKEND';
       statusKunjungan = 'Disetujui (Siap Datang)';
       barcodeToken = `GP-DU-${extracted.nama_santri.replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+      gatePassUrl = `https://smart-riayah.vercel.app/?gatepass=${encodeURIComponent(barcodeToken)}`;
+      barcodeImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(barcodeToken)}`;
 
-      replyText = `✅ *[BOOKING KUNJUNGAN DISETUJUI OTOMATIS - WEEKEND]*\n` +
+      replyText = `✅ *[BOOKING KUNJUNGAN DISETUJUI OTOMATIS - AKHIR PEKAN]*\n` +
         `Assalamu'alaikum *${addr.panggilan}*.\n\n` +
-        `Permohonan sambangan santri *${extracted.nama_santri}* (${extracted.kelas}) pada hari *${hariKunjungan}, ${extracted.tanggal_kunjungan}* pukul *${extracted.jam_kunjungan} - ${extracted.jam_selesai} WIB* telah *DISETUJUI OTOMATIS*.\n\n` +
-        `📦 *Titipan Barang:* ${extracted.titipan_barang || '-'} (${extracted.berat_barang_kg || 0} Kg)\n` +
-        `🎫 *Barcode Gate Pass:* *${barcodeToken}*\n\n` +
-        `Silakan tunjukkan barcode/pesan ini ke Satpam saat tiba di Gerbang Utama Pesantren Modern Darul Ulum.`;
+        `Permohonan sambangan santri *${extracted.nama_santri}* (${extracted.kelas}) pada hari *${hariKunjungan}, ${extracted.tanggal_kunjungan}* pukul *${extracted.jam_kunjungan} - ${extracted.jam_selesai} WITA* telah *DISETUJUI OTOMATIS*.\n\n` +
+        `🎫 *Kupon Barcode Gate Pass:* *${barcodeToken}*\n` +
+        `🔗 *Buka E-Barcode Resmi:* ${gatePassUrl}\n` +
+        `📦 *Titipan Barang:* ${extracted.titipan_barang || '-'} (${extracted.berat_barang_kg || 0} Kg)\n\n` +
+        `Silakan klik tautan di atas atau tunjukkan kupon barcode ini kepada Satpam saat tiba di Gerbang Utama Pesantren Modern Darul Ulum.`;
     } else {
       // SENIN, SELASA, RABU, KAMIS (Weekday) -> MANUAL APPROVAL
       approvalType = 'MANUAL_WEEKDAY';
@@ -202,6 +208,8 @@ export default async function handler(req, res) {
       no_wa_penjenguk: cleanSender || normalizePhone(extracted.no_wa_penjenguk || '') || '',
       rfid_uid: extracted.rfid_uid || resolvedIdentity?.rfidUid || null,
       barcode_token: barcodeToken,
+      barcode_image_url: barcodeImageUrl,
+      gate_pass_url: gatePassUrl,
       approval_type: approvalType,
       status_kunjungan: statusKunjungan,
       created_at: new Date().toISOString()

@@ -90,6 +90,7 @@ export default function AdminRiayahDashboard() {
     visitBookings,
     approveVisitBooking,
     rejectVisitBooking,
+    checkOutVisitBooking,
     permits,
     approvePermit,
     rejectPermit,
@@ -97,6 +98,19 @@ export default function AdminRiayahDashboard() {
     osisReports,
     verifyOsisReport
   } = useApp();
+
+  const todayYmd = useMemo(() => new Date().toISOString().slice(0, 10), []);
+
+  const activeVisitingGuestsToday = useMemo(() => {
+    return Array.isArray(visitBookings)
+      ? visitBookings.filter(b => {
+          const isVisiting = b?.status_kunjungan === 'Sedang Berkunjung' || b?.status_kunjungan?.includes('Sedang Berkunjung');
+          if (!isVisiting) return false;
+          const bDate = b.tanggal_kunjungan || b.tanggal_masuk || (b.jam_masuk_aktual ? todayYmd : '');
+          return bDate === todayYmd;
+        })
+      : [];
+  }, [visitBookings, todayYmd]);
 
   const pendingVisits = useMemo(() => {
     return Array.isArray(visitBookings)
@@ -687,6 +701,94 @@ export default function AdminRiayahDashboard() {
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 0c. REAL-TIME WALI SANTRI SEDANG CHECK-IN HARI INI (MONITORING REAL-TIME ADMIN RI'AYAH) */}
+      {activeVisitingGuestsToday.length > 0 && activeTab !== 'whatsapp_manager' && (
+        <div className="bg-gradient-to-r from-teal-900/90 via-slate-900 to-emerald-950 text-white border-2 border-emerald-500/50 rounded-2xl p-4 sm:p-5 shadow-xl backdrop-blur-sm transition-all duration-200 no-print space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-emerald-500/30 pb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-300 shrink-0">
+                <Users className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-black text-sm sm:text-base text-white tracking-tight flex items-center gap-2">
+                    <span>🟢 Real-Time Wali Santri Sedang Check-In Hari Ini</span>
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping inline-block" />
+                  </h3>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/30 text-emerald-300 border border-emerald-400/30">
+                    {activeVisitingGuestsToday.length} Tamu Aktif di Pondok
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Wali santri yang sudah terverifikasi scan barcode di Pos Satpam dan sedang berada di area pondok hari ini ({todayYmd}).
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                setActiveTab('whatsapp_manager');
+                sound.playBeep?.();
+              }}
+              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition shadow-sm flex items-center gap-1.5 self-start sm:self-center"
+            >
+              <span>Buka Manajemen Kunjungan</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {activeVisitingGuestsToday.map((v) => (
+              <div
+                key={v.id}
+                className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-3.5 flex flex-col justify-between gap-2.5 hover:border-emerald-500/40 transition"
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className="text-[10px] text-emerald-400 font-mono font-bold block">SANTRI:</span>
+                      <h4 className="font-bold text-sm text-white leading-tight">{v.nama_santri}</h4>
+                      <span className="text-[11px] text-slate-300">{v.kelas} ({v.kamar || v.asal || 'Asrama'})</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 text-[10px] font-mono font-bold shrink-0">
+                      Masuk: {v.jam_masuk_aktual || v.jam_checkin_aktual || v.jam_kunjungan}
+                    </span>
+                  </div>
+
+                  <div className="mt-2 pt-2 border-t border-slate-700/60 text-xs text-slate-300 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-slate-400">Penjenguk:</span>
+                      <span className="font-semibold text-white">{v.nama_penjenguk} ({v.status_penjenguk || 'Wali'})</span>
+                    </div>
+                    {v.titipan_barang && v.titipan_barang !== '-' && (
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Titipan:</span>
+                        <span className="text-cyan-300 truncate max-w-[170px]">{v.titipan_barang} ({v.berat_barang_kg || 0} Kg)</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-700/60 flex items-center justify-between gap-2">
+                  <span className="text-[10px] text-slate-400 font-mono">Batas: {v.jam_selesai || '17:00'} WITA</span>
+                  <button
+                    onClick={() => {
+                      if (window.confirm(`Konfirmasi kepulangan tamu ${v.nama_penjenguk} (Wali ${v.nama_santri})?`)) {
+                        checkOutVisitBooking(v.id);
+                        sound.playSuccess?.();
+                      }
+                    }}
+                    className="px-2.5 py-1 bg-blue-600/80 hover:bg-blue-600 text-white rounded-lg text-[10px] font-bold transition flex items-center gap-1"
+                  >
+                    <span>Check-Out (Selesai)</span>
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

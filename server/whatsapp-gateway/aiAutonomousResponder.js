@@ -919,6 +919,13 @@ export function normalizeBookingWeekdayAndStatus(rawData = {}, rtc = getRealtime
     ? null
     : (rawData.barcode_token || `GP-DU-${cleanSantriToken}-${Math.floor(1000 + Math.random() * 9000)}`);
 
+  const gatePassUrl = barcodeToken
+    ? `https://smart-riayah.vercel.app/?gatepass=${encodeURIComponent(barcodeToken)}`
+    : null;
+  const barcodeImageUrl = barcodeToken
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(barcodeToken)}`
+    : null;
+
   return {
     ...rawData,
     nama_santri: santriNama,
@@ -927,8 +934,10 @@ export function normalizeBookingWeekdayAndStatus(rawData = {}, rtc = getRealtime
     tanggal_kunjungan: targetYmd,
     is_weekday: isWeekday,
     barcode_token: barcodeToken,
+    barcode_image_url: barcodeImageUrl,
+    gate_pass_url: gatePassUrl,
     approval_type: isWeekday ? 'MANUAL_WEEKDAY' : 'AUTO_WEEKEND',
-    status_kunjungan: isWeekday ? 'Menunggu Approval' : 'Disetujui (Auto-Approved Weekend)',
+    status_kunjungan: isWeekday ? 'Menunggu Approval' : 'Disetujui (Siap Datang)',
     waktu_disetujui: isWeekday ? null : `${rtc.namaHari}, ${rtc.tglLengkap} • ${rtc.jamMenitDetik} WITA`,
   };
 }
@@ -1197,6 +1206,8 @@ export async function generateAutonomousReplyWithContext(
   // Rekam pesan masuk pengguna ke riwayat
   await recordChatMessage(cleanPhone, 'user', incomingText, waliData.namaWali);
 
+  let activeBookingRecord = null;
+
   // Deteksi apakah riwayat baru saja membahas kunjungan/jadwal
   const historyTextJoined = recentHistory.map((m) => m.content || '').join(' ').toLowerCase();
   const historyHasVisitContext =
@@ -1222,6 +1233,7 @@ export async function generateAutonomousReplyWithContext(
       recentEntry.booking.jam_selesai === normalized.jam_selesai &&
       isConfirmationMessage(textLower)
     ) {
+      activeBookingRecord = recentEntry.booking;
       return { bookingRecord: recentEntry.booking, deduplicated: true };
     }
 
@@ -1242,6 +1254,8 @@ export async function generateAutonomousReplyWithContext(
       no_wa_penjenguk: cleanPhone,
       rfid_uid: waliData.rfidUid || null,
       barcode_token: normalized.barcode_token,
+      barcode_image_url: normalized.barcode_image_url,
+      gate_pass_url: normalized.gate_pass_url,
       approval_type: normalized.approval_type,
       status_kunjungan: normalized.status_kunjungan,
       is_weekday: normalized.is_weekday,
@@ -1250,6 +1264,7 @@ export async function generateAutonomousReplyWithContext(
       created_at: new Date().toISOString()
     };
 
+    activeBookingRecord = bookingRecord;
     await saveBookingToSystem(bookingRecord);
     return { bookingRecord, deduplicated: false };
   };
@@ -1284,8 +1299,8 @@ ATURAN SAPAAN & GAYA JAWABAN (WAJIB):
 ATURAN BOOKING KUNJUNGAN:
 - Jika wali baru bilang mau jenguk tanpa hari/jam: konfirmasi santri (${waliData.santriNama}) & tanya hari serta jam kedatangannya secara singkat.
 - Jika jadwal (hari/tanggal + jam) sudah disebutkan atau wali mengonfirmasi ("oke/konfirmasi/iya jadi"):
-  * Senin–Kamis (hari kerja): catat & infokan diteruskan ke Admin Ri'ayah untuk approval, barcode dikirim otomatis ke WA ini setelah disetujui (titipan maks 5 Kg).
-  * Jumat–Minggu (akhir pekan): otomatis disetujui, beri kode Gate Pass GP-DU-[NAMA]-[4 ANGKA] untuk ditunjukkan ke Satpam gerbang (titipan maks 5 Kg).
+  * Senin–Kamis (hari kerja): catat & infokan diteruskan ke Admin Ri'ayah untuk persetujuan, barcode dikirim otomatis ke WA ini setelah disetujui (titipan maks 5 Kg).
+  * Jumat–Minggu (akhir pekan): otomatis disetujui seketika! Wajib sertakan kode Gate Pass *GP-DU-[NAMA]-[4 ANGKA]* dan link e-barcode https://smart-riayah.vercel.app/?gatepass=GP-DU-[NAMA]-[4 ANGKA] agar wali santri bisa langsung membuka barcode di HP saat tiba di gerbang satpam (titipan maks 5 Kg).
 - WAJIB sertakan di baris paling akhir saat booking sudah lengkap/dikonfirmasi:
   <!--BOOKING_DATA:{"nama_santri":"...","kelas":"...","hari_kunjungan":"...","tanggal_kunjungan":"YYYY-MM-DD","jam_kunjungan":"HH:mm","jam_selesai":"HH:mm","titipan_barang":"...","berat_barang_kg":0,"nama_penjenguk":"...","is_weekday":true}-->`;
 
@@ -1392,7 +1407,7 @@ ATURAN BOOKING KUNJUNGAN:
             prompt: incomingText,
             reply
           }).catch(() => { });
-          return { reply, waliData, cleanPhone, addressing: addr };
+          return { reply, waliData, cleanPhone, addressing: addr, bookingRecord: activeBookingRecord };
         }
       }
     } catch (llmErr) {
@@ -1414,7 +1429,7 @@ ATURAN BOOKING KUNJUNGAN:
       prompt: incomingText,
       reply: cleanReply
     }).catch(() => { });
-    return { reply: cleanReply, waliData, cleanPhone, addressing: addr };
+    return { reply: cleanReply, waliData, cleanPhone, addressing: addr, bookingRecord: activeBookingRecord };
   };
 
   // A. INTENT KUNJUNGAN / SAMBANGAN / JENGUK / BOOKING (termasuk kelanjutan multi-turn & cold-start konfirmasi)
@@ -1464,9 +1479,10 @@ ATURAN BOOKING KUNJUNGAN:
     );
 
     if (deduplicated) {
+      const gatePassUrl = bookingRecord.gate_pass_url || `https://smart-riayah.vercel.app/?gatepass=${encodeURIComponent(bookingRecord.barcode_token || '')}`;
       const ackReply = bookingRecord.is_weekday
         ? `Siap ${addr.panggilan}, jadwal jenguk *${bookingRecord.nama_santri}* (${bookingRecord.hari_kunjungan}, ${bookingRecord.jam_kunjungan}–${bookingRecord.jam_selesai}) sudah masuk antrean Admin Ri'ayah. Nanti barcodenya langsung dikirim ke WA ini.`
-        : `Siap ${addr.panggilan}, Gate Pass *${bookingRecord.barcode_token}* sudah aktif untuk hari ${bookingRecord.hari_kunjungan}. Tinggal tunjukkan ke Satpam saat tiba ya.`;
+        : `Siap ${addr.panggilan}, jadwal jenguk ananda *${bookingRecord.nama_santri}* hari *${bookingRecord.hari_kunjungan}* telah *DISETUJUI OTOMATIS*.\n\n🎫 *Kupon Barcode Gate Pass:* *${bookingRecord.barcode_token}*\n🔗 *Buka E-Barcode:* ${gatePassUrl}\n\nTinggal buka tautan di atas atau tunjukkan kupon barcode ini ke Satpam saat tiba di gerbang ya.`;
       return await saveLocalAiReply(ackReply, 'VISIT_CONFIRM_ACK');
     }
 
@@ -1474,7 +1490,8 @@ ATURAN BOOKING KUNJUNGAN:
     if (bookingRecord.is_weekday) {
       reply = `${naturalGreeting}jadwal jenguk ananda *${bookingRecord.nama_santri}* hari *${bookingRecord.hari_kunjungan}* (${bookingRecord.jam_kunjungan}–${bookingRecord.jam_selesai} WITA) sudah kami catat.\n\nKarena hari kerja, kami teruskan ke Admin Ri'ayah untuk persetujuan ya ${addr.sapaan}. Barcode kunjungan akan langsung dikirim ke WA ini setelah disetujui (titipan maks 5 Kg).`;
     } else {
-      reply = `${naturalGreeting}jadwal jenguk ananda *${bookingRecord.nama_santri}* hari *${bookingRecord.hari_kunjungan}* (${bookingRecord.jam_kunjungan}–${bookingRecord.jam_selesai} WITA) sudah *otomatis disetujui*.\n\n🎫 Gate Pass: *${bookingRecord.barcode_token}*\nTunjukkan kode ini ke Satpam di gerbang ya ${addr.sapaan} (titipan maks 5 Kg).`;
+      const gatePassUrl = bookingRecord.gate_pass_url || `https://smart-riayah.vercel.app/?gatepass=${encodeURIComponent(bookingRecord.barcode_token || '')}`;
+      reply = `${naturalGreeting}jadwal jenguk ananda *${bookingRecord.nama_santri}* hari *${bookingRecord.hari_kunjungan}* (${bookingRecord.jam_kunjungan}–${bookingRecord.jam_selesai} WITA) telah *DISETUJUI OTOMATIS* (Kunjungan Akhir Pekan).\n\n🎫 *Kupon Barcode Gate Pass:* *${bookingRecord.barcode_token}*\n🔗 *Buka E-Barcode:* ${gatePassUrl}\n\nTinggal klik tautan di atas atau tunjukkan kupon barcode tersebut kepada Satpam di gerbang utama saat tiba di pondok ya ${addr.sapaan} (titipan maks 5 Kg).`;
     }
 
     return await saveLocalAiReply(reply, bookingRecord.is_weekday ? 'VISIT_BOOKING_WEEKDAY' : 'VISIT_BOOKING_WEEKEND');
@@ -1526,7 +1543,7 @@ export async function generateAutonomousReply(senderPhone, incomingText, senderN
 /**
  * Mengirim pesan balasan otomatis via Fonnte REST API (/send)
  */
-export async function sendFonnteAutoReply(targetPhone, replyText, customToken = null) {
+export async function sendFonnteAutoReply(targetPhone, replyText, customToken = null, mediaUrl = null) {
   const token = customToken || process.env.FONNTE_TOKEN || DEFAULT_FONNTE_TOKEN;
   const cleanTarget = normalizePhone(targetPhone);
 
@@ -1536,6 +1553,9 @@ export async function sendFonnteAutoReply(targetPhone, replyText, customToken = 
     formData.append('message', replyText);
     formData.append('countryCode', '62');
     formData.append('preview', 'false');
+    if (mediaUrl) {
+      formData.append('url', mediaUrl);
+    }
 
     const response = await fetch('https://api.fonnte.com/send', {
       method: 'POST',

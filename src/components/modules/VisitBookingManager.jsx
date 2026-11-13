@@ -28,12 +28,14 @@ import {
   ArrowRight,
   Bot,
   Loader2,
-  ExternalLink
+  ExternalLink,
+  FileSpreadsheet
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
 import { parseBookingWithDeepSeek } from '../../services/deepseekVisitService';
 import { getRealtimePondokClock, calculateVisitCountdown, checkBarcodeLifecycle } from '../../utils/pondokTimeUtils';
 import { getBarcodeImageUrl, getVisitGatePassUrls, downloadBarcodeImage, generateLocalQrDataUrl } from '../../utils/barcodeUtils';
+import { downloadCsvFile, generateCsv } from '../../utils/csvUtils';
 import { LocalQrImage, LocalCode128Image } from '../common/LocalBarcodeImages';
 
 export default function VisitBookingManager({ isCompact = false }) {
@@ -52,7 +54,8 @@ export default function VisitBookingManager({ isCompact = false }) {
     resendBarcodeToWa
   } = useApp();
 
-  const [activeFilter, setActiveFilter] = useState('ALL'); // 'ALL' | 'APPROVED_LOGS' | 'PENDING' | 'WEEKEND' | 'SATPAM' | 'ACTIVE' | 'COMPLETED'
+  const [activeFilter, setActiveFilter] = useState('ALL'); // 'ALL' | 'TODAY' | 'APPROVED_LOGS' | 'PENDING' | 'WEEKEND' | 'SATPAM' | 'ACTIVE' | 'COMPLETED' | 'MONTHLY_RECAP'
+  const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7)); // 'YYYY-MM'
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilter, setDateFilter] = useState('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -132,9 +135,80 @@ export default function VisitBookingManager({ isCompact = false }) {
   ).length;
   const totalBeratTitipan = bookings.reduce((sum, b) => sum + (Number(b.berat_barang_kg) || 0), 0).toFixed(1);
 
+  // Perhitungan Data Rekap Bulanan Admin Ri'ayah
+  const monthlyBookings = bookings.filter(b => {
+    const d = b.tanggal_kunjungan || b.tanggal_masuk || b.created_at?.slice(0, 10);
+    return d && d.startsWith(selectedMonth);
+  });
+
+  const monthlyMetrics = {
+    total: monthlyBookings.length,
+    selesai: monthlyBookings.filter(b => b.status_kunjungan === 'Selesai').length,
+    aktif: monthlyBookings.filter(b => b.status_kunjungan === 'Sedang Berkunjung' || b.status_kunjungan?.includes('Sedang Berkunjung')).length,
+    approvedWeekend: monthlyBookings.filter(b => b.approval_type === 'AUTO_WEEKEND').length,
+    titipanKg: monthlyBookings.reduce((sum, b) => sum + (Number(b.berat_barang_kg) || 0), 0).toFixed(1),
+    weekendTotal: monthlyBookings.filter(b => b.approval_type === 'AUTO_WEEKEND' || ['Jumat', 'Sabtu', 'Minggu', 'Ahad'].includes(b.hari_kunjungan)).length,
+  };
+
+  const handleExportMonthlyCsvAdmin = () => {
+    const headers = [
+      'No',
+      'ID Kunjungan',
+      'Tanggal Kunjungan',
+      'Hari',
+      'Nama Santri',
+      'Kelas',
+      'Kamar',
+      'Nama Penjenguk (Wali)',
+      'Status Penjenguk',
+      'No WhatsApp',
+      'Jam Rencana Masuk',
+      'Jam Selesai',
+      'Jam Check-In Aktual',
+      'Barang Titipan',
+      'Berat (Kg)',
+      'Status Kunjungan',
+      'Tipe Approval',
+      'Barcode Token',
+      'Sumber Booking'
+    ];
+
+    const rows = monthlyBookings.map((b, idx) => ({
+      'No': idx + 1,
+      'ID Kunjungan': b.id,
+      'Tanggal Kunjungan': b.tanggal_kunjungan || '-',
+      'Hari': b.hari_kunjungan || '-',
+      'Nama Santri': b.nama_santri || '-',
+      'Kelas': b.kelas || '-',
+      'Kamar': b.kamar || '-',
+      'Nama Penjenguk (Wali)': b.nama_penjenguk || '-',
+      'Status Penjenguk': b.status_penjenguk || '-',
+      'No WhatsApp': b.no_wa_penjenguk || '-',
+      'Jam Rencana Masuk': b.jam_kunjungan || '-',
+      'Jam Selesai': b.jam_selesai || '-',
+      'Jam Check-In Aktual': b.jam_masuk_aktual || b.jam_checkin_aktual || '-',
+      'Barang Titipan': b.titipan_barang || '-',
+      'Berat (Kg)': b.berat_barang_kg || 0,
+      'Status Kunjungan': b.status_kunjungan || '-',
+      'Tipe Approval': b.approval_type || (b.status_kunjungan?.includes('Disetujui') ? 'ADMIN_RIAYAH' : '-'),
+      'Barcode Token': b.barcode_token || '-',
+      'Sumber Booking': b.booking_source || (b.barcode_token ? 'WhatsApp' : 'Manual')
+    }));
+
+    const csv = generateCsv(headers, rows);
+    downloadCsvFile(`Rekap_Kunjungan_Admin_Riayah_${selectedMonth}`, csv);
+    sound.playSuccess?.();
+  };
+
+  const handlePrintMonthlyReport = () => {
+    sound.playBeep?.();
+    window.print();
+  };
+
   // Filter bookings
-  const filteredBookings = bookings.filter(b => {
+  const filteredBookings = (activeFilter === 'MONTHLY_RECAP' ? monthlyBookings : bookings).filter(b => {
     // Tab filter
+    if (activeFilter === 'TODAY' && b.tanggal_kunjungan !== todayStr && b.status_kunjungan !== 'Sedang Berkunjung') return false;
     if (activeFilter === 'APPROVED_LOGS' && !(
       b.status_kunjungan === 'Disetujui (Siap Datang)' || 
       b.approval_type === 'AUTO_WEEKEND' || 
@@ -515,12 +589,14 @@ export default function VisitBookingManager({ isCompact = false }) {
           <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-1">
             {[
               { id: 'ALL', label: `Semua (${bookings.length})` },
+              { id: 'TODAY', label: `Hari Ini (${totalHariIni})` },
               { id: 'APPROVED_LOGS', label: `📜 Log Approval & Kirim Barcode (${approvedVisitsCount})` },
               { id: 'PENDING', label: `Perlu Approval (${pendingWeekday})`, badge: pendingWeekday > 0 },
               { id: 'WEEKEND', label: `Booking Weekend (${autoApprovedWeekend})` },
               { id: 'SATPAM', label: 'Input Satpam' },
               { id: 'ACTIVE', label: 'Sedang Berkunjung' },
-              { id: 'COMPLETED', label: 'Selesai' }
+              { id: 'COMPLETED', label: 'Selesai' },
+              { id: 'MONTHLY_RECAP', label: '📊 Rekap Bulanan' }
             ].map(chip => (
               <button
                 key={chip.id}
@@ -567,6 +643,71 @@ export default function VisitBookingManager({ isCompact = false }) {
             )}
           </div>
         </div>
+
+        {/* PANEL REKAP BULANAN OTOMATIS ADMIN RI'AYAH */}
+        {activeFilter === 'MONTHLY_RECAP' && (
+          <div className="p-4 sm:p-5 bg-gradient-to-r from-emerald-50/80 via-teal-50/60 to-slate-50 border-b border-emerald-100 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-emerald-600" />
+                  <span className="text-xs font-bold text-slate-700">Pilih Periode Bulan:</span>
+                </div>
+                <input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="px-3 py-1.5 text-xs rounded-xl border border-emerald-300 bg-white font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExportMonthlyCsvAdmin}
+                  className="px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm active:scale-95"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>📥 Unduh Rekap CSV ({selectedMonth})</span>
+                </button>
+                <button
+                  onClick={handlePrintMonthlyReport}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm active:scale-95 no-print"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>🖨️ Cetak Laporan</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 6 KPI Ringkasan Bulanan Admin Ri'ayah */}
+            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5 pt-1">
+              <div className="bg-white p-3 rounded-2xl border border-emerald-100 shadow-2xs">
+                <span className="text-[10px] text-slate-400 font-mono block uppercase">TOTAL KUNJUNGAN</span>
+                <span className="text-lg font-black text-slate-800 font-mono mt-0.5 block">{monthlyMetrics.total}</span>
+              </div>
+              <div className="bg-white p-3 rounded-2xl border border-emerald-100 shadow-2xs">
+                <span className="text-[10px] text-emerald-600 font-mono block uppercase">AUTO WEEKEND</span>
+                <span className="text-lg font-black text-emerald-700 font-mono mt-0.5 block">{monthlyMetrics.approvedWeekend}</span>
+              </div>
+              <div className="bg-white p-3 rounded-2xl border border-emerald-100 shadow-2xs">
+                <span className="text-[10px] text-teal-600 font-mono block uppercase">SELESAI (CHECK-OUT)</span>
+                <span className="text-lg font-black text-teal-700 font-mono mt-0.5 block">{monthlyMetrics.selesai}</span>
+              </div>
+              <div className="bg-white p-3 rounded-2xl border border-emerald-100 shadow-2xs">
+                <span className="text-[10px] text-blue-600 font-mono block uppercase">SEDANG AKTIF</span>
+                <span className="text-lg font-black text-blue-700 font-mono mt-0.5 block">{monthlyMetrics.aktif}</span>
+              </div>
+              <div className="bg-white p-3 rounded-2xl border border-emerald-100 shadow-2xs">
+                <span className="text-[10px] text-cyan-600 font-mono block uppercase">TOTAL TITIPAN</span>
+                <span className="text-lg font-black text-cyan-700 font-mono mt-0.5 block">{monthlyMetrics.titipanKg} Kg</span>
+              </div>
+              <div className="bg-white p-3 rounded-2xl border border-emerald-100 shadow-2xs col-span-2 sm:col-span-1">
+                <span className="text-[10px] text-purple-600 font-mono block uppercase">WEEKEND TOTAL</span>
+                <span className="text-lg font-black text-purple-700 font-mono mt-0.5 block">{monthlyMetrics.weekendTotal}</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Tabel Data 7 Kolom Spesifikasi */}
         <div className="overflow-x-auto">
