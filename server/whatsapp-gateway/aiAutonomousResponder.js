@@ -1399,8 +1399,8 @@ export async function generateAutonomousReplyWithContext(
 
     const handoffReply = sanitizeAutonomousReplyForPhone(
       isOutOfKnowledgeTopic
-        ? `🤖 *[SISTEM SMART RI'AYAH - ESKALASI PENGURUS PONDOK]*\nAssalamu'alaikum Wr. Wb. ${addr.panggilan} (Wali dari *${waliData.santriNama}*).\n\nPertanyaan/keperluan Ayah/Bunda:\n_\"${incomingText}\"_\nterdeteksi berada di luar basis pengetahuan otomatis kami dan memerlukan verifikasi serta jawaban langsung dari Pengurus/Ustadz Ri'ayah.\n\nSistem telah *MENGIRIMKAN NOTIFIKASI DARURAT* ke Admin Ri'ayah & Pengasuhan Asrama agar segera merespons ke nomor WhatsApp ini. Mohon ditunggu sebentar ya ${addr.sapaan}. Syukron.\n\n— Tim Pengasuhan Santri & Admin Ri'ayah Pesantren Modern Darul Ulum`
-        : `${naturalGreeting}chat ini langsung kami sambungkan ke Admin Ri'ayah/Ustadz ya. Mohon ditunggu sebentar ${addr.sapaan}.`,
+        ? `Wa'alaikumsalam ${addr.sapaan}. Pertanyaan Ayah/Bunda mengenai hal ini telah kami teruskan langsung ke Admin & Pengasuhan Ri'ayah untuk segera ditangani. Mohon ditunggu sebentar ya.\n\n_(Sedang dialihkan ke Admin)_`
+        : `${naturalGreeting}chat ini langsung kami sambungkan ke Admin Ri'ayah ya. Mohon ditunggu sebentar ${addr.sapaan}.\n\n_(Sedang dialihkan ke Admin)_`,
       cleanPhone,
       waliData,
       addr

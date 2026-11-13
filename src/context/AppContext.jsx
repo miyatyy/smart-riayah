@@ -849,7 +849,7 @@ export const AppProvider = ({ children }) => {
     return () => clearInterval(intervalId);
   }, [purgeOldChatLogs]);
 
-  const sendManualReplyToChat = (chatId, replyText) => {
+  const sendManualReplyToChat = (chatId, replyText, shouldSendWa = true) => {
     if (!replyText || !replyText.trim()) return;
     const clock = getRealtimePondokClock();
     const timeStr = `${clock.jam_menit} WITA`;
@@ -885,13 +885,17 @@ export const AppProvider = ({ children }) => {
       return next;
     });
 
-    if (targetChat && (targetChat.phone || targetChat.sender_phone)) {
-      const addr = resolveWaliAddressing(targetChat.name || 'Wali Santri', replyText, [], { namaWali: targetChat.name });
+    if (shouldSendWa && targetChat && (targetChat.phone || targetChat.sender_phone)) {
+      const cleanText = replyText.trim();
+      const adminMessage = cleanText.includes('diambil alih')
+        ? cleanText
+        : `${cleanText}\n\n_(Sedang diambil alih Admin)_`;
+
       sendWhatsAppNotification(
         targetChat.name,
         targetChat.sender_phone || targetChat.phone,
         'ADMIN_MANUAL_REPLY',
-        `*[PESANTREN MODERN DARUL ULUM - BALASAN ADMIN]*\nAssalamu'alaikum Wr. Wb. ${addr.panggilan}.\n\n${replyText.trim()}\n\n_Pesan ini dikirim langsung oleh Pengasuhan/Admin Ri'ayah Pondok._`
+        adminMessage
       );
     }
 

@@ -2567,7 +2567,7 @@ function TabAiInbox({
         sound.playReminderChime?.();
         const addr = resolveWaliAddressing(resolvedWaliName, questionText, [], matchedSantri);
 
-        const escalationReply = `🤖 *[SISTEM SMART RI'AYAH - ESKALASI PENGURUS PONDOK]*\nAssalamu'alaikum Wr. Wb. ${addr.panggilan} (Wali dari *${resolvedSantriName}*).\n\nPertanyaan/keperluan Ayah/Bunda:\n_\"${questionText}\"_\nterdeteksi berada di luar basis pengetahuan otomatis kami dan memerlukan verifikasi serta jawaban langsung dari Pengurus/Ustadz Ri'ayah.\n\nSistem telah *MENGIRIMKAN NOTIFIKASI DARURAT* ke Admin Ri'ayah & Pengasuhan Asrama agar segera merespons ke nomor WhatsApp ini. Mohon ditunggu sebentar ya ${addr.sapaan}. Syukron.\n\n— Tim Pengasuhan Santri & Admin Ri'ayah Pesantren Modern Darul Ulum`;
+        const escalationReply = `Wa'alaikumsalam ${addr.sapaan}. Pertanyaan Ayah/Bunda mengenai hal ini telah kami teruskan langsung ke Admin & Pengasuhan Ri'ayah untuk konfirmasi segera. Mohon ditunggu sebentar ya.\n\n_(Sedang dialihkan ke Admin)_`;
 
         const systemNoticeMsg = {
           sender: 'system',
@@ -2721,6 +2721,10 @@ function TabAiInbox({
     setIsSendingOverride(true);
     sound.playBeep?.();
 
+    const formattedAdminMsg = textToSend.includes('diambil alih')
+      ? textToSend
+      : `${textToSend}\n\n_(Sedang diambil alih Admin)_`;
+
     try {
       let res;
       const isTelegramChat = selectedChat.channel === 'Telegram Bot' || String(targetPhone).startsWith('TG-');
@@ -2730,19 +2734,19 @@ function TabAiInbox({
         const tgRes = await fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: cleanChatId, text: textToSend })
+          body: JSON.stringify({ chat_id: cleanChatId, text: formattedAdminMsg })
         });
         const tgData = await tgRes.json().catch(() => ({}));
         res = { success: Boolean(tgData.ok), message: tgData.description };
       } else {
-        res = await sendManualOverrideMessage(targetPhone, textToSend, fonnteToken);
+        res = await sendManualOverrideMessage(targetPhone, formattedAdminMsg, fonnteToken);
       }
       setIsSendingOverride(false);
 
       if (res.success || res.data?.status === true || res.data?.status === 'true' || res.data?.id) {
         const newMsg = {
           sender: 'admin',
-          time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB',
+          time: getNowWITA(),
           text: textToSend
         };
 
@@ -2754,7 +2758,7 @@ function TabAiInbox({
         }));
 
         if (typeof sendManualReplyToChat === 'function' && selectedChat?.id) {
-          sendManualReplyToChat(selectedChat.id, textToSend);
+          sendManualReplyToChat(selectedChat.id, textToSend, false);
         }
 
         addSafetyLog?.(
