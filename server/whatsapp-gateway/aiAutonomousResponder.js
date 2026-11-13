@@ -1317,7 +1317,7 @@ export async function generateAutonomousReplyWithContext(
   const rtc = getRealtimePondokClockBackend();
   const priorityPhone = isPriorityNurmiyatyPhone(cleanPhone);
 
-  // ─── INTENT PRIORITAS TERTINGGI: WALI INGIN BICARA DENGAN ADMIN ───
+  // ─── INTENT PRIORITAS TERTINGGI: PERMINTAAN ADMIN & PERTANYAAN DI LUAR KNOWLEDGE AI ───
   const isAdminRequest =
     textLower.includes('bicara sama admin') ||
     textLower.includes('bicara dengan admin') ||
@@ -1339,18 +1339,55 @@ export async function generateAutonomousReplyWithContext(
     textLower.includes('apakah admin') ||
     textLower.includes('mau admin') ||
     textLower.includes('bisa bicara langsung') ||
-    textLower.includes('bicara langsung');
+    textLower.includes('bicara langsung') ||
+    textLower.includes('telepon saya') ||
+    textLower.includes('tolong telepon');
 
-  if (isAdminRequest) {
-    console.log(`🔔 [Smart Handoff Triggered]: Wali ${cleanPhone} meminta bicara dengan Admin! Mengalihkan ke Mode Manual.`);
+  const isOutOfKnowledgeTopic =
+    textLower.includes('biaya spp') ||
+    textLower.includes('tunggakan spp') ||
+    textLower.includes('keringanan biaya') ||
+    textLower.includes('potongan spp') ||
+    textLower.includes('angsuran spp') ||
+    textLower.includes('pembayaran khusus') ||
+    textLower.includes('pindah kamar') ||
+    textLower.includes('tukar kamar') ||
+    textLower.includes('ganti kamar') ||
+    textLower.includes('masalah asrama') ||
+    textLower.includes('perselisihan') ||
+    textLower.includes('berkelahi') ||
+    textLower.includes('bully') ||
+    textLower.includes('kasus santri') ||
+    textLower.includes('sidang disiplin') ||
+    textLower.includes('pemanggilan') ||
+    textLower.includes('dispensasi khusus') ||
+    textLower.includes('izin khusus pimpinan') ||
+    textLower.includes('urgent') ||
+    textLower.includes('darurat') ||
+    textLower.includes('butuh segera') ||
+    textLower.includes('tolong segera');
+
+  if (isAdminRequest || isOutOfKnowledgeTopic) {
+    const reasonCode = isOutOfKnowledgeTopic ? 'OUT_OF_KNOWLEDGE_URGENT' : 'WALI_REQUESTED_ADMIN';
+    console.log(`🚨 [Smart Handoff / Out-Of-Knowledge Escalation]: Wali ${cleanPhone} (${reasonCode})! Mengalihkan ke Mode Manual & mengirim notifikasi.`);
 
     await setManualTakeover(cleanPhone, true);
+
+    // Kirim notifikasi peringatan darurat ke Admin Ri'ayah via WhatsApp
+    const adminPhone = process.env.ADMIN_WHATSAPP_TARGET || process.env.FONNTE_TARGET_PHONE || '628813576012';
+    if (adminPhone) {
+      const adminAlertText = `🚨 *[NOTIFIKASI SISTEM: WALI BUTUH JAWABAN SEGERA]*\nPertanyaan di luar knowledge AI terdeteksi dari wali santri!\n\n👤 *Wali Santri:* ${waliData.namaWali} (${cleanPhone})\n🎓 *Santri:* ${waliData.santriNama} (${waliData.kelas})\n💬 *Pesan Wali:* "${incomingText}"\n⏰ *Waktu:* ${rtc.jamMenit} WITA\n\nStatus chat telah dialihkan ke *MODE AMBIL ALIH MANUAL*. Silakan segera buka Dashboard Smart Ri'ayah (Menu WhatsApp Gateway) untuk membalas langsung.`;
+      sendFonnteAutoReply(adminPhone, adminAlertText).catch(() => {});
+    }
 
     try {
       await broadcastToSupabaseRealtime('whatsapp.takeover', {
         phone: cleanPhone,
         isManual: true,
-        reason: 'WALI_REQUESTED_ADMIN',
+        isOutOfKnowledge: true,
+        needs_immediate_answer: true,
+        reason: reasonCode,
+        incomingText,
         senderName: waliData.namaWali,
         santriNama: waliData.santriNama,
         admin: 'Ust. Drs. H. Mustofa',
@@ -1361,11 +1398,14 @@ export async function generateAutonomousReplyWithContext(
     }
 
     const handoffReply = sanitizeAutonomousReplyForPhone(
-      `${naturalGreeting}chat ini langsung kami sambungkan ke Admin Ri'ayah/Ustadz ya. Mohon ditunggu sebentar ${addr.sapaan}.`,
+      isOutOfKnowledgeTopic
+        ? `🤖 *[SISTEM SMART RI'AYAH - ESKALASI PENGURUS PONDOK]*\nAssalamu'alaikum Wr. Wb. ${addr.panggilan} (Wali dari *${waliData.santriNama}*).\n\nPertanyaan/keperluan Ayah/Bunda:\n_\"${incomingText}\"_\nterdeteksi berada di luar basis pengetahuan otomatis kami dan memerlukan verifikasi serta jawaban langsung dari Pengurus/Ustadz Ri'ayah.\n\nSistem telah *MENGIRIMKAN NOTIFIKASI DARURAT* ke Admin Ri'ayah & Pengasuhan Asrama agar segera merespons ke nomor WhatsApp ini. Mohon ditunggu sebentar ya ${addr.sapaan}. Syukron.\n\n— Tim Pengasuhan Santri & Admin Ri'ayah Pesantren Modern Darul Ulum`
+        : `${naturalGreeting}chat ini langsung kami sambungkan ke Admin Ri'ayah/Ustadz ya. Mohon ditunggu sebentar ${addr.sapaan}.`,
       cleanPhone,
       waliData,
       addr
     );
+
     await recordChatMessage(cleanPhone, 'user', incomingText, waliData.namaWali);
     await recordChatMessage(cleanPhone, 'assistant', handoffReply, 'Smart Ri\'ayah AI');
     await saveAiDocument('ai_chat_logs', {
@@ -1373,12 +1413,20 @@ export async function generateAutonomousReplyWithContext(
       senderPhone: cleanPhone,
       senderName: waliData.namaWali,
       santriNama: waliData.santriNama,
-      engine: 'SMART_HANDOFF_TRIGGER',
-      intent: 'ADMIN_HANDOFF',
+      engine: 'OUT_OF_KNOWLEDGE_ESCALATION',
+      intent: isOutOfKnowledgeTopic ? 'OUT_OF_KNOWLEDGE_ESCALATION' : 'ADMIN_HANDOFF',
       prompt: incomingText,
       reply: handoffReply
     }).catch(() => { });
-    return { reply: handoffReply, waliData, cleanPhone, addressing: addr };
+
+    return {
+      reply: handoffReply,
+      waliData,
+      cleanPhone,
+      addressing: addr,
+      isOutOfKnowledge: true,
+      needs_immediate_answer: true
+    };
   }
 
   // Rekam pesan masuk pengguna ke riwayat

@@ -223,7 +223,9 @@ router.post('/webhook', validateWaSignature, async (req, res) => {
         replyText: aiReply,
         waktu: nowWIB,
         dispatched: dispatchResult.success,
-        mode: 'AUTONOMOUS'
+        mode: aiResult.isOutOfKnowledge ? 'OUT_OF_KNOWLEDGE_ESCALATION' : 'AUTONOMOUS',
+        isOutOfKnowledge: Boolean(aiResult.isOutOfKnowledge),
+        needs_immediate_answer: Boolean(aiResult.needs_immediate_answer)
       };
 
       // Broadcast balasan AI ke dashboard AI Inbox
@@ -632,7 +634,9 @@ router.post('/simulate-incoming', async (req, res) => {
       replyText: aiReply,
       waktu: nowWIB,
       dispatched: dispatch.success,
-      mode: 'AUTONOMOUS'
+      mode: aiResult.isOutOfKnowledge ? 'OUT_OF_KNOWLEDGE_ESCALATION' : 'AUTONOMOUS',
+      isOutOfKnowledge: Boolean(aiResult.isOutOfKnowledge),
+      needs_immediate_answer: Boolean(aiResult.needs_immediate_answer)
     };
 
     await broadcastToSupabaseRealtime('whatsapp.incoming', incomingData);

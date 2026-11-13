@@ -2197,11 +2197,14 @@ export const AppProvider = ({ children }) => {
     };
   }, [santriList, permits, activeRoleTab]);
 
-  // Helper to format time now WIB
-  const getNowWIB = () => {
+  // Helper to format time now WITA (Zona Waktu Resmi Pesantren Darul Ulum)
+  const getNowWITA = () => {
+    const clock = getRealtimePondokClock?.();
+    if (clock?.jam_menit) return `${clock.jam_menit} WITA`;
     const d = new Date();
-    return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
+    return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WITA';
   };
+  const getNowWIB = getNowWITA;
 
   const getIsoNow = () => new Date().toISOString();
 
@@ -3458,11 +3461,12 @@ export const AppProvider = ({ children }) => {
       setOledState(STANDBY_OLED);
     }, 4500);
 
-    if (booking.no_wa_penjenguk) {
+    const targetPhone = booking.no_wa_penjenguk || booking.whatsapp_penjenguk || booking.nomor_wa || booking.phone;
+    if (targetPhone) {
       const waliAddr = resolveWaliAddressing(booking.nama_penjenguk || 'Wali Santri', '', [], { namaWali: booking.nama_penjenguk });
       sendWhatsAppNotification(
         `${booking.nama_penjenguk || 'Wali Santri'} (Wali ${booking.nama_santri})`,
-        booking.no_wa_penjenguk,
+        targetPhone,
         'WARNING_VISIT_TIME',
         `⏳ *[PENGINGAT SMART GATE - SISA WAKTU KUNJUNGAN]*\nAssalamu'alaikum Wr. Wb. ${waliAddr.panggilan} (Wali dari *${booking.nama_santri}* - ${booking.kelas || ''}).\nWaktu berkunjung ananda tersisa *${sisaMenit} menit* lagi (Batas akhir kunjungan: *${jamSelesai} WITA*).\nMohon bersiap untuk menyelesaikan kunjungan dan melakukan konfirmasi check-out di Pos Jaga Satpam gerbang utama sebelum batas waktu berakhir. Syukron. — Pos Keamanan & Admin Ri'ayah Darul Ulum`
       );

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   MessageSquare,
@@ -55,6 +55,7 @@ import {
   UserCheck,
   Loader2,
   BellRing,
+  Volume2,
   Printer,
   Download,
   UploadCloud,
@@ -96,6 +97,7 @@ import {
 import VisitBookingManager from './VisitBookingManager';
 import BulkCsvImportModal from '../common/BulkCsvImportModal';
 import { downloadCsvFile, getTemplateCsv } from '../../utils/csvUtils';
+import { getRealtimePondokClock, calculateVisitCountdown } from '../../utils/pondokTimeUtils';
 
 class WorkspaceErrorBoundary extends React.Component {
   constructor(props) {
@@ -219,7 +221,12 @@ function EngageAiWorkspaceContent() {
     setTimeout(() => setToast(null), 4000);
   };
 
-  const getNowWIB = () => new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
+  const getNowWITA = () => {
+    const clock = getRealtimePondokClock?.();
+    if (clock?.jam_menit) return `${clock.jam_menit} WITA`;
+    return new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WITA';
+  };
+  const getNowWIB = getNowWITA;
 
   const copyToClipboard = (text, id = 'default') => {
     navigator.clipboard?.writeText(text);
@@ -2014,6 +2021,14 @@ function TabAiInbox({
   takeOverChatManual,
   resolveChatManual
 }) {
+  const {
+    visitBookings = [],
+    sendVisitWarningReminder,
+    reminderThresholdMinutes = 15,
+    isAlarmSoundEnabled = true,
+    fonnteTargetNumber
+  } = useApp();
+
   const [selectedChat, setSelectedChat] = useState(null);
   const [isSendingOverride, setIsSendingOverride] = useState(false);
   const [isManualOverrideActive, setIsManualOverrideActive] = useState(false);
@@ -2038,6 +2053,52 @@ function TabAiInbox({
   const priorityKamar = prioritySantri?.kamar || 'Khadijah 105';
   const priorityPhone = normalizePhone(prioritySantri?.wali?.telepon || prioritySantri?.noWali || '628813576012') || '628813576012';
 
+  // ─── Deteksi Kunjungan Tamu / Wali Santri Aktif Hari Ini ───
+  const activeVisit = useMemo(() => {
+    if (!selectedChat) return null;
+    const chatPhoneClean = String(selectedChat.phone || selectedChat.sender_phone || '').replace(/[^0-9]/g, '');
+    const chatSantriClean = String(selectedChat.santri || '').toLowerCase();
+    const chatWaliClean = String(selectedChat.name || '').toLowerCase();
+
+    // 1. Cari booking yang sedang aktif (Sedang Berkunjung atau Disetujui) cocok phone atau santri/wali
+    const match = (visitBookings || []).find(b => {
+      const bPhoneClean = String(b.no_wa_penjenguk || b.whatsapp_penjenguk || b.phone || '').replace(/[^0-9]/g, '');
+      const bSantriClean = String(b.nama_santri || '').toLowerCase();
+      const bWaliClean = String(b.nama_penjenguk || '').toLowerCase();
+
+      const phoneMatches = Boolean(
+        chatPhoneClean && bPhoneClean && (
+          chatPhoneClean.endsWith(bPhoneClean.slice(-8)) || bPhoneClean.endsWith(chatPhoneClean.slice(-8))
+        )
+      );
+      const santriMatches = Boolean(
+        chatSantriClean && bSantriClean && (
+          chatSantriClean.includes(bSantriClean) || bSantriClean.includes(chatSantriClean)
+        )
+      );
+      const waliMatches = Boolean(
+        chatWaliClean && bWaliClean && (
+          chatWaliClean.includes(bWaliClean) || bWaliClean.includes(chatWaliClean)
+        )
+      );
+
+      const isOngoingOrApproved = b.status_kunjungan === 'Sedang Berkunjung' || b.status_kunjungan === 'Disetujui';
+      return isOngoingOrApproved && (phoneMatches || santriMatches || waliMatches);
+    });
+
+    if (match) return match;
+
+    // 2. Fallback: Cari booking apapun yang cocok nomor HP
+    return (visitBookings || []).find(b => {
+      const bPhoneClean = String(b.no_wa_penjenguk || b.whatsapp_penjenguk || b.phone || '').replace(/[^0-9]/g, '');
+      return Boolean(
+        chatPhoneClean && bPhoneClean && (
+          chatPhoneClean.endsWith(bPhoneClean.slice(-8)) || bPhoneClean.endsWith(chatPhoneClean.slice(-8))
+        )
+      );
+    }) || null;
+  }, [selectedChat, visitBookings]);
+
   // ─── Conversations Directory (Source of Truth: chatLogs dari AppContext) ───
   const conversations = chatLogs && chatLogs.length > 0 ? chatLogs : [
     {
@@ -2049,14 +2110,14 @@ function TabAiInbox({
       status: 'Open',
       handling: 'Otonom - Mengikuti Global',
       aiSafety: 'AI Balas - Allow (Score: 98)',
-      lastTime: '11:40 WIB',
+      lastTime: '11:40 WITA',
       lastPreview: `Assalamu'alaikum, apakah ananda ${prioritySantriName} hari ini sholat subuh berjamaah?`,
       unread: false,
       needs_manual_reply: false,
       messages: [
-        { sender: 'wali', time: '11:38 WIB', text: `Assalamu'alaikum ustadz, bagaimana kabar ananda ${prioritySantriName} hari ini?` },
-        { sender: 'ai', time: '11:39 WIB', text: `Wa'alaikumsalam warahmatullah, ${priorityWaliName}. Ananda ${prioritySantriName} sehat wal'afiat dan tercatat hadir sholat Subuh berjamaah di Masjid Jami' tepat waktu. Poin kedisiplinannya saat ini 100/100 (Mumtaz).` },
-        { sender: 'wali', time: '11:40 WIB', text: 'Alhamdulillah, terima kasih banyak atas infonya Ustadz.' }
+        { sender: 'wali', time: '11:38 WITA', text: `Assalamu'alaikum ustadz, bagaimana kabar ananda ${prioritySantriName} hari ini?` },
+        { sender: 'ai', time: '11:39 WITA', text: `Wa'alaikumsalam warahmatullah, ${priorityWaliName}. Ananda ${prioritySantriName} sehat wal'afiat dan tercatat hadir sholat Subuh berjamaah di Masjid Jami' tepat waktu. Poin kedisiplinannya saat ini 100/100 (Mumtaz).` },
+        { sender: 'wali', time: '11:40 WITA', text: 'Alhamdulillah, terima kasih banyak atas infonya Ustadz.' }
       ]
     },
     {
@@ -2070,12 +2131,12 @@ function TabAiInbox({
       isManual: false,
       needs_manual_reply: true,
       aiSafety: 'Perlu Konfirmasi Admin (Score: 68)',
-      lastTime: '11:15 WIB',
+      lastTime: '11:15 WITA',
       lastPreview: 'Saya mau tanya prosedur perpanjangan izin pulang karena anak demam di rumah.',
       unread: true,
       messages: [
-        { sender: 'wali', time: '11:14 WIB', text: 'Assalamu\'alaikum, ananda Rayhan sedang demam di rumah. Bagaimana prosedur mengajukan perpanjangan liburan?' },
-        { sender: 'ai', time: '11:15 WIB', text: 'Wa\'alaikumsalam Bapak Hendra. Syafakallah untuk ananda. Bapak dapat mengajukan perpanjangan liburan langsung melalui menu Perizinan di aplikasi Smart Riayah dengan mengunggah foto surat dokter/keterangan sakit.' }
+        { sender: 'wali', time: '11:14 WITA', text: 'Assalamu\'alaikum, ananda Rayhan sedang demam di rumah. Bagaimana prosedur mengajukan perpanjangan liburan?' },
+        { sender: 'ai', time: '11:15 WITA', text: 'Wa\'alaikumsalam Bapak Hendra. Syafakallah untuk ananda. Bapak dapat mengajukan perpanjangan liburan langsung melalui menu Perizinan di aplikasi Smart Riayah dengan mengunggah foto surat dokter/keterangan sakit.' }
       ]
     },
     {
@@ -2088,12 +2149,12 @@ function TabAiInbox({
       handling: 'Otonom - Mengikuti Global',
       aiSafety: 'AI Balas - Allow (Score: 94)',
       needs_manual_reply: false,
-      lastTime: '10:50 WIB',
+      lastTime: '10:50 WITA',
       lastPreview: 'Berapa sisa saldo dompet RFID ananda saat ini?',
       unread: false,
       messages: [
-        { sender: 'wali', time: '10:49 WIB', text: 'Berapa sisa saldo dompet RFID ananda Aisyah Putri?' },
-        { sender: 'ai', time: '10:50 WIB', text: 'Saldo kartu RFID ananda Aisyah Putri saat ini adalah Rp 65.000 dengan limit jajan harian Rp 25.000/hari.' }
+        { sender: 'wali', time: '10:49 WITA', text: 'Berapa sisa saldo dompet RFID ananda Aisyah Putri?' },
+        { sender: 'ai', time: '10:50 WITA', text: 'Saldo kartu RFID ananda Aisyah Putri saat ini adalah Rp 65.000 dengan limit jajan harian Rp 25.000/hari.' }
       ]
     }
   ];
@@ -2108,7 +2169,7 @@ function TabAiInbox({
   const [liveFeedLogs, setLiveFeedLogs] = useState(() => [
     {
       id: 'feed-init',
-      time: '11:40 WIB',
+      time: '11:40 WITA',
       type: 'INCOMING',
       phone: priorityPhone,
       name: priorityWaliName,
@@ -2389,8 +2450,12 @@ function TabAiInbox({
         const t = payload?.payload;
         if (!t) return;
         const nextManual = Boolean(t.isManual);
+        const isOutOfKnowledge = Boolean(t.isOutOfKnowledge || t.reason === 'OUT_OF_KNOWLEDGE_URGENT');
 
-        if (nextManual && t.reason === 'WALI_REQUESTED_ADMIN') {
+        if (isOutOfKnowledge) {
+          showToast?.(`🚨 PERTANYAAN DI LUAR KNOWLEDGE: Wali Santri (${t.senderName || t.phone}) butuh jawaban segera! Notif sistem telah dikirim ke WA Pengurus.`, 'error');
+          sound.playReminderChime?.();
+        } else if (nextManual && t.reason === 'WALI_REQUESTED_ADMIN') {
           showToast?.(`🔔 Percakapan dialihkan: Wali Santri (${t.senderName || t.phone}) ingin berbicara langsung dengan Admin!`, 'info');
           sound.playSuccess?.();
         }
@@ -2402,8 +2467,10 @@ function TabAiInbox({
             return {
               ...prev,
               isManual: nextManual,
+              isOutOfKnowledge: isOutOfKnowledge,
+              needs_manual_reply: isOutOfKnowledge || nextManual,
               handling: nextManual ? 'Manual (Ambil Alih)' : 'Otonom - Mengikuti Global',
-              status: nextManual ? 'Ditangani Admin' : 'Open'
+              status: isOutOfKnowledge ? 'Perlu Jawaban Segera' : nextManual ? 'Ditangani Admin' : 'Open'
             };
           }
           return prev;
@@ -2414,8 +2481,10 @@ function TabAiInbox({
             return {
               ...c,
               isManual: nextManual,
+              isOutOfKnowledge: isOutOfKnowledge,
+              needs_manual_reply: isOutOfKnowledge || nextManual,
               handling: nextManual ? 'Manual (Ambil Alih)' : 'Otonom - Mengikuti Global',
-              status: nextManual ? 'Ditangani Admin' : 'Open'
+              status: isOutOfKnowledge ? 'Perlu Jawaban Segera' : nextManual ? 'Ditangani Admin' : 'Open'
             };
           }
           return c;
@@ -2433,7 +2502,7 @@ function TabAiInbox({
     sound.playBeep?.();
     showToast?.(`Simulasi: Mengirim pertanyaan "${topicName}" dari Wali Santri...`, 'info');
 
-    const nowWIB = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
+    const nowWITA = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WITA';
     const activeConv = selectedChat || conversations[0];
     if (!selectedChat) {
       setSelectedChat(activeConv);
@@ -2456,7 +2525,7 @@ function TabAiInbox({
 
     const incomingMsg = {
       sender: 'wali',
-      time: nowWIB,
+      time: nowWITA,
       text: questionText
     };
 
@@ -2466,7 +2535,7 @@ function TabAiInbox({
     setLiveFeedLogs(prev => [
       {
         id: `feed-sim-${Date.now()}`,
-        time: nowWIB,
+        time: nowWITA,
         type: 'INCOMING',
         phone: activePhone,
         name: resolvedWaliName,
@@ -2476,6 +2545,86 @@ function TabAiInbox({
       },
       ...prev.slice(0, 19)
     ]);
+
+    // Cek apakah pertanyaan berada di luar basis knowledge AI / butuh eskalasi segera
+    const qLower = questionText.toLowerCase();
+    const isOutOfKnowledge =
+      topicName.includes('Di Luar Knowledge') ||
+      topicName.includes('Eskalasi') ||
+      qLower.includes('biaya spp') ||
+      qLower.includes('tunggakan') ||
+      qLower.includes('dispensasi biaya') ||
+      qLower.includes('perselisihan') ||
+      qLower.includes('masalah asrama') ||
+      qLower.includes('bicara ustadz') ||
+      qLower.includes('bicara langsung') ||
+      qLower.includes('ngomong sama ustadz') ||
+      qLower.includes('pindah kamar') ||
+      qLower.includes('sidang disiplin');
+
+    if (isOutOfKnowledge) {
+      setTimeout(() => {
+        sound.playReminderChime?.();
+        const addr = resolveWaliAddressing(resolvedWaliName, questionText, [], matchedSantri);
+
+        const escalationReply = `🤖 *[SISTEM SMART RI'AYAH - ESKALASI PENGURUS PONDOK]*\nAssalamu'alaikum Wr. Wb. ${addr.panggilan} (Wali dari *${resolvedSantriName}*).\n\nPertanyaan/keperluan Ayah/Bunda:\n_\"${questionText}\"_\nterdeteksi berada di luar basis pengetahuan otomatis kami dan memerlukan verifikasi serta jawaban langsung dari Pengurus/Ustadz Ri'ayah.\n\nSistem telah *MENGIRIMKAN NOTIFIKASI DARURAT* ke Admin Ri'ayah & Pengasuhan Asrama agar segera merespons ke nomor WhatsApp ini. Mohon ditunggu sebentar ya ${addr.sapaan}. Syukron.\n\n— Tim Pengasuhan Santri & Admin Ri'ayah Pesantren Modern Darul Ulum`;
+
+        const systemNoticeMsg = {
+          sender: 'system',
+          time: nowWITA,
+          text: `Pertanyaan terdeteksi di luar knowledge AI. Sistem otomatis mengirim notifikasi eskalasi darurat ke WhatsApp Pengurus Pondok untuk respon segera.`
+        };
+
+        const aiMsg = {
+          sender: 'ai',
+          time: nowWITA,
+          text: escalationReply
+        };
+
+        setSelectedChat(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            isManual: true,
+            status: 'Perlu Jawaban Segera',
+            needs_manual_reply: true,
+            isOutOfKnowledge: true,
+            aiSafety: '⚠️ Dialihkan ke Admin (Di Luar Knowledge)',
+            messages: [...prev.messages, systemNoticeMsg, aiMsg]
+          };
+        });
+
+        setIsManualOverrideActive(true);
+
+        setConversations(prev => prev.map(c => {
+          if (isSamePhone(c.sender_phone || c.phone, activePhone)) {
+            return {
+              ...c,
+              isManual: true,
+              status: 'Perlu Jawaban Segera',
+              needs_manual_reply: true,
+              isOutOfKnowledge: true,
+              lastTime: nowWITA,
+              lastPreview: questionText
+            };
+          }
+          return c;
+        }));
+
+        setLiveFeedLogs(prev => {
+          const updated = [...prev];
+          if (updated.length > 0) {
+            updated[0].aiStatus = '🚨 Dialihkan ke Admin (Di Luar Knowledge)';
+            updated[0].aiReply = escalationReply;
+          }
+          return updated;
+        });
+
+        showToast?.(`🚨 Notifikasi Terkirim ke WA Pengurus: Pertanyaan Wali di Luar Knowledge AI!`, 'warning');
+        setIsSimulating(false);
+      }, 1000);
+      return;
+    }
 
     try {
       const res = await fetch('/api/whatsapp/simulate-incoming', {
@@ -2493,7 +2642,7 @@ function TabAiInbox({
         if (data.reply) {
           const aiMsg = {
             sender: 'ai',
-            time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB',
+            time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WITA',
             text: data.reply
           };
           setSelectedChat(prev => ({ ...prev, messages: [...prev.messages, aiMsg] }));
@@ -2518,7 +2667,6 @@ function TabAiInbox({
     // Instant local reasoning fallback menggunakan profil santri/wali aktual dari state/Supabase
     setTimeout(() => {
       let clientReply = '';
-      const qLower = questionText.toLowerCase();
       const addr = resolveWaliAddressing(resolvedWaliName, questionText, [], matchedSantri);
       if (qLower.includes('saldo')) {
         clientReply = `Wa'alaikumsalam ${addr.panggilan}. Saldo RFID *${resolvedSantriName}* saat ini *Rp ${resolvedSaldo}* dengan limit jajan harian *Rp ${resolvedLimit}*. Top up bisa melalui Virtual Account atau aplikasi Smart Ri'ayah.`;
@@ -2527,12 +2675,12 @@ function TabAiInbox({
       } else if (qLower.includes('sakit') || qLower.includes('sehat')) {
         clientReply = `Wa'alaikumsalam ${addr.panggilan}. Alhamdulillah *${resolvedSantriName}* terpantau sehat di Kamar ${resolvedKamar}. Poskestren Darul Ulum siap siaga 24 jam jika ananda membutuhkan pemeriksaan medis.`;
       } else {
-        clientReply = `Wa'alaikumsalam ${addr.panggilan}. Jadwal kunjungan resmi pondok adalah Jumat–Minggu pukul 08.00–17.00 WIB. Jika ingin berkunjung hari ini atau menjadwalkan waktu khusus, cukup tulis hari dan jam kunjungannya ya ${addr.sapaan}.`;
+        clientReply = `Wa'alaikumsalam ${addr.panggilan}. Jadwal kunjungan resmi pondok adalah Jumat–Minggu pukul 08.00–17.00 WITA. Jika ingin berkunjung hari ini atau menjadwalkan waktu khusus, cukup tulis hari dan jam kunjungannya ya ${addr.sapaan}.`;
       }
 
       const aiMsg = {
         sender: 'ai',
-        time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB',
+        time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WITA',
         text: clientReply
       };
       setSelectedChat(prev => ({ ...prev, messages: [...prev.messages, aiMsg] }));
@@ -2845,22 +2993,32 @@ function TabAiInbox({
           {/* Kolom Kiri: Ruang Chat & Chat Composer */}
           <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[650px] overflow-hidden">
             {/* Header Ruang Chat */}
-            <div className="p-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs">
-              <span className="font-bold text-slate-700 flex items-center gap-2">
+            <div className="p-3 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+              <div className="flex items-center gap-2 flex-wrap">
                 <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
-                Live Conversation Stream ({selectedChat.channel || 'WhatsApp'})
-              </span>
+                <span className="font-bold text-slate-800">
+                  Live Conversation Stream ({selectedChat.channel || 'WhatsApp'})
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping inline-block" />
+                  Real-Time Sync
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
+                  <Lock className="w-2.5 h-2.5 text-amber-600" />
+                  E2EE Terenkripsi
+                </span>
+              </div>
               <button
                 type="button"
                 onClick={toggleManualOverride}
                 className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 ${
-                  isChatManual
-                    ? 'bg-amber-500 hover:bg-amber-600 text-white border border-amber-600 ring-2 ring-amber-300/50'
+                  isChatManual || selectedChat?.isOutOfKnowledge
+                    ? 'bg-amber-500 hover:bg-amber-600 text-slate-950 font-black border border-amber-600 ring-2 ring-amber-300/50'
                     : 'bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700'
                 }`}
                 title={isChatManual ? "Klik untuk mengembalikan ke Mode Otonom AI" : "Klik untuk Ambil Alih percakapan dari AI"}
               >
-                {isChatManual ? (
+                {isChatManual || selectedChat?.isOutOfKnowledge ? (
                   <>
                     <UserCheck className="w-3.5 h-3.5" />
                     <span>✓ Mode Manual Aktif (Klik Balik ke Otonom)</span>
@@ -2874,19 +3032,115 @@ function TabAiInbox({
               </button>
             </div>
 
+            {/* WIDGET STATUS KUNJUNGAN HARI INI & ALARM PENGINGAT (MINIMAL 15 MENIT) */}
+            {activeVisit && (() => {
+              const cd = calculateVisitCountdown(activeVisit.jam_selesai, activeVisit.tanggal_kunjungan);
+              const isOverstay = cd && cd.isOverstay;
+              const isWarning = cd && !cd.isOverstay && (cd.diffMs / 60000) <= (reminderThresholdMinutes || 15);
+
+              return (
+                <div className={`p-3 border-b text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 transition ${
+                  isOverstay
+                    ? 'bg-rose-950 text-rose-200 border-rose-800 shadow-inner'
+                    : isWarning
+                      ? 'bg-amber-950 text-amber-200 border-amber-800 shadow-inner animate-pulse'
+                      : 'bg-emerald-950 text-emerald-200 border-emerald-800 shadow-inner'
+                }`}>
+                  <div className="flex items-center gap-2.5">
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold shrink-0 ${
+                      isOverstay ? 'bg-rose-600 text-white' : isWarning ? 'bg-amber-500 text-slate-950' : 'bg-emerald-600 text-white'
+                    }`}>
+                      {isOverstay ? <AlertTriangle className="w-4 h-4 animate-bounce" /> : <BellRing className="w-4 h-4 animate-pulse" />}
+                    </div>
+                    <div>
+                      <div className="font-bold flex items-center gap-2 flex-wrap">
+                        <span>🎫 Tamu Sedang Berkunjung: <strong>{activeVisit.nama_penjenguk}</strong> (Wali {activeVisit.nama_santri} • {activeVisit.kelas})</span>
+                        <span className={`px-2 py-0.2 rounded text-[10px] font-mono font-bold ${
+                          isOverstay ? 'bg-rose-600 text-white' : isWarning ? 'bg-amber-500 text-slate-950' : 'bg-emerald-700 text-white'
+                        }`}>
+                          {isOverstay ? '🚨 OVERSTAY' : isWarning ? `⏳ H-${reminderThresholdMinutes}M KRITIS` : 'SEDANG BERKUNJUNG'}
+                        </span>
+                      </div>
+                      <div className="text-[11px] opacity-90 font-mono mt-0.5">
+                        Jam Selesai: {activeVisit.jam_selesai} WITA • {isOverstay ? `Terlewat: ${cd?.remainingText}` : `Sisa Waktu Kunjungan: ${cd?.remainingText || '-'}`}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sound.playReminderChime?.();
+                        sendVisitWarningReminder?.(activeVisit.id);
+                        showToast?.(`📲 Alarm pengingat batas waktu berhasil dikirim ke WhatsApp ${activeVisit.nama_penjenguk}!`, 'success');
+                      }}
+                      className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer ${
+                        isOverstay || isWarning
+                          ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 font-black'
+                          : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                      }`}
+                      title="Kirim pesan peringatan WhatsApp batas waktu kunjungan ke nomor wali santri"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>📲 Kirim Alarm Pengingat WA</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => sound.playReminderChime?.()}
+                      className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold border border-slate-700 transition"
+                      title="Uji bunyi lonceng alarm"
+                    >
+                      <Volume2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Daftar Chat Bubbles */}
             <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-[#f8fafc]">
+              
+              {/* Official WhatsApp End-to-End Encryption Banner */}
+              <div className="flex justify-center my-1.5">
+                <div className="bg-[#fff8e7] border border-[#f5d8a0] text-[#54656f] text-[11px] rounded-xl px-4 py-2 max-w-md text-center shadow-2xs flex items-center gap-2">
+                  <Lock className="w-3.5 h-3.5 text-[#b7791f] shrink-0" />
+                  <span className="leading-snug">
+                    Pesan dan panggilan di chat ini terenkripsi secara <strong>end-to-end</strong>. Hanya Anda dan wali santri yang dapat membaca percakapan ini secara real-time.
+                  </span>
+                </div>
+              </div>
+
               {selectedChat.messages.map((m, idx) => {
                 const isWali = m.sender === 'wali';
                 const isAdmin = m.sender === 'admin';
+                const isSystem = m.sender === 'system';
+
+                if (isSystem) {
+                  return (
+                    <div key={idx} className="flex justify-center my-2 animate-fade-in">
+                      <div className="bg-rose-50 border-2 border-rose-300 text-rose-900 text-xs rounded-2xl px-4 py-2.5 max-w-lg shadow-sm flex items-start gap-2.5">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5 animate-bounce" />
+                        <div>
+                          <strong className="block text-rose-800 font-bold">🚨 [SISTEM ESKALASI: BUTUH JAWABAN SEGERA]</strong>
+                          <p className="text-[11px] text-rose-700 mt-0.5 leading-relaxed">
+                            {m.text}
+                          </p>
+                          <span className="text-[10px] text-rose-500 font-mono mt-1 block">Waktu: {String(m.time || '').replace(/WIB/g, 'WITA')}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
                 return (
                   <div key={idx} className={`flex flex-col ${isWali ? 'items-start' : 'items-end'}`}>
-                    <div className="flex items-center gap-1.5 mb-1 text-[10px] text-slate-400">
+                    <div className="flex items-center gap-1.5 mb-1 text-[10px] text-slate-400 font-mono">
                       <span className="font-bold">
                         {isWali ? 'Wali Santri' : isAdmin ? 'Admin Ri\'ayah (Manual)' : 'AI Smart Ri\'ayah'}
                       </span>
                       <span>•</span>
-                      <span>{m.time}</span>
+                      <span>{String(m.time || '').replace(/WIB/g, 'WITA')}</span>
                     </div>
                     <div
                       className={`max-w-[85%] p-3.5 rounded-2xl text-xs leading-relaxed shadow-sm ${
@@ -2897,7 +3151,13 @@ function TabAiInbox({
                             : 'bg-emerald-600 text-white rounded-tr-sm'
                       }`}
                     >
-                      {m.text}
+                      <div className="whitespace-pre-line">{m.text}</div>
+                      {!isWali && (
+                        <div className="flex items-center justify-end gap-1 mt-1 text-[10px] opacity-80 font-mono">
+                          <span>{String(m.time || '').replace(/WIB/g, 'WITA')}</span>
+                          <span className="text-cyan-200 font-bold">✓✓</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -2955,6 +3215,15 @@ function TabAiInbox({
                 className="px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white transition font-medium shrink-0 flex items-center gap-1 border border-slate-600 text-xs"
               >
                 <span>📅 Jadwal Sambangan</span>
+              </button>
+              <button
+                type="button"
+                disabled={isSimulating}
+                onClick={() => handleSimulateIncoming("Assalamu'alaikum ustadz, anak saya mengeluhkan masalah kamar asrama dan saya mau minta dispensasi biaya khusus, bisa bicara langsung dengan pengurus sekarang?", "Di Luar Knowledge AI (Eskalasi)")}
+                className="px-2.5 py-1 rounded-lg bg-rose-950 hover:bg-rose-900 text-rose-200 hover:text-white transition font-bold shrink-0 flex items-center gap-1 border border-rose-700/80 text-xs animate-pulse"
+                title="Simulasi pertanyaan di luar knowledge AI untuk memicu eskalasi darurat & notifikasi WA"
+              >
+                <span>🚨 Uji Pertanyaan di Luar Knowledge AI</span>
               </button>
             </div>
 
@@ -3039,6 +3308,105 @@ function TabAiInbox({
                   <span className="font-bold text-teal-600">Yes</span>
                 </div>
               </div>
+
+              {/* Banner Eskalasi Darurat (Di Luar Knowledge AI) */}
+              {(selectedChat?.isOutOfKnowledge || selectedChat?.needs_manual_reply) && (
+                <div className="p-3 rounded-xl bg-rose-50 border-2 border-rose-300 text-rose-900 space-y-1.5 animate-fade-in shadow-xs">
+                  <div className="flex items-center gap-1.5 font-bold text-xs text-rose-800">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 animate-bounce" />
+                    <span>🚨 BUTUH JAWABAN SEGERA</span>
+                  </div>
+                  <p className="text-[11px] text-rose-700 leading-snug">
+                    Pertanyaan wali santri di luar basis knowledge AI. Notifikasi darurat telah otomatis dikirimkan oleh sistem ke WhatsApp Pengurus Pondok.
+                  </p>
+                  <div className="text-[10px] text-rose-600 font-mono flex items-center justify-between pt-1 border-t border-rose-200">
+                    <span>Notif WA Sistem: Terkirim</span>
+                    <span className="font-bold">Prioritas Admin</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Status Kunjungan & Alarm Widget di Customer Summary */}
+              {activeVisit && (() => {
+                const cd = calculateVisitCountdown(activeVisit.jam_selesai, activeVisit.tanggal_kunjungan);
+                const isOverstay = cd && cd.isOverstay;
+                const isWarning = cd && !cd.isOverstay && (cd.diffMs / 60000) <= (reminderThresholdMinutes || 15);
+
+                return (
+                  <div className={`p-3 rounded-xl border text-xs space-y-2.5 transition shadow-xs ${
+                    isOverstay
+                      ? 'bg-rose-50 border-rose-300 text-rose-950'
+                      : isWarning
+                        ? 'bg-amber-50 border-amber-300 text-amber-950 ring-1 ring-amber-300'
+                        : 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold flex items-center gap-1.5 text-xs">
+                        <BellRing className={`w-3.5 h-3.5 ${isOverstay ? 'text-rose-600 animate-bounce' : isWarning ? 'text-amber-600 animate-pulse' : 'text-emerald-600'}`} />
+                        <span>Kunjungan Tamu Hari Ini</span>
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                        isOverstay
+                          ? 'bg-rose-600 text-white'
+                          : isWarning
+                            ? 'bg-amber-500 text-slate-950 font-black animate-pulse'
+                            : 'bg-emerald-600 text-white'
+                      }`}>
+                        {isOverstay ? '🚨 OVERSTAY' : isWarning ? `⏳ H-${reminderThresholdMinutes}M KRITIS` : 'SEDANG BERKUNJUNG'}
+                      </span>
+                    </div>
+
+                    <div className="text-[11px] space-y-1 font-mono bg-white/70 p-2 rounded-lg border border-slate-200/60">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Penjenguk:</span>
+                        <span className="font-bold text-slate-800">{activeVisit.nama_penjenguk}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Santri:</span>
+                        <span className="font-bold text-slate-800">{activeVisit.nama_santri} ({activeVisit.kelas})</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Batas Selesai:</span>
+                        <span className="font-bold text-slate-800">{activeVisit.jam_selesai} WITA</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Sisa Waktu:</span>
+                        <span className={`font-bold ${isOverstay ? 'text-rose-600' : isWarning ? 'text-amber-700' : 'text-emerald-700'}`}>
+                          {isOverstay ? `Terlewat ${cd?.remainingText}` : (cd?.remainingText || '-')}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          sound.playReminderChime?.();
+                          sendVisitWarningReminder?.(activeVisit.id);
+                          showToast?.(`📲 Alarm pengingat berhasil dikirim ke WhatsApp ${activeVisit.nama_penjenguk}!`, 'success');
+                        }}
+                        className={`flex-1 py-2 px-2.5 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer ${
+                          isOverstay || isWarning
+                            ? 'bg-amber-500 hover:bg-amber-600 text-slate-950 font-black'
+                            : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                        }`}
+                        title="Kirim pesan WhatsApp pengingat batas waktu ke wali santri"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>📲 Kirim Pengingat WA</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => sound.playReminderChime?.()}
+                        className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold border border-slate-700 transition"
+                        title="Uji lonceng audio"
+                      >
+                        <Volume2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Conversation Tools Accordions */}
@@ -3046,31 +3414,51 @@ function TabAiInbox({
               <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">Conversation Tools</h4>
               <div className="space-y-2 text-xs">
                 <div className={`p-3 rounded-xl border transition-all ${
-                  isChatManual
-                    ? 'bg-amber-50/80 border-amber-200 text-amber-900'
-                    : 'bg-slate-50 border-slate-200 text-slate-800'
+                  selectedChat?.isOutOfKnowledge
+                    ? 'bg-rose-50 border-rose-300 text-rose-950 ring-2 ring-rose-200'
+                    : isChatManual
+                      ? 'bg-amber-50/80 border-amber-200 text-amber-900'
+                      : 'bg-slate-50 border-slate-200 text-slate-800'
                 }`}>
                   <div className="flex items-center justify-between">
                     <strong className="block text-xs font-bold text-slate-800">Handoff Status</strong>
                     <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
-                      isChatManual ? 'bg-amber-500 text-white' : 'bg-emerald-100 text-emerald-800'
+                      selectedChat?.isOutOfKnowledge
+                        ? 'bg-rose-600 text-white animate-pulse'
+                        : isChatManual
+                          ? 'bg-amber-500 text-white'
+                          : 'bg-emerald-100 text-emerald-800'
                     }`}>
-                      {isChatManual ? 'MODE AMBIL ALIH' : 'OTONOM'}
+                      {selectedChat?.isOutOfKnowledge
+                        ? '🚨 PERLU JAWABAN SEGERA'
+                        : isChatManual
+                          ? 'MODE AMBIL ALIH'
+                          : 'OTONOM'}
                     </span>
                   </div>
                   <span className={`text-[11px] font-bold block mt-1.5 ${
-                    isChatManual ? 'text-amber-800' : 'text-emerald-700'
+                    selectedChat?.isOutOfKnowledge
+                      ? 'text-rose-800'
+                      : isChatManual
+                        ? 'text-amber-800'
+                        : 'text-emerald-700'
                   }`}>
-                    {isChatManual
-                      ? '⏸️ Terhenti: Admin Ri\'ayah sedang menangani chat ini (AI Bot diistirahatkan).'
-                      : '⚡ Active: AI Otonom (Bot Agent membalas otomatis).'
+                    {selectedChat?.isOutOfKnowledge
+                      ? '🚨 Terdeteksi di luar knowledge AI! Sistem telah mengirim notif darurat ke WhatsApp Pengurus agar dijawab segera.'
+                      : isChatManual
+                        ? '⏸️ Terhenti: Admin Ri\'ayah sedang menangani chat ini (AI Bot diistirahatkan).'
+                        : '⚡ Active: AI Otonom (Bot Agent membalas otomatis).'
                     }
                   </span>
                   <button
                     type="button"
                     onClick={toggleManualOverride}
                     className={`mt-2 text-[11px] font-bold underline cursor-pointer block hover:opacity-80 ${
-                      isChatManual ? 'text-amber-800 hover:text-amber-950' : 'text-emerald-700 hover:text-emerald-900'
+                      selectedChat?.isOutOfKnowledge
+                        ? 'text-rose-700 hover:text-rose-900'
+                        : isChatManual
+                          ? 'text-amber-800 hover:text-amber-950'
+                          : 'text-emerald-700 hover:text-emerald-900'
                     }`}
                   >
                     {isChatManual ? '↻ Kembalikan kendali ke AI Otonom' : '⇄ Ambil alih percakapan ini secara manual'}
