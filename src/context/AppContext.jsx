@@ -104,22 +104,69 @@ function getVisitBookingTimestamp(b) {
 }
 
 /**
+ * Menguji apakah dua array objek memiliki isi yang setara secara dangkal (shallow identity),
+ * sehingga React dapat mempertahankan referensi lama dan menghindari re-render berantai tak perlu.
+ */
+function areArraysEqualShallow(arr1, arr2) {
+  if (arr1 === arr2) return true;
+  if (!Array.isArray(arr1) || !Array.isArray(arr2)) return false;
+  if (arr1.length !== arr2.length) return false;
+  for (let i = 0; i < arr1.length; i++) {
+    const a = arr1[i];
+    const b = arr2[i];
+    if (a === b) continue;
+    if (!a || !b) return false;
+    if (typeof a !== 'object' || typeof b !== 'object') {
+      if (a !== b) return false;
+      continue;
+    }
+    if (a.id !== b.id) return false;
+    if (a.updated_at !== b.updated_at) return false;
+    if (a.status !== b.status) return false;
+    if (a.status_kunjungan !== b.status_kunjungan) return false;
+    if (a.rfidUid !== b.rfidUid) return false;
+    if (a.nama !== b.nama) return false;
+    
+    const keysA = Object.keys(a);
+    const keysB = Object.keys(b);
+    if (keysA.length !== keysB.length) return false;
+    for (let j = 0; j < keysA.length; j++) {
+      const k = keysA[j];
+      if (a[k] !== b[k]) return false;
+    }
+  }
+  return true;
+}
+
+/**
  * Menggabungkan daftar visitBookings tanpa menimpa booking WA terbaru oleh state /api/sync
  * yang belum lengkap atau masih menggunakan data seed lama.
+ * Mengembalikan referensi array yang sama (currentList) jika tidak ada perubahan aktual,
+ * sehingga mencegah render loop & flickering di UI admin ri'ayah.
  */
 function mergeVisitBookingsLists(currentList = [], incomingList = []) {
-  const mergedMap = new Map();
+  if (!Array.isArray(incomingList) || incomingList.length === 0) {
+    return Array.isArray(currentList) ? currentList : [];
+  }
+  const currentArray = Array.isArray(currentList) ? currentList : [];
+  if (currentArray.length === 0) {
+    return [...incomingList].sort((a, b) => getVisitBookingTimestamp(b) - getVisitBookingTimestamp(a));
+  }
 
-  for (const item of Array.isArray(currentList) ? currentList : []) {
+  const mergedMap = new Map();
+  let hasRealChanges = false;
+
+  for (const item of currentArray) {
     if (item?.id) mergedMap.set(String(item.id), item);
   }
 
-  for (const candidate of Array.isArray(incomingList) ? incomingList : []) {
+  for (const candidate of incomingList) {
     if (!candidate?.id) continue;
     const key = String(candidate.id);
     const existing = mergedMap.get(key);
     if (!existing) {
       mergedMap.set(key, candidate);
+      hasRealChanges = true;
       continue;
     }
 
@@ -128,19 +175,40 @@ function mergeVisitBookingsLists(currentList = [], incomingList = []) {
     const existingTs = getVisitBookingTimestamp(existing);
     const candidateTs = getVisitBookingTimestamp(candidate);
 
-    if (candidateRank > existingRank || (candidateRank === existingRank && candidateTs >= existingTs)) {
-      mergedMap.set(key, {
-        ...existing,
-        ...candidate,
-        _supabaseMessageId: candidate._supabaseMessageId || existing._supabaseMessageId
-      });
-    } else {
-      mergedMap.set(key, {
-        ...candidate,
-        ...existing,
-        _supabaseMessageId: existing._supabaseMessageId || candidate._supabaseMessageId
-      });
+    const useCandidate = candidateRank > existingRank || (candidateRank === existingRank && candidateTs >= existingTs);
+    const targetObj = useCandidate
+      ? { ...existing, ...candidate, _supabaseMessageId: candidate._supabaseMessageId || existing._supabaseMessageId }
+      : { ...candidate, ...existing, _supabaseMessageId: existing._supabaseMessageId || candidate._supabaseMessageId };
+
+    // Verifikasi apakah properti benar-benar berubah dari existing
+    let itemChanged = false;
+    const keysA = Object.keys(targetObj);
+    for (let i = 0; i < keysA.length; i++) {
+      const k = keysA[i];
+      if (targetObj[k] !== existing[k]) {
+        itemChanged = true;
+        break;
+      }
     }
+    if (!itemChanged) {
+      const keysB = Object.keys(existing);
+      for (let i = 0; i < keysB.length; i++) {
+        const k = keysB[i];
+        if (targetObj[k] !== existing[k]) {
+          itemChanged = true;
+          break;
+        }
+      }
+    }
+
+    if (itemChanged) {
+      mergedMap.set(key, targetObj);
+      hasRealChanges = true;
+    }
+  }
+
+  if (!hasRealChanges && mergedMap.size === currentArray.length) {
+    return currentList;
   }
 
   return Array.from(mergedMap.values()).sort(
@@ -1161,6 +1229,7 @@ export const AppProvider = ({ children }) => {
   const isApplyingRemoteSync = useRef(false);
   const syncVersionRef = useRef(0);
   const isServerSyncSupportedRef = useRef(true);
+  const lastSyncedFingerprintRef = useRef('');
 
   // Apply synced data payload to state
   const applySyncedData = useCallback((payload) => {
@@ -1176,35 +1245,77 @@ export const AppProvider = ({ children }) => {
         incomingSantri = consolidated.santriList.map(normalizeSantriRecord);
         incomingPermits = consolidated.permits;
       }
-      if (Array.isArray(incomingSantri)) setSantriList(incomingSantri);
-      if (Array.isArray(incomingPermits)) setPermits(incomingPermits);
-      if (Array.isArray(payload.gateLogs)) setGateLogs(payload.gateLogs);
-      if (Array.isArray(payload.disciplineRecords)) setDisciplineRecords(payload.disciplineRecords);
-      if (Array.isArray(payload.mutabaahList)) setMutabaahList(payload.mutabaahList);
-      if (Array.isArray(payload.medicalRecords)) setMedicalRecords(payload.medicalRecords);
-      if (Array.isArray(payload.rooms)) setRooms(payload.rooms);
-      if (Array.isArray(payload.rfidTransactions)) setRfidTransactions(payload.rfidTransactions);
-      if (Array.isArray(payload.whatsappLogs)) setWhatsappLogs(payload.whatsappLogs);
-      if (Array.isArray(payload.blacklistedUids)) setBlacklistedUids(payload.blacklistedUids);
+      if (Array.isArray(incomingSantri)) {
+        setSantriList(prev => areArraysEqualShallow(prev, incomingSantri) ? prev : incomingSantri);
+      }
+      if (Array.isArray(incomingPermits)) {
+        setPermits(prev => areArraysEqualShallow(prev, incomingPermits) ? prev : incomingPermits);
+      }
+      if (Array.isArray(payload.gateLogs)) {
+        setGateLogs(prev => areArraysEqualShallow(prev, payload.gateLogs) ? prev : payload.gateLogs);
+      }
+      if (Array.isArray(payload.disciplineRecords)) {
+        setDisciplineRecords(prev => areArraysEqualShallow(prev, payload.disciplineRecords) ? prev : payload.disciplineRecords);
+      }
+      if (Array.isArray(payload.mutabaahList)) {
+        setMutabaahList(prev => areArraysEqualShallow(prev, payload.mutabaahList) ? prev : payload.mutabaahList);
+      }
+      if (Array.isArray(payload.medicalRecords)) {
+        setMedicalRecords(prev => areArraysEqualShallow(prev, payload.medicalRecords) ? prev : payload.medicalRecords);
+      }
+      if (Array.isArray(payload.rooms)) {
+        setRooms(prev => areArraysEqualShallow(prev, payload.rooms) ? prev : payload.rooms);
+      }
+      if (Array.isArray(payload.rfidTransactions)) {
+        setRfidTransactions(prev => areArraysEqualShallow(prev, payload.rfidTransactions) ? prev : payload.rfidTransactions);
+      }
+      if (Array.isArray(payload.whatsappLogs)) {
+        setWhatsappLogs(prev => areArraysEqualShallow(prev, payload.whatsappLogs) ? prev : payload.whatsappLogs);
+      }
+      if (Array.isArray(payload.blacklistedUids)) {
+        setBlacklistedUids(prev => areArraysEqualShallow(prev, payload.blacklistedUids) ? prev : payload.blacklistedUids);
+      }
       if (Array.isArray(payload.osisReports)) {
         const deletedSet = getDeletedOsisIds();
-        setOsisReports(payload.osisReports.filter(r => r && !deletedSet.has(String(r.id))));
+        const incomingOsis = payload.osisReports.filter(r => r && !deletedSet.has(String(r.id)));
+        setOsisReports(prev => areArraysEqualShallow(prev, incomingOsis) ? prev : incomingOsis);
       }
       if (Array.isArray(payload.visitBookings)) {
         setVisitBookings(prev => {
           const merged = mergeVisitBookingsLists(prev, payload.visitBookings);
+          if (merged === prev) return prev;
           try {
             localStorage.setItem('sr_visit_bookings', JSON.stringify(merged));
           } catch {}
           return merged;
         });
       }
-      if (payload.reminderThresholdMinutes) setReminderThresholdMinutes(payload.reminderThresholdMinutes);
+      if (payload.reminderThresholdMinutes) {
+        setReminderThresholdMinutes(prev => prev === payload.reminderThresholdMinutes ? prev : payload.reminderThresholdMinutes);
+      }
       if (payload.version) syncVersionRef.current = payload.version;
+
+      // Catat fingerprint state agar debounced push tidak memantulkan data kembali ke server
+      lastSyncedFingerprintRef.current = JSON.stringify({
+        s: incomingSantri?.length,
+        p: incomingPermits?.length,
+        pl: incomingPermits?.[0]?.id,
+        ps: incomingPermits?.[0]?.status,
+        r: payload.rooms?.length,
+        b: payload.blacklistedUids?.length,
+        v: payload.visitBookings?.length,
+        vl: payload.visitBookings?.[0]?.id,
+        vs: payload.visitBookings?.[0]?.status_kunjungan,
+        o: payload.osisReports?.length,
+        ol: payload.osisReports?.[0]?.id,
+        os: payload.osisReports?.[0]?.status,
+        g: payload.gateLogs?.length,
+        gl: payload.gateLogs?.[0]?.id
+      });
     } finally {
       setTimeout(() => {
         isApplyingRemoteSync.current = false;
-      }, 150);
+      }, 1000);
     }
   }, []);
 
@@ -1217,6 +1328,7 @@ export const AppProvider = ({ children }) => {
         channel.onmessage = (event) => {
           if (event.data && event.data.type === 'STATE_UPDATE' && event.data.payload) {
             if (event.data.version > syncVersionRef.current) {
+              syncVersionRef.current = event.data.version;
               applySyncedData(event.data.payload);
             }
           }
@@ -1921,9 +2033,10 @@ export const AppProvider = ({ children }) => {
 
     fetchServerSync();
 
-    // Fast polling to detect updates from other accounts / browser windows
+    // Periodic polling to detect updates from other accounts / browser windows
     pollInterval = setInterval(async () => {
       if (!isServerSyncSupportedRef.current || !isMounted) return;
+      if (typeof document !== 'undefined' && document.hidden) return; // Tidak polling saat tab tidak aktif
       try {
         const verRes = await fetch('/api/sync/version');
         if (verRes.status === 404 || verRes.status === 405) {
@@ -1949,15 +2062,15 @@ export const AppProvider = ({ children }) => {
               const fullData = await res.json();
               if (fullData.data && fullData.version > syncVersionRef.current) {
                 if (isMounted) {
-                  applySyncedData(fullData.data);
                   syncVersionRef.current = fullData.version;
+                  applySyncedData(fullData.data);
                 }
               }
             }
           }
         }
       } catch {}
-    }, 2500);
+    }, 20000);
 
     return () => {
       isMounted = false;
@@ -1971,6 +2084,28 @@ export const AppProvider = ({ children }) => {
     if (activeGatePassToken && !isAuthenticated) return;
 
     const timer = setTimeout(() => {
+      const payloadFingerprint = JSON.stringify({
+        s: santriList?.length,
+        p: permits?.length,
+        pl: permits?.[0]?.id,
+        ps: permits?.[0]?.status,
+        r: rooms?.length,
+        b: blacklistedUids?.length,
+        v: visitBookings?.length,
+        vl: visitBookings?.[0]?.id,
+        vs: visitBookings?.[0]?.status_kunjungan,
+        o: osisReports?.length,
+        ol: osisReports?.[0]?.id,
+        os: osisReports?.[0]?.status,
+        g: gateLogs?.length,
+        gl: gateLogs?.[0]?.id
+      });
+
+      if (lastSyncedFingerprintRef.current === payloadFingerprint) {
+        return; // Data identik dengan state server/sync terakhir, batalkan POST untuk hindari ping-pong loop
+      }
+      lastSyncedFingerprintRef.current = payloadFingerprint;
+
       const payload = {
         santriList,
         permits,
@@ -2006,7 +2141,7 @@ export const AppProvider = ({ children }) => {
           body: JSON.stringify({ version: newVer, data: payload })
         }).catch(() => {});
       }
-    }, 350);
+    }, 400);
 
     return () => clearTimeout(timer);
   }, [
@@ -4324,7 +4459,10 @@ export const AppProvider = ({ children }) => {
         bc = new BroadcastChannel('smart_riayah_visit_channel');
         bc.onmessage = (event) => {
           if (event.data?.type === 'SYNC_VISITS' && Array.isArray(event.data?.payload)) {
-            setVisitBookings(event.data.payload);
+            setVisitBookings(prev => {
+              const merged = mergeVisitBookingsLists(prev, event.data.payload);
+              return merged === prev ? prev : merged;
+            });
           }
         };
       }
@@ -4337,7 +4475,10 @@ export const AppProvider = ({ children }) => {
         try {
           const parsed = JSON.parse(e.newValue);
           if (Array.isArray(parsed)) {
-            setVisitBookings(parsed);
+            setVisitBookings(prev => {
+              const merged = mergeVisitBookingsLists(prev, parsed);
+              return merged === prev ? prev : merged;
+            });
           }
         } catch (err) {
           console.warn('Storage sync error:', err);

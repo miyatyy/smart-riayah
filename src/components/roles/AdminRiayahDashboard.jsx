@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { LocalQrImage } from '../common/LocalBarcodeImages';
 import { 
@@ -98,20 +98,26 @@ export default function AdminRiayahDashboard() {
     verifyOsisReport
   } = useApp();
 
-  const pendingVisits = Array.isArray(visitBookings)
-    ? visitBookings.filter(b => {
-        const s = String(b?.status_kunjungan || b?.status || '').toLowerCase();
-        return s.includes('menunggu approval') || s.includes('menunggu') || s === 'pending';
-      })
-    : [];
+  const pendingVisits = useMemo(() => {
+    return Array.isArray(visitBookings)
+      ? visitBookings.filter(b => {
+          const s = String(b?.status_kunjungan || b?.status || '').toLowerCase();
+          return s.includes('menunggu approval') || s.includes('menunggu') || s === 'pending';
+        })
+      : [];
+  }, [visitBookings]);
 
-  const pendingPermits = Array.isArray(permits)
-    ? permits.filter(p => p.status === 'PENDING' || p.status === 'EXTEND_REQUESTED')
-    : [];
+  const pendingPermits = useMemo(() => {
+    return Array.isArray(permits)
+      ? permits.filter(p => p.status === 'PENDING' || p.status === 'EXTEND_REQUESTED')
+      : [];
+  }, [permits]);
 
-  const pendingOsisReports = Array.isArray(osisReports)
-    ? osisReports.filter(r => r.status === 'PENDING_ADMIN')
-    : [];
+  const pendingOsisReports = useMemo(() => {
+    return Array.isArray(osisReports)
+      ? osisReports.filter(r => r.status === 'PENDING_ADMIN')
+      : [];
+  }, [osisReports]);
 
   const [isBulkImportSantriModalOpen, setIsBulkImportSantriModalOpen] = useState(false);
 
@@ -329,10 +335,12 @@ export default function AdminRiayahDashboard() {
   };
 
   // Filtered rooms
-  const filteredRooms = rooms.filter(r => {
-    if (selectedGenderFilter === 'ALL') return true;
-    return r.kategoriGedung === selectedGenderFilter;
-  });
+  const filteredRooms = useMemo(() => {
+    return rooms.filter(r => {
+      if (selectedGenderFilter === 'ALL') return true;
+      return r.kategoriGedung === selectedGenderFilter;
+    });
+  }, [rooms, selectedGenderFilter]);
 
   // Total Statistics
   const totalKapasitas = rooms.reduce((acc, r) => acc + (r.kapasitas || 0), 0);
@@ -536,7 +544,7 @@ export default function AdminRiayahDashboard() {
       
       {/* 0. HIGH PRIORITY NOTIFICATION BANNER: PERMOHONAN KUNJUNGAN HARI KERJA (SENIN–KAMIS) */}
       {pendingVisits.length > 0 && (
-        <div className="bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border-2 border-amber-500/50 rounded-2xl p-4 sm:p-5 shadow-lg shadow-amber-500/10 backdrop-blur-sm animate-fade-in no-print">
+        <div className="bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border-2 border-amber-500/50 rounded-2xl p-4 sm:p-5 shadow-lg shadow-amber-500/10 backdrop-blur-sm transition-all duration-200 no-print">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-start gap-3.5">
               <div className="w-11 h-11 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-amber-500/30 animate-bounce">
@@ -646,7 +654,7 @@ export default function AdminRiayahDashboard() {
 
       {/* 0b. HIGH PRIORITY BANNER: ANTREAN APPROVAL IZIN KELUAR/PULANG SANTRI (OTORISASI ADMIN RI'AYAH) */}
       {pendingPermits.length > 0 && activeTab !== 'permit_approval' && (
-        <div className="bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-emerald-500/15 border-2 border-emerald-500/50 rounded-2xl p-4 sm:p-5 shadow-lg shadow-emerald-500/10 backdrop-blur-sm animate-fade-in no-print">
+        <div className="bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-emerald-500/15 border-2 border-emerald-500/50 rounded-2xl p-4 sm:p-5 shadow-lg shadow-emerald-500/10 backdrop-blur-sm transition-all duration-200 no-print">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-start gap-3.5">
               <div className="w-11 h-11 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-emerald-600/30">
@@ -933,7 +941,7 @@ export default function AdminRiayahDashboard() {
 
       {/* Tombol Navigasi Cepat Saat Membuka WhatsApp Gateway (Mencegah Tampilan Bertumpuk) */}
       {activeTab === 'whatsapp_manager' && (
-        <div className="flex items-center justify-between pb-1 no-print animate-fade-in">
+        <div className="flex items-center justify-between pb-1 no-print">
           <button
             onClick={() => { setActiveTab('rooms'); sound.playBeep?.(); }}
             className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 hover:text-emerald-700 border border-slate-200 text-xs font-bold transition shadow-2xs group cursor-pointer"
@@ -2034,28 +2042,28 @@ export default function AdminRiayahDashboard() {
 
       {/* BUILDER 5: TABEL KARTU RFID TERDAFTAR (HALAMAN TERSENDIRI LENGKAP) */}
       {activeTab === 'rfid_cards' && (
-        <div className="space-y-6 animate-fade-in">
+        <div className="space-y-6 transition-all duration-150">
           <RfidCardManager defaultView="table" isModal={false} />
         </div>
       )}
 
       {/* BUILDER 6: SCANNER & PASANGKAN KARTU RFID (HALAMAN TERSENDIRI LENGKAP) */}
       {activeTab === 'rfid_pairing' && (
-        <div className="space-y-6 animate-fade-in">
+        <div className="space-y-6 transition-all duration-150">
           <RfidCardManager defaultView="pairing" isModal={false} />
         </div>
       )}
 
       {/* BUILDER 7: KIOSK IZIN CEPAT VIA RFID SCAN */}
       {activeTab === 'express_kiosk' && (
-        <div className="space-y-6 animate-fade-in">
+        <div className="space-y-6 transition-all duration-150">
           <ExpressPermitKiosk />
         </div>
       )}
 
       {/* BUILDER 7B: APPROVAL & OTORISASI IZIN SANTRI (WEWENANG ADMIN RI'AYAH) */}
       {activeTab === 'permit_approval' && (
-        <div className="space-y-4 animate-fade-in">
+        <div className="space-y-4 transition-all duration-150">
           <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
@@ -2183,35 +2191,35 @@ export default function AdminRiayahDashboard() {
 
       {/* BUILDER 8: MANAJEMEN KUNJUNGAN, TITIPAN BARANG & BOOKING WHATSAPP (QR GATE PASS) */}
       {activeTab === 'visit_bookings' && (
-        <div className="space-y-6 animate-fade-in">
+        <div className="space-y-6 transition-all duration-150">
           <VisitBookingManager />
         </div>
       )}
 
       {/* BUILDER 8.5: 🛡️ VERIFIKASI & OTORISASI LAPORAN KEDISIPLINAN OSIS */}
       {activeTab === 'osis_verification' && (
-        <div className="space-y-6 animate-fade-in">
+        <div className="space-y-6 transition-all duration-150">
           <OsisVerificationManager />
         </div>
       )}
 
       {/* BUILDER 9: LOG AKTIVITAS KELUAR MASUK SANTRI REAL-TIME & CETAK PDF */}
       {activeTab === 'gate_logs' && (
-        <div className="space-y-6 animate-fade-in">
+        <div className="space-y-6 transition-all duration-150">
           <RealtimeGateLogsManager />
         </div>
       )}
 
       {/* BUILDER 9: 📱 EMBEDDED WHATSAPP GATEWAY DEVICE & QR MANAGER */}
       {activeTab === 'whatsapp_manager' && (
-        <div className="space-y-6 animate-fade-in">
+        <div className="space-y-6 transition-all duration-150">
           <EngageAiWorkspace />
         </div>
       )}
 
       {/* BUILDER 10: AI EVALUASI SANTRI TERPADU & DEEPSEEK ENGINE */}
       {activeTab === 'ai_analytics' && (
-        <div className="space-y-6 animate-fade-in">
+        <div className="space-y-6 transition-all duration-150">
           <SantriActivityAnalytics />
         </div>
       )}
