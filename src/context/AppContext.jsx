@@ -3293,6 +3293,34 @@ export const AppProvider = ({ children }) => {
     return syncResult || { success: true, data: syncedSantri };
   };
 
+  // 4f. Penempatan & Manajemen Kamar Asrama (CRUD Penghuni Kamar)
+  const assignSantriToRoom = async (santriId, room) => {
+    const existingTarget = santriList.find(s => s.id === santriId);
+    if (!existingTarget) {
+      return { success: false, error: new Error('Data santri tidak ditemukan.') };
+    }
+    const roomLabel = room.nomorKamar || room.nama_kamar || 'Kamar Santri';
+    return await updateSantriCard(santriId, {
+      kamar: roomLabel,
+      kamarId: room.id,
+    });
+  };
+
+  const removeSantriFromRoom = async (santriId) => {
+    const existingTarget = santriList.find(s => s.id === santriId);
+    if (!existingTarget) {
+      return { success: false, error: new Error('Data santri tidak ditemukan.') };
+    }
+    return await updateSantriCard(santriId, {
+      kamar: '',
+      kamarId: null,
+    });
+  };
+
+  const moveSantriRoom = async (santriId, newRoom) => {
+    return await assignSantriToRoom(santriId, newRoom);
+  };
+
   // Web Serial Port connection functions
   const connectSerial = async () => {
     try {
@@ -5688,6 +5716,9 @@ export const AppProvider = ({ children }) => {
         updateRoomCapacity,
         updateRoom,
         deleteRoom,
+        assignSantriToRoom,
+        removeSantriFromRoom,
+        moveSantriRoom,
         addNewSantri,
         deleteSantri,
         deletePermit,

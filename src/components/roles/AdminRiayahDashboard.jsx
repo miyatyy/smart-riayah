@@ -44,7 +44,10 @@ import {
   UploadCloud,
   Bell,
   Clock,
-  ExternalLink
+  ExternalLink,
+  LogOut,
+  ArrowRightLeft,
+  UserMinus
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
 import RfidCardManager from '../modules/RfidCardManager';
@@ -54,6 +57,7 @@ import EngageAiWorkspace from '../modules/EngageAiWorkspace';
 import SantriActivityAnalytics from '../modules/SantriActivityAnalytics';
 import VisitBookingManager from '../modules/VisitBookingManager';
 import EditRoomModal from '../modules/EditRoomModal';
+import AssignSantriToRoomModal from '../modules/AssignSantriToRoomModal';
 import DeleteConfirmModal from '../common/DeleteConfirmModal';
 import BulkCsvImportModal from '../common/BulkCsvImportModal';
 import { downloadCsvFile, getTemplateCsv } from '../../utils/csvUtils';
@@ -67,6 +71,9 @@ export default function AdminRiayahDashboard() {
     updateRoomCapacity, 
     updateRoom,
     deleteRoom,
+    assignSantriToRoom,
+    removeSantriFromRoom,
+    moveSantriRoom,
     addBuilding, 
     santriList, 
     addNewSantri, 
@@ -203,6 +210,8 @@ export default function AdminRiayahDashboard() {
   const [deletingSantri, setDeletingSantri] = useState(null);
   const [isDeletingSantri, setIsDeletingSantri] = useState(false);
   const [viewingRoomOccupants, setViewingRoomOccupants] = useState(null);
+  const [assigningRoom, setAssigningRoom] = useState(null);
+  const [quickTransferSantri, setQuickTransferSantri] = useState(null);
   const [searchOnboardingSantri, setSearchOnboardingSantri] = useState('');
 
   const handleDeleteSantriConfirm = async (reason = 'LULUS') => {
@@ -1196,18 +1205,41 @@ export default function AdminRiayahDashboard() {
                     <p className="line-clamp-2 text-slate-500">{room.catatanInspeksi}</p>
                   </div>
 
-                  {/* Tombol Lihat & Kelola Penghuni Kamar */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const occupants = santriList.filter(s => s.kamar.toLowerCase().includes(room.nomorKamar.toLowerCase()) || room.nomorKamar.toLowerCase().includes(s.kamar.toLowerCase()));
-                      setViewingRoomOccupants({ room, occupants });
-                    }}
-                    className="w-full py-2 px-3 rounded-xl bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 text-xs font-bold transition flex items-center justify-center gap-1.5 border border-slate-200 hover:border-emerald-300"
-                  >
-                    <Users className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Daftar Penghuni ({occupied} Santri)</span>
-                  </button>
+                  {/* Tombol Aksi Kamar: Masukkan Santriwati/Santri Terdaftar & Lihat Penghuni */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      disabled={isFull}
+                      onClick={() => {
+                        sound.playBeep?.();
+                        setAssigningRoom(room);
+                      }}
+                      className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs ${
+                        isFull
+                          ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                          : isPutri
+                          ? 'bg-teal-600 hover:bg-teal-700 text-white shadow-teal-900/20'
+                          : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-900/20'
+                      }`}
+                      title={isFull ? 'Kamar sudah penuh' : `Masukkan ${isPutri ? 'Santriwati' : 'Santri'} ke ${room.nomorKamar}`}
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      <span>{isFull ? 'Kamar Penuh' : isPutri ? '+ Masukkan Santriwati' : '+ Masukkan Santri'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sound.playBeep?.();
+                        setViewingRoomOccupants({ room });
+                      }}
+                      className="py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center justify-center gap-1.5 border border-slate-200 shrink-0"
+                      title="Lihat & kelola penghuni kamar ini"
+                    >
+                      <Users className="w-3.5 h-3.5 text-slate-600" />
+                      <span>Penghuni ({occupied})</span>
+                    </button>
+                  </div>
                 </div>
               );
             })}
@@ -2453,73 +2485,252 @@ export default function AdminRiayahDashboard() {
       />
 
       {/* MODAL LIHAT PENGHUNI KAMAR */}
-      {viewingRoomOccupants && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden my-auto max-h-[90vh] flex flex-col">
-            <div className="bg-emerald-50 border-b border-emerald-100 p-4 sm:p-5 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold">
-                  <Users className="w-5 h-5" />
+      {viewingRoomOccupants && (() => {
+        const room = viewingRoomOccupants.room;
+        const isPutri = room.kategoriGedung === 'PUTRI';
+        const currentOccupants = santriList.filter(s =>
+          (s.kamarId && String(s.kamarId) === String(room.id)) ||
+          (s.kamar && (
+            s.kamar.toLowerCase().includes(room.nomorKamar.toLowerCase()) ||
+            room.nomorKamar.toLowerCase().includes(s.kamar.toLowerCase())
+          ))
+        );
+        const capacity = room.kapasitas || 8;
+        const remainingSlots = Math.max(0, capacity - currentOccupants.length);
+
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+            <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden my-auto max-h-[90vh] flex flex-col">
+              <div className="bg-emerald-50 border-b border-emerald-100 p-4 sm:p-5 flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shrink-0">
+                    <Users className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">
+                      Penghuni {room.nomorKamar} ({room.namaGedung})
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Kapasitas: <b className="text-slate-800">{currentOccupants.length}</b> / {capacity} Kasur ({remainingSlots} Kasur Tersedia)
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-base font-black text-slate-900">
-                    Penghuni {viewingRoomOccupants.room.nomorKamar} ({viewingRoomOccupants.room.namaGedung})
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Kapasitas: {viewingRoomOccupants.occupants.length} / {viewingRoomOccupants.room.kapasitas} Kasur Terisi
-                  </p>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={remainingSlots <= 0}
+                    onClick={() => {
+                      sound.playBeep?.();
+                      setAssigningRoom(room);
+                    }}
+                    className={`px-3 py-1.5 rounded-xl font-bold text-xs transition flex items-center gap-1.5 shadow-2xs ${
+                      remainingSlots <= 0
+                        ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                        : isPutri
+                        ? 'bg-teal-600 hover:bg-teal-700 text-white shadow-teal-900/20'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-900/20'
+                    }`}
+                    title={remainingSlots <= 0 ? 'Kamar sudah penuh' : `Masukkan ${isPutri ? 'santriwati' : 'santri'} baru ke kamar ini`}
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span>{remainingSlots <= 0 ? 'Kamar Penuh' : isPutri ? '+ Masukkan Santriwati' : '+ Masukkan Santri'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setViewingRoomOccupants(null)}
+                    className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-white transition"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setViewingRoomOccupants(null)}
-                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-white transition"
-              >
+
+              <div className="p-4 sm:p-6 overflow-y-auto space-y-3 flex-1">
+                {currentOccupants.length === 0 ? (
+                  <div className="text-center py-10 space-y-3">
+                    <Users className="w-10 h-10 text-slate-300 mx-auto" />
+                    <div className="text-sm font-bold text-slate-600">
+                      Belum ada {isPutri ? 'santriwati' : 'santri'} yang ditempatkan di kamar ini.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sound.playBeep?.();
+                        setAssigningRoom(room);
+                      }}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs inline-flex items-center gap-1.5"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      <span>+ Masukkan {isPutri ? 'Santriwati' : 'Santri'} Sekarang</span>
+                    </button>
+                  </div>
+                ) : (
+                  currentOccupants.map(s => (
+                    <div key={s.id} className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <img
+                          src={s.foto || (s.gender === 'P' ? '/images/avatar_santri_putri.jpg' : '/images/avatar_santri_putra.jpg')}
+                          alt={s.nama}
+                          className="w-10 h-10 rounded-full object-cover border border-slate-200 shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <div className="font-bold text-xs text-slate-900 truncate">{s.nama || s.nama_lengkap}</div>
+                          <div className="text-[10px] text-slate-500 font-mono">NIS: {s.nis || '-'} • Kelas: {s.kelas || '-'} • UID: [{s.rfidUid || '-'}]</div>
+                          <div className="text-[10px] text-slate-600">Wali: {s.wali?.nama || s.nama_wali || '-'} ({s.wali?.telepon || s.no_wali || '-'})</div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                        {/* Tombol Keluarkan dari Kamar (Unassign kamar) */}
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (window.confirm(`Keluarkan ananda "${s.nama}" dari ${room.nomorKamar}?\n\nSantri akan berstatus 'Belum Ada Kamar', namun profil santri & kartu RFID tetap aktif di pondok.`)) {
+                              await removeSantriFromRoom(s.id);
+                              sound.playSuccess?.();
+                            }
+                          }}
+                          className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition flex items-center gap-1"
+                          title="Keluarkan dari kamar ini (tetap terdaftar di pondok)"
+                        >
+                          <LogOut className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Keluarkan</span>
+                        </button>
+
+                        {/* Tombol Pindah Kamar Cepat */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            sound.playBeep?.();
+                            setQuickTransferSantri(s);
+                          }}
+                          className="px-2.5 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 rounded-xl text-xs font-bold transition flex items-center gap-1"
+                          title="Pindahkan santri ini ke kamar lain"
+                        >
+                          <ArrowRightLeft className="w-3.5 h-3.5 text-sky-600" />
+                          <span>Pindah</span>
+                        </button>
+
+                        {/* Tombol Hapus / Lulus Permanen */}
+                        <button
+                          type="button"
+                          onClick={() => setDeletingSantri(s)}
+                          className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition flex items-center gap-1"
+                          title="Hapus / Lulus Permanen dari Database"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                          <span>Hapus</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
+                <span className="text-xs text-slate-500">
+                  Total {currentOccupants.length} santri terdaftar di kamar ini.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setViewingRoomOccupants(null)}
+                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-xl transition"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* MODAL: MASUKKAN SANTRIWATI / SANTRI TERDAFTAR KE KAMAR */}
+      <AssignSantriToRoomModal
+        isOpen={Boolean(assigningRoom)}
+        room={assigningRoom}
+        onClose={() => setAssigningRoom(null)}
+        santriList={santriList}
+        onAssignSantri={assignSantriToRoom}
+      />
+
+      {/* MODAL: PINDAH KAMAR CEPAT */}
+      {quickTransferSantri && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <ArrowRightLeft className="w-5 h-5 text-sky-600" />
+                <h3 className="font-bold text-slate-900 text-sm">
+                  Pindahkan Kamar Santri
+                </h3>
+              </div>
+              <button onClick={() => setQuickTransferSantri(null)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-4 sm:p-6 overflow-y-auto space-y-3 flex-1">
-              {viewingRoomOccupants.occupants.length === 0 ? (
-                <div className="text-center py-8 text-slate-400 text-xs">
-                  Belum ada santri yang ditempatkan di kamar ini.
-                </div>
-              ) : (
-                viewingRoomOccupants.occupants.map(s => (
-                  <div key={s.id} className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <img
-                        src={s.foto || (s.gender === 'P' ? '/images/avatar_santri_putri.jpg' : '/images/avatar_santri_putra.jpg')}
-                        alt={s.nama}
-                        className="w-10 h-10 rounded-full object-cover border border-slate-200 shrink-0"
-                      />
-                      <div className="min-w-0">
-                        <div className="font-bold text-xs text-slate-900 truncate">{s.nama}</div>
-                        <div className="text-[10px] text-slate-500 font-mono">NIS: {s.nis} • Kelas: {s.kelas} • UID: [{s.rfidUid}]</div>
-                        <div className="text-[10px] text-slate-600">Wali: {s.wali?.nama || s.nama_wali || '-'} ({s.wali?.telepon || s.no_wali || '-'})</div>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setDeletingSantri(s)}
-                      className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0"
-                      title="Hapus / Lulus / Pindah Santri"
-                    >
-                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                      <span>Hapus / Lulus</span>
-                    </button>
-                  </div>
-                ))
-              )}
+            <div className="text-xs text-slate-600 space-y-1">
+              <p>Santri: <b className="text-slate-800">{quickTransferSantri.nama || quickTransferSantri.nama_lengkap}</b> ({quickTransferSantri.kelas})</p>
+              <p>Kamar Saat Ini: <span className="bg-slate-100 px-2 py-0.5 rounded font-mono">{quickTransferSantri.kamar || 'Belum Ada'}</span></p>
             </div>
 
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-700 block">Pilih Kamar Tujuan yang Tersedia:</label>
+              <div className="max-h-60 overflow-y-auto space-y-1.5 divide-y divide-slate-100 pr-1">
+                {rooms
+                  .filter(r => {
+                    const isPutriSantri = quickTransferSantri.gender === 'P' || (quickTransferSantri.kelas && quickTransferSantri.kelas.includes('Putri'));
+                    const isPutriRoom = r.kategoriGedung === 'PUTRI';
+                    return isPutriSantri === isPutriRoom;
+                  })
+                  .map(targetRoom => {
+                    const occ = santriList.filter(s =>
+                      (s.kamarId && String(s.kamarId) === String(targetRoom.id)) ||
+                      (s.kamar && (
+                        s.kamar.toLowerCase().includes(targetRoom.nomorKamar.toLowerCase()) ||
+                        targetRoom.nomorKamar.toLowerCase().includes(s.kamar.toLowerCase())
+                      ))
+                    ).length;
+                    const cap = targetRoom.kapasitas || 8;
+                    const isTargetFull = occ >= cap;
+
+                    return (
+                      <div key={targetRoom.id} className="pt-2 flex items-center justify-between text-xs">
+                        <div>
+                          <span className="font-bold text-slate-800">{targetRoom.nomorKamar}</span>
+                          <span className="text-[10px] text-slate-500 block">{targetRoom.namaGedung} • Sisa {Math.max(0, cap - occ)} kasur</span>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={isTargetFull}
+                          onClick={async () => {
+                            await moveSantriRoom(quickTransferSantri.id, targetRoom);
+                            sound.playSuccess?.();
+                            setQuickTransferSantri(null);
+                          }}
+                          className={`px-3 py-1 rounded-xl font-bold text-xs transition ${
+                            isTargetFull
+                              ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                              : 'bg-sky-600 hover:bg-sky-700 text-white shadow-2xs'
+                          }`}
+                        >
+                          {isTargetFull ? 'Penuh' : 'Pilih Kamar Ini'}
+                        </button>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 flex justify-end">
               <button
                 type="button"
-                onClick={() => setViewingRoomOccupants(null)}
-                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-xl transition"
+                onClick={() => setQuickTransferSantri(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition"
               >
-                Tutup
+                Batal
               </button>
             </div>
           </div>
