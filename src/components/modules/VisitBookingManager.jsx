@@ -29,8 +29,36 @@ import {
   Bot,
   Loader2,
   ExternalLink,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Users,
+  TrendingUp,
+  BarChart3,
+  PieChart as PieIcon,
+  Activity,
+  User,
+  Phone,
+  DoorOpen,
+  MapPin,
+  Building,
+  Hourglass,
+  CheckCheck,
+  BellRing
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend
+} from 'recharts';
 import { sound } from '../../utils/audio';
 import { parseBookingWithDeepSeek } from '../../services/deepseekVisitService';
 import { getRealtimePondokClock, calculateVisitCountdown, checkBarcodeLifecycle } from '../../utils/pondokTimeUtils';
@@ -57,6 +85,9 @@ export default function VisitBookingManager({ isCompact = false }) {
   } = useApp();
 
   const [activeFilter, setActiveFilter] = useState('ALL'); // 'ALL' | 'TODAY' | 'APPROVED_LOGS' | 'PENDING' | 'WEEKEND' | 'SATPAM' | 'ACTIVE' | 'COMPLETED' | 'MONTHLY_RECAP'
+  const [mainViewTab, setMainViewTab] = useState('ALL_IN_ONE'); // 'ALL_IN_ONE' | 'CHARTS' | 'ROSTER' | 'TABLE' | 'MONTHLY_RECAP'
+  const [rosterFilter, setRosterFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'UPCOMING' | 'PENDING' | 'COMPLETED'
+  const [rosterSearch, setRosterSearch] = useState('');
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7)); // 'YYYY-MM'
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilter, setDateFilter] = useState('');
@@ -138,6 +169,159 @@ export default function VisitBookingManager({ isCompact = false }) {
     (b.barcode_token && !isPendingApprovalStatus(b.status_kunjungan || b.status) && b.status_kunjungan !== 'Ditolak')
   ).length;
   const totalBeratTitipan = bookings.reduce((sum, b) => sum + (Number(b.berat_barang_kg) || 0), 0).toFixed(1);
+
+  // ─── ANALITIK & PENGUNJUNG REAL-TIME (SIAPA SAJA & METRIK LENGKAP) ───
+  const allVisitorsToday = useMemo(() => {
+    return bookings.filter(b => b.tanggal_kunjungan === todayStr || b.status_kunjungan === 'Sedang Berkunjung');
+  }, [bookings, todayStr]);
+
+  const activeVisitingGuests = useMemo(() => {
+    return bookings.filter(b => b.status_kunjungan === 'Sedang Berkunjung' || b.status_kunjungan?.includes('Sedang Berkunjung'));
+  }, [bookings]);
+
+  const completedGuestsToday = useMemo(() => {
+    return allVisitorsToday.filter(b => b.status_kunjungan === 'Selesai');
+  }, [allVisitorsToday]);
+
+  const upcomingApprovedToday = useMemo(() => {
+    return allVisitorsToday.filter(b => 
+      (b.status_kunjungan === 'Disetujui (Siap Datang)' || b.approval_type === 'AUTO_WEEKEND' || String(b.status_kunjungan || '').includes('Disetujui')) &&
+      b.status_kunjungan !== 'Sedang Berkunjung' &&
+      b.status_kunjungan !== 'Selesai'
+    );
+  }, [allVisitorsToday]);
+
+  // Tren 7 Hari Terakhir & Hari Ini
+  const sevenDaysTrend = useMemo(() => {
+    const today = new Date();
+    const result = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const ymd = d.toISOString().slice(0, 10);
+      const dayNames = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+      const dayName = dayNames[d.getDay()];
+      const dayNum = d.getDate();
+      const monthNum = d.getMonth() + 1;
+
+      const forDay = bookings.filter(b => b.tanggal_kunjungan === ymd);
+      const total = forDay.length;
+      const active = forDay.filter(b => b.status_kunjungan === 'Sedang Berkunjung' || b.status_kunjungan?.includes('Sedang Berkunjung')).length;
+      const completed = forDay.filter(b => b.status_kunjungan === 'Selesai').length;
+      const approved = forDay.filter(b => String(b.status_kunjungan || '').includes('Disetujui')).length;
+
+      result.push({
+        date: ymd,
+        label: `${dayName} (${dayNum}/${monthNum})`,
+        hari: dayName,
+        total,
+        active,
+        completed,
+        approved,
+        isToday: i === 0
+      });
+    }
+    return result;
+  }, [bookings]);
+
+  // Komposisi Status Tamu (Pie / Donut)
+  const statusPieData = useMemo(() => {
+    const ongoing = activeVisitingGuests.length;
+    const approved = bookings.filter(b => (b.status_kunjungan === 'Disetujui (Siap Datang)' || b.status_kunjungan?.includes('Disetujui')) && b.status_kunjungan !== 'Sedang Berkunjung').length;
+    const pending = pendingWeekday;
+    const completed = bookings.filter(b => b.status_kunjungan === 'Selesai').length;
+
+    const data = [
+      { name: 'Sedang di Pondok', value: ongoing, color: '#10B981' },
+      { name: 'Disetujui (Siap Datang)', value: approved, color: '#0284C7' },
+      { name: 'Menunggu Approval', value: pending, color: '#F59E0B' },
+      { name: 'Selesai Check-Out', value: completed, color: '#64748B' }
+    ].filter(item => item.value > 0);
+
+    return data.length > 0 ? data : [{ name: 'Belum Ada Tamu', value: 1, color: '#94A3B8' }];
+  }, [activeVisitingGuests.length, bookings, pendingWeekday]);
+
+  // Jam Kedatangan Teramai
+  const peakHoursData = useMemo(() => {
+    let pagi = 0; // 08:30 - 11:30
+    let siang = 0; // 11:30 - 14:30
+    let sore = 0; // 14:30 - 17:30
+
+    bookings.forEach(b => {
+      const rawJam = String(b.jam_masuk_aktual || b.jam_kunjungan || '09:00');
+      const h = parseInt(rawJam.split(':')[0], 10) || 9;
+      const m = parseInt(rawJam.split(':')[1], 10) || 0;
+      const totalMinutes = h * 60 + m;
+
+      if (totalMinutes < 11 * 60 + 30) {
+        pagi++;
+      } else if (totalMinutes < 14 * 60 + 30) {
+        siang++;
+      } else {
+        sore++;
+      }
+    });
+
+    return [
+      { timeSlot: 'Pagi (08:30–11:30)', jumlah: pagi, fill: '#059669' },
+      { timeSlot: 'Siang (11:30–14:30)', jumlah: siang, fill: '#0284C7' },
+      { timeSlot: 'Sore (14:30–17:30)', jumlah: sore, fill: '#F59E0B' }
+    ];
+  }, [bookings]);
+
+  // Distribusi Asrama Santri
+  const asramaDistribution = useMemo(() => {
+    const counts = {
+      'Asrama Putri Khadijah': 0,
+      'Asrama Putri Siti Aisyah': 0,
+      'Asrama Putra Umar bin Khattab': 0,
+      'Asrama Putra Abu Bakar': 0,
+      'Asrama Umum / Lainnya': 0
+    };
+
+    bookings.forEach(b => {
+      const k = `${b.kamar || ''} ${b.kelas || ''} ${b.nama_santri || ''}`.toLowerCase();
+      if (k.includes('khadijah')) counts['Asrama Putri Khadijah']++;
+      else if (k.includes('aisyah')) counts['Asrama Putri Siti Aisyah']++;
+      else if (k.includes('umar')) counts['Asrama Putra Umar bin Khattab']++;
+      else if (k.includes('abu bakar') || k.includes('bakar')) counts['Asrama Putra Abu Bakar']++;
+      else if (k.includes('putri')) counts['Asrama Putri Khadijah']++;
+      else counts['Asrama Umum / Lainnya']++;
+    });
+
+    return Object.entries(counts).map(([name, count]) => ({
+      name,
+      count
+    })).filter(item => item.count > 0);
+  }, [bookings]);
+
+  // Filter Roster Tamu Hari Ini (Siapa Saja)
+  const filteredRoster = useMemo(() => {
+    return allVisitorsToday.filter(b => {
+      if (rosterFilter === 'ACTIVE' && !(b.status_kunjungan === 'Sedang Berkunjung' || b.status_kunjungan?.includes('Sedang Berkunjung'))) return false;
+      if (rosterFilter === 'UPCOMING' && !(
+        (b.status_kunjungan === 'Disetujui (Siap Datang)' || b.approval_type === 'AUTO_WEEKEND' || String(b.status_kunjungan || '').includes('Disetujui')) &&
+        b.status_kunjungan !== 'Sedang Berkunjung' &&
+        b.status_kunjungan !== 'Selesai'
+      )) return false;
+      if (rosterFilter === 'PENDING' && !isPendingApprovalStatus(b.status_kunjungan)) return false;
+      if (rosterFilter === 'COMPLETED' && b.status_kunjungan !== 'Selesai') return false;
+
+      if (rosterSearch.trim()) {
+        const q = rosterSearch.toLowerCase();
+        return (
+          b.nama_santri?.toLowerCase().includes(q) ||
+          b.nama_penjenguk?.toLowerCase().includes(q) ||
+          b.no_wa_penjenguk?.includes(q) ||
+          b.kelas?.toLowerCase().includes(q) ||
+          b.kamar?.toLowerCase().includes(q) ||
+          b.barcode_token?.toLowerCase().includes(q) ||
+          b.titipan_barang?.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [allVisitorsToday, rosterFilter, rosterSearch]);
 
   // Perhitungan Data Rekap Bulanan Admin Ri'ayah
   const monthlyBookings = bookings.filter(b => {
@@ -416,8 +600,8 @@ export default function VisitBookingManager({ isCompact = false }) {
           </div>
         </div>
 
-        {/* 4 Kartu Metrik Kunjungan */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mt-6 pt-6 border-t border-emerald-800/60">
+        {/* 5 Kartu Metrik Kunjungan Real-Time */}
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5 mt-6 pt-6 border-t border-emerald-800/60">
           <div className="bg-emerald-950/50 border border-emerald-700/40 rounded-2xl p-4">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold text-emerald-300 font-mono uppercase tracking-wider">
@@ -429,13 +613,44 @@ export default function VisitBookingManager({ isCompact = false }) {
               <span className="text-2xl sm:text-3xl font-black text-white font-mono">{totalHariIni}</span>
               <span className="text-[11px] text-emerald-300 font-semibold">Tamu</span>
             </div>
-            <p className="text-[10px] text-emerald-200/70 mt-1">Kuota: max {visitSettings.kuota_harian_weekend}/hari</p>
+            <p className="text-[10px] text-emerald-200/70 mt-1">Hari ini: {allVisitorsToday.length} terdaftar</p>
+          </div>
+
+          <div className="bg-emerald-900/60 border border-emerald-500/60 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+            <div className="absolute top-2 right-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping inline-block" />
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-emerald-200 font-mono uppercase tracking-wider">
+                SEDANG DI PONDOK (LIVE)
+              </span>
+              <Users className="w-4 h-4 text-emerald-300" />
+            </div>
+            <div className="flex items-baseline gap-2 mt-2">
+              <span className="text-2xl sm:text-3xl font-black text-emerald-300 font-mono">{activeVisitingGuests.length}</span>
+              <span className="text-[11px] text-emerald-200 font-semibold">Aktif</span>
+            </div>
+            <p className="text-[10px] text-emerald-200/80 mt-1">Live check-in di pos gerbang</p>
+          </div>
+
+          <div className="bg-teal-950/40 border border-teal-600/40 rounded-2xl p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-teal-300 font-mono uppercase tracking-wider">
+                SIAP DATANG / DISAPROVED
+              </span>
+              <CheckCircle className="w-4 h-4 text-teal-400" />
+            </div>
+            <div className="flex items-baseline gap-2 mt-2">
+              <span className="text-2xl sm:text-3xl font-black text-teal-300 font-mono">{upcomingApprovedToday.length}</span>
+              <span className="text-[11px] text-teal-200 font-semibold">Wali</span>
+            </div>
+            <p className="text-[10px] text-teal-200/70 mt-1">Barcode aktif siap di-scan</p>
           </div>
 
           <div className="bg-amber-950/40 border border-amber-600/40 rounded-2xl p-4">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold text-amber-300 font-mono uppercase tracking-wider">
-                MENUNGGU APPROVAL (SENIN–KAMIS)
+                PERLU APPROVAL (SENIN–KAMIS)
               </span>
               <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
             </div>
@@ -443,27 +658,13 @@ export default function VisitBookingManager({ isCompact = false }) {
               <span className="text-2xl sm:text-3xl font-black text-amber-300 font-mono">{pendingWeekday}</span>
               <span className="text-[11px] text-amber-200 font-semibold">Perlu Review</span>
             </div>
-            <p className="text-[10px] text-amber-200/70 mt-1">Wajib persetujuan Admin Ri'ayah</p>
+            <p className="text-[10px] text-amber-200/70 mt-1">Persetujuan Admin Ri'ayah</p>
           </div>
 
-          <div className="bg-teal-950/40 border border-teal-600/40 rounded-2xl p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-teal-300 font-mono uppercase tracking-wider">
-                AUTO-APPROVED (WEEKEND)
-              </span>
-              <CheckCircle className="w-4 h-4 text-teal-400" />
-            </div>
-            <div className="flex items-baseline gap-2 mt-2">
-              <span className="text-2xl sm:text-3xl font-black text-teal-300 font-mono">{autoApprovedWeekend}</span>
-              <span className="text-[11px] text-teal-200 font-semibold">Instan</span>
-            </div>
-            <p className="text-[10px] text-teal-200/70 mt-1">Jumat–Minggu: Barcode langsung terbit</p>
-          </div>
-
-          <div className="bg-cyan-950/40 border border-cyan-600/40 rounded-2xl p-4">
+          <div className="bg-cyan-950/40 border border-cyan-600/40 rounded-2xl p-4 col-span-2 lg:col-span-1">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold text-cyan-300 font-mono uppercase tracking-wider">
-                TOTAL TITIPAN BARANG
+                TITIPAN BARANG MASUK
               </span>
               <Package className="w-4 h-4 text-cyan-400" />
             </div>
@@ -585,8 +786,558 @@ export default function VisitBookingManager({ isCompact = false }) {
         </div>
       )}
 
+      {/* ─── TAB NAVIGASI UTAMA MANAJEMEN KUNJUNGAN ─── */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none border-b border-slate-200">
+        {[
+          { id: 'ALL_IN_ONE', label: '🌟 Tampilan Terpadu (Ringkasan & Semua)', icon: Activity },
+          { id: 'CHARTS', label: '📊 Grafik & Analitik Ringkasan', icon: BarChart3 },
+          { id: 'ROSTER', label: `👥 Siapa Saja Pengunjung Hari Ini (${allVisitorsToday.length})`, icon: Users, badge: activeVisitingGuests.length > 0 ? `${activeVisitingGuests.length} Aktif` : null },
+          { id: 'TABLE', label: `📋 Tabel Log Booking (${filteredBookings.length})`, icon: Calendar },
+          { id: 'MONTHLY_RECAP', label: '📑 Rekap Bulanan Admin', icon: FileSpreadsheet },
+        ].map(tab => {
+          const Icon = tab.icon;
+          const isActive = mainViewTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setMainViewTab(tab.id);
+                sound.playBeep?.();
+                if (tab.id === 'MONTHLY_RECAP') setActiveFilter('MONTHLY_RECAP');
+              }}
+              className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition flex items-center gap-2 shrink-0 border ${
+                isActive
+                  ? 'bg-emerald-700 text-white border-emerald-800 shadow-md scale-[1.01]'
+                  : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-200/80'
+              }`}
+            >
+              <Icon className={`w-4 h-4 ${isActive ? 'text-emerald-200' : 'text-slate-500'}`} />
+              <span>{tab.label}</span>
+              {tab.badge && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-400 text-emerald-950 font-black animate-pulse">
+                  {tab.badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ─── 2B. GRAFIK & ANALISIS RINGKASAN KUNJUNGAN PONDOK ─── */}
+      {(mainViewTab === 'ALL_IN_ONE' || mainViewTab === 'CHARTS') && (
+        <div className="bg-white rounded-3xl border border-slate-200/90 p-5 sm:p-6 shadow-sm space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold shadow-xs">
+                <BarChart3 className="w-5 h-5 text-emerald-700" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900 tracking-tight flex items-center gap-2">
+                  <span>Grafik &amp; Analisis Kunjungan Santri (Ringkasan Real-Time)</span>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-mono font-bold">
+                    Live Data
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Visualisasi tren kedatangan 7 hari terakhir, komposisi status tamu, jam tersibuk operasional sambangan, dan sebaran asrama santri.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-mono font-bold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
+                Total Riwayat: {bookings.length} Data Terdata
+              </span>
+            </div>
+          </div>
+
+          {/* Grid 4 Grafik Analisis */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* 1. Tren 7 Hari Terakhir & Hari Ini */}
+            <div className="bg-slate-50/70 rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-2xs space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <TrendingUp className="w-4 h-4 text-emerald-600" />
+                    <span>Tren Volume Kunjungan Harian (7 Hari Terakhir)</span>
+                  </h4>
+                  <p className="text-[10px] text-slate-500">Volume tamu terdaftar, sedang di pondok, dan selesai</p>
+                </div>
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                  7 Hari
+                </span>
+              </div>
+
+              <div className="h-56 w-full pt-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={sevenDaysTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#059669" stopOpacity={0.4}/>
+                        <stop offset="95%" stopColor="#059669" stopOpacity={0.0}/>
+                      </linearGradient>
+                      <linearGradient id="colorActive" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#0284C7" stopOpacity={0.4}/>
+                        <stop offset="95%" stopColor="#0284C7" stopOpacity={0.0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis dataKey="dateStr" tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} />
+                    <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderRadius: '12px', border: 'none', color: '#fff', fontSize: '11px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }} />
+                    <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', paddingTop: '6px' }} />
+                    <Area type="monotone" dataKey="total" name="Total Kunjungan" stroke="#059669" strokeWidth={2.5} fillOpacity={1} fill="url(#colorTotal)" />
+                    <Area type="monotone" dataKey="aktif" name="Sedang di Pondok" stroke="#0284C7" strokeWidth={2} fillOpacity={1} fill="url(#colorActive)" />
+                    <Area type="monotone" dataKey="selesai" name="Selesai" stroke="#94a3b8" strokeWidth={1.5} fillOpacity={0.1} fill="#94a3b8" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* 2. Komposisi Status Tamu Hari Ini */}
+            <div className="bg-slate-50/70 rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-2xs space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <PieIcon className="w-4 h-4 text-teal-600" />
+                    <span>Komposisi Status Tamu Hari Ini</span>
+                  </h4>
+                  <p className="text-[10px] text-slate-500">Breakdown tamu aktif, siap datang, menunggu &amp; selesai</p>
+                </div>
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-teal-100 text-teal-800">
+                  Hari Ini
+                </span>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
+                <div className="w-full sm:w-1/2 h-52 relative flex items-center justify-center">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={statusPieData}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={50}
+                        outerRadius={75}
+                        paddingAngle={4}
+                      >
+                        {statusPieData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderRadius: '10px', border: 'none', color: '#fff', fontSize: '11px' }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  {/* Center Stat */}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span className="text-xl font-black text-slate-800 font-mono">{allVisitorsToday.length}</span>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Tamu Hari Ini</span>
+                  </div>
+                </div>
+
+                <div className="w-full sm:w-1/2 space-y-1.5">
+                  {statusPieData.map((item, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-xs p-1.5 rounded-lg hover:bg-white border border-transparent hover:border-slate-200 transition">
+                      <div className="flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full shrink-0 shadow-xs" style={{ backgroundColor: item.color }} />
+                        <span className="text-slate-700 font-medium text-[11px]">{item.name}</span>
+                      </div>
+                      <span className="font-mono font-bold text-slate-900">{item.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* 3. Jam Kedatangan Teramai */}
+            <div className="bg-slate-50/70 rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-2xs space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Clock className="w-4 h-4 text-amber-600" />
+                    <span>Jam Kedatangan Teramai (Peak Visiting Hours)</span>
+                  </h4>
+                  <p className="text-[10px] text-slate-500">Pagi (08:30–11:30) • Siang (11:30–14:30) • Sore (14:30–17:30)</p>
+                </div>
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                  Operasional
+                </span>
+              </div>
+
+              <div className="h-56 w-full pt-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={peakHoursData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis dataKey="timeSlot" tick={{ fontSize: 9.5, fill: '#64748b' }} tickLine={false} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} />
+                    <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderRadius: '10px', border: 'none', color: '#fff', fontSize: '11px' }} />
+                    <Bar dataKey="jumlah" name="Jumlah Kunjungan" radius={[8, 8, 0, 0]}>
+                      {peakHoursData.map((entry, index) => (
+                        <Cell key={`bar-${index}`} fill={entry.fill} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* 4. Distribusi Asrama Santri yang Dikunjungi */}
+            <div className="bg-slate-50/70 rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-2xs space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Building className="w-4 h-4 text-cyan-600" />
+                    <span>Distribusi Kunjungan per Asrama Santri</span>
+                  </h4>
+                  <p className="text-[10px] text-slate-500">Sebaran santri yang dijenguk berdasarkan asrama putra &amp; putri</p>
+                </div>
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-cyan-100 text-cyan-800">
+                  Kamar &amp; Gedung
+                </span>
+              </div>
+
+              <div className="space-y-3 pt-2">
+                {asramaDistribution.length === 0 ? (
+                  <p className="text-xs text-slate-400 py-6 text-center">Belum ada data asrama terdaftar</p>
+                ) : (
+                  asramaDistribution.map((item, idx) => {
+                    const totalAssigned = asramaDistribution.reduce((acc, curr) => acc + curr.count, 0) || 1;
+                    const pct = Math.round((item.count / totalAssigned) * 100);
+                    const colors = ['bg-emerald-500', 'bg-teal-500', 'bg-blue-500', 'bg-indigo-500', 'bg-slate-400'];
+                    const barColor = colors[idx % colors.length];
+                    return (
+                      <div key={idx} className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-semibold text-slate-700 flex items-center gap-1.5 text-[11px]">
+                            <Building className="w-3.5 h-3.5 text-slate-400" />
+                            {item.name}
+                          </span>
+                          <span className="font-mono text-slate-900 font-bold text-[11px]">
+                            {item.count} Santri ({pct}%)
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-200/80 rounded-full h-2.5 overflow-hidden">
+                          <div className={`h-2.5 rounded-full transition-all duration-500 ${barColor}`} style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── 2C. DAFTAR RINCI SIAPA SAJA PENGUNJUNG HARI INI (LIVE VISITOR ROSTER) ─── */}
+      {(mainViewTab === 'ALL_IN_ONE' || mainViewTab === 'ROSTER') && (
+        <div className="bg-white rounded-3xl border border-slate-200/90 p-5 sm:p-6 shadow-sm space-y-5">
+          {/* Header Panel Siapa Saja */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow-md shrink-0">
+                <Users className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900 tracking-tight flex items-center gap-2">
+                  <span>Siapa Saja Pengunjung Hari Ini?</span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-mono font-bold">
+                    {allVisitorsToday.length} Tamu Terdaftar
+                  </span>
+                  {activeVisitingGuests.length > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-mono font-bold animate-pulse">
+                      ● {activeVisitingGuests.length} Sedang di Pondok
+                    </span>
+                  )}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Daftar profil wali santri yang berkunjung hari ini, status check-in, live countdown sisa waktu, santri yang dijenguk, dan titipan barang.
+                </p>
+              </div>
+            </div>
+
+            {/* Filter & Search Bar Roster */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+              {/* Sub-Filter Pills */}
+              <div className="flex items-center gap-1 overflow-x-auto scrollbar-none">
+                {[
+                  { id: 'ALL', label: `Semua (${allVisitorsToday.length})` },
+                  { id: 'ACTIVE', label: `🟢 Di Pondok (${activeVisitingGuests.length})` },
+                  { id: 'UPCOMING', label: `⏳ Siap Datang (${upcomingApprovedToday.length})` },
+                  { id: 'PENDING', label: `⚠️ Review (${pendingWeekday})` },
+                  { id: 'COMPLETED', label: `🏁 Selesai (${completedGuestsToday.length})` },
+                ].map(f => (
+                  <button
+                    key={f.id}
+                    onClick={() => { setRosterFilter(f.id); sound.playBeep?.(); }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition shrink-0 ${
+                      rosterFilter === f.id
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Roster Search Input */}
+              <div className="relative w-full sm:w-48">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Cari pengunjung / santri..."
+                  value={rosterSearch}
+                  onChange={(e) => setRosterSearch(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Cards Grid Siapa Saja Pengunjung */}
+          {filteredRoster.length === 0 ? (
+            <div className="p-8 text-center bg-slate-50/80 rounded-2xl border border-dashed border-slate-200">
+              <Users className="w-10 h-10 mx-auto text-slate-300 mb-2" />
+              <p className="font-bold text-slate-700 text-xs">Belum ada data pengunjung yang cocok dengan filter.</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">Tamu yang berkunjung hari ini otomatis masuk ke daftar ini setelah terdaftar via WA atau Satpam.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {filteredRoster.map((b) => {
+                const isOngoing = b.status_kunjungan === 'Sedang Berkunjung' || b.status_kunjungan?.includes('Sedang Berkunjung');
+                const isApproved = (b.status_kunjungan === 'Disetujui (Siap Datang)' || b.approval_type === 'AUTO_WEEKEND' || String(b.status_kunjungan || '').includes('Disetujui')) && !isOngoing && b.status_kunjungan !== 'Selesai';
+                const isCompleted = b.status_kunjungan === 'Selesai';
+                const isWaiting = isPendingApprovalStatus(b.status_kunjungan || b.status);
+
+                const cd = isOngoing ? calculateVisitCountdown(b.jam_selesai, b.tanggal_kunjungan) : null;
+                const token = b.barcode_token || b.id;
+                const { gatePassUrl } = getVisitGatePassUrls(token);
+                const initial = (b.nama_penjenguk || 'W').charAt(0).toUpperCase();
+                const cleanPhone = (b.no_wa_penjenguk || '').replace(/\D/g, '');
+
+                return (
+                  <div
+                    key={b.id}
+                    className={`rounded-2xl p-4 transition-all duration-200 border flex flex-col justify-between ${
+                      isOngoing
+                        ? 'bg-gradient-to-b from-emerald-50/80 via-white to-white border-emerald-400 shadow-md ring-1 ring-emerald-300'
+                        : isApproved
+                        ? 'bg-white border-sky-200 shadow-xs hover:border-sky-300'
+                        : isCompleted
+                        ? 'bg-slate-50/70 border-slate-200 shadow-2xs opacity-85'
+                        : 'bg-white border-amber-200 shadow-xs'
+                    }`}
+                  >
+                    <div>
+                      {/* Baris Atas: Profil Wali & Status Badge */}
+                      <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm text-white shrink-0 shadow-xs ${
+                            isOngoing ? 'bg-emerald-600' : isApproved ? 'bg-sky-600' : isCompleted ? 'bg-slate-600' : 'bg-amber-600'
+                          }`}>
+                            {initial}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <strong className="text-slate-900 text-xs font-bold leading-tight line-clamp-1">
+                                {b.nama_penjenguk}
+                              </strong>
+                              {cleanPhone && (
+                                <a
+                                  href={`https://wa.me/${cleanPhone}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-emerald-600 hover:text-emerald-700 p-0.5"
+                                  title="Chat WhatsApp Penjenguk"
+                                >
+                                  <Phone className="w-3.5 h-3.5" />
+                                </a>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-slate-500 font-medium block">
+                              {b.status_penjenguk || 'Wali Santri'} {b.no_wa_penjenguk ? `• ${b.no_wa_penjenguk}` : ''}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Status Pill */}
+                        <div className="shrink-0">
+                          {isOngoing && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 animate-pulse">
+                              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping inline-block" />
+                              Di Pondok
+                            </span>
+                          )}
+                          {isApproved && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-300">
+                              <CheckCircle className="w-3 h-3 text-sky-600" />
+                              Siap Datang
+                            </span>
+                          )}
+                          {isCompleted && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                              <Check className="w-3 h-3 text-slate-500" />
+                              Selesai
+                            </span>
+                          )}
+                          {isWaiting && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                              <Clock className="w-3 h-3 text-amber-600" />
+                              Review
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Detail Santri yang Dijenguk */}
+                      <div className="mt-3 p-2.5 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 font-mono">
+                            SANTRI YANG DIJENGUK:
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            {b.asal || 'Surabaya'}
+                          </span>
+                        </div>
+                        <div className="font-extrabold text-xs text-slate-900 flex items-center gap-1.5">
+                          <User className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>{b.nama_santri}</span>
+                        </div>
+                        <div className="text-[11px] text-slate-600 flex items-center gap-2">
+                          <span className="font-semibold">{b.kelas}</span>
+                          {b.kamar && (
+                            <>
+                              <span>•</span>
+                              <span className="text-slate-500">{b.kamar}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Detail Waktu & Durasi Sambangan */}
+                      <div className="mt-2.5 space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-slate-500 flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-slate-400" />
+                            Jadwal Kunjungan:
+                          </span>
+                          <span className="font-mono font-bold text-slate-800">
+                            {(b.jam_kunjungan || '09:00').replace(/^23:/, '11:')} – {(b.jam_selesai || '17:30').replace(/^23:/, '17:30')} WITA
+                          </span>
+                        </div>
+
+                        {b.jam_masuk_aktual && (
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-emerald-700 font-medium">Jam Masuk Gerbang:</span>
+                            <span className="font-mono font-bold text-emerald-800 bg-emerald-100/60 px-1.5 py-0.5 rounded">
+                              {b.jam_masuk_aktual} WITA
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Real-Time Countdown jika Sedang di Pondok */}
+                        {isOngoing && cd && (
+                          <div className="pt-1">
+                            {cd.isOverstay ? (
+                              <div className="p-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-bold flex items-center justify-between animate-pulse">
+                                <span className="flex items-center gap-1">
+                                  <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+                                  Melewati Batas Waktu
+                                </span>
+                                <span className="font-mono">{cd.remainingText}</span>
+                              </div>
+                            ) : (
+                              <div className={`p-2 rounded-xl border text-[11px] font-bold flex items-center justify-between ${
+                                (cd.diffMs / 60000) <= (reminderThresholdMinutes || 15)
+                                  ? 'bg-amber-50 border-amber-200 text-amber-900 animate-pulse'
+                                  : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                              }`}>
+                                <span className="flex items-center gap-1">
+                                  <Hourglass className="w-3.5 h-3.5 text-emerald-700" />
+                                  Sisa Waktu Sambangan:
+                                </span>
+                                <span className="font-mono font-extrabold">{cd.remainingText}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Titipan Barang */}
+                        <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-100 text-slate-600">
+                          <span className="flex items-center gap-1 truncate max-w-[170px]" title={b.titipan_barang || '-'}>
+                            <Package className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span className="truncate">{b.titipan_barang || 'Tanpa titipan'}</span>
+                          </span>
+                          <span className="font-mono font-bold text-cyan-800 bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-200 text-[10px]">
+                            {b.berat_barang_kg || 0} Kg
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Baris Tombol Aksi Cepat Roster */}
+                    <div className="mt-3.5 pt-3 border-t border-slate-100 flex items-center gap-1.5 flex-wrap">
+                      <button
+                        onClick={() => { setSelectedBookingForPass(b); sound.playBeep?.(); }}
+                        className="flex-1 py-1.5 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[10px] transition flex items-center justify-center gap-1"
+                        title="Buka E-Ticket Barcode"
+                      >
+                        <QrCode className="w-3 h-3 text-emerald-700" />
+                        <span>Kupon Pass</span>
+                      </button>
+
+                      <button
+                        onClick={() => { window.open(gatePassUrl, '_blank'); sound.playSuccess?.(); }}
+                        className="py-1.5 px-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-[10px] transition border border-emerald-200 flex items-center justify-center gap-1"
+                        title="Buka Kupon di Tab Baru"
+                      >
+                        <ExternalLink className="w-3 h-3 text-emerald-600" />
+                        <span>Link Kupon</span>
+                      </button>
+
+                      {isOngoing && (
+                        <>
+                          <button
+                            onClick={() => {
+                              sendVisitWarningReminder?.(b.id);
+                              setToastNotification(`Pesan pengingat batas waktu dikirim ke WA ${b.nama_penjenguk}`);
+                            }}
+                            className="py-1.5 px-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[10px] transition flex items-center justify-center gap-1 shadow-xs"
+                            title="Kirim pengingat batas waktu ke WhatsApp"
+                          >
+                            <BellRing className="w-3 h-3" />
+                            <span>Ingatkan</span>
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              checkOutVisitBooking?.(b.id);
+                              sound.playSuccess?.();
+                              setToastNotification(`Check-out selesai untuk ${b.nama_penjenguk}`);
+                            }}
+                            className="py-1.5 px-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] transition flex items-center justify-center gap-1 shadow-xs"
+                            title="Tandai selesai check-out"
+                          >
+                            <DoorOpen className="w-3 h-3" />
+                            <span>Check-Out</span>
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ─── 3. TABEL MONITORING KUNJUNGAN & BOOKING WHATSAPP ─── */}
-      <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden space-y-0">
+      {(mainViewTab === 'ALL_IN_ONE' || mainViewTab === 'TABLE' || mainViewTab === 'MONTHLY_RECAP') && (
+        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden space-y-0">
         {/* Table Top Controls & Filter */}
         <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           {/* Quick Filter Chips */}
@@ -1045,6 +1796,7 @@ export default function VisitBookingManager({ isCompact = false }) {
           </table>
         </div>
       </div>
+      )}
 
       {/* ─── 4. MODAL E-TICKET BARCODE WHATSAPP (QR GATE PASS RESMI) ─── */}
       {selectedBookingForPass && (

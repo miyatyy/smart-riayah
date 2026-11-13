@@ -749,7 +749,7 @@ export default function AdminRiayahDashboard() {
 
             <button
               onClick={() => {
-                setActiveTab('whatsapp_manager');
+                setActiveTab('visit_bookings');
                 sound.playBeep?.();
               }}
               className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition shadow-sm flex items-center gap-1.5 self-start sm:self-center"
