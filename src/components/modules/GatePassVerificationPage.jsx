@@ -87,8 +87,9 @@ export default function GatePassVerificationPage({ token }) {
             loading: false,
             success: true,
             notFound: false,
-            message: lc.isExpired ? '⛔ MASA BERLAKU KUPON TELAH HABIS' : '✅ KUPON RESMI AKTIF',
+            message: lc.isExpired ? '⛔ MASA BERLAKU KUPON TELAH HABIS' : lc.message || '✅ KUPON RESMI AKTIF',
             isExpired: lc.isExpired || matched.status_kunjungan === 'Selesai',
+            isFuture: lc.isFuture,
             isPending: matched.status_kunjungan === 'Menunggu Approval',
             isOngoing: matched.status_kunjungan === 'Sedang Berkunjung',
             isApproved: matched.status_kunjungan?.includes('Disetujui')
@@ -148,8 +149,9 @@ export default function GatePassVerificationPage({ token }) {
         loading: false,
         success: true,
         notFound: false,
-        message: lc.isExpired ? '⛔ MASA BERLAKU KUPON TELAH HABIS' : '✅ KUPON RESMI AKTIF',
+        message: lc.isExpired ? '⛔ MASA BERLAKU KUPON TELAH HABIS' : lc.message || '✅ KUPON RESMI AKTIF',
         isExpired: lc.isExpired || b.status_kunjungan === 'Selesai',
+        isFuture: lc.isFuture,
         isPending: b.status_kunjungan === 'Menunggu Approval',
         isOngoing: b.status_kunjungan === 'Sedang Berkunjung',
         isApproved: b.status_kunjungan?.includes('Disetujui')
@@ -269,18 +271,20 @@ export default function GatePassVerificationPage({ token }) {
       const clock = getRealtimePondokClock();
       const lc = checkBarcodeLifecycle(booking, clock);
       const isExpired = lc.isExpired || isDone;
+      const isFuture = lc.isFuture;
 
       // Status Pill
-      ctx.fillStyle = isExpired ? '#FEE2E2' : isOngoing ? '#DCFCE7' : isApproved ? '#E0F2FE' : '#F1F5F9';
+      ctx.fillStyle = isExpired ? '#FEE2E2' : isOngoing ? '#DCFCE7' : isFuture ? '#E0F2FE' : isApproved ? '#E0F2FE' : '#F1F5F9';
       ctx.beginPath();
       ctx.roundRect(36, 120, 360, 28, 8);
       ctx.fill();
 
-      ctx.fillStyle = isExpired ? '#B91C1C' : isOngoing ? '#15803D' : isApproved ? '#0369A1' : '#475569';
+      ctx.fillStyle = isExpired ? '#B91C1C' : isOngoing ? '#15803D' : isFuture ? '#0369A1' : isApproved ? '#0369A1' : '#475569';
       ctx.font = 'bold 11px sans-serif';
       ctx.fillText(
         isExpired ? '● STATUS: EXPIRED / KUNJUNGAN TELAH SELESAI' :
         isOngoing ? '● STATUS: TELAH DI-SCAN (SEDANG BERKUNJUNG)' :
+        isFuture ? `● STATUS: RESMI (JADWAL: ${(booking.hari_kunjungan || '').toUpperCase()})` :
         isApproved ? '● STATUS: DISETUJUI (SIAP KUNJUNGAN)' : '● STATUS: MENUNGGU APPROVAL PONDOK',
         48, 138
       );
@@ -378,7 +382,7 @@ export default function GatePassVerificationPage({ token }) {
       ctx.fillStyle = isExpired ? '#DC2626' : '#059669';
       ctx.font = 'bold 11px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(isExpired ? '⛔ EXPIRED / SELESAI' : '★ VERIFIED & OFFICIAL ★', 0, -4);
+      ctx.fillText(isExpired ? '⛔ EXPIRED / SELESAI' : isFuture ? '★ DISETUJUI & RESMI ★' : '★ VERIFIED & OFFICIAL ★', 0, -4);
       ctx.font = 'bold 10px monospace';
       ctx.fillText('SMART RIAYAH GATE PASS', 0, 12);
       ctx.restore();
@@ -566,6 +570,18 @@ export default function GatePassVerificationPage({ token }) {
               <span className="font-bold block text-sm">⏳ Menunggu Persetujuan Admin Ri'ayah</span>
               <span className="text-slate-300 text-[11px]">
                 Kunjungan hari kerja memerlukan verifikasi Pengasuhan Pondok sebelum barcode dapat di-scan di gerbang.
+              </span>
+            </div>
+          </div>
+        ) : lookupState.isFuture ? (
+          <div className="p-3.5 rounded-2xl bg-sky-950/80 border border-sky-500/60 text-sky-100 flex items-center gap-2.5 text-xs shadow-md">
+            <Calendar className="w-4 h-4 text-sky-400 shrink-0" />
+            <div>
+              <span className="font-bold block text-sm text-sky-200">
+                📅 Kupon Resmi Disetujui (Jadwal: {booking?.hari_kunjungan || 'Mendatang'}, {booking?.tanggal_kunjungan})
+              </span>
+              <span className="text-sky-200/80 text-[11px]">
+                Simpan kupon izin ini. Barcode resmi aktif dan dapat di-scan oleh petugas Satpam di pos gerbang saat hari kunjungan tiba.
               </span>
             </div>
           </div>

@@ -248,7 +248,8 @@ export function checkBarcodeLifecycle(booking, clock = getRealtimePondokClock())
   }
 
   // 2. Status Masih Menunggu Approval (Senin-Kamis belum di-approve admin)
-  if (booking.status_kunjungan === 'Menunggu Approval') {
+  const statusLower = String(booking.status_kunjungan || '').toLowerCase();
+  if (statusLower.includes('menunggu approval') || statusLower.includes('menunggu') || statusLower === 'pending') {
     return {
       status: 'PENDING_APPROVAL',
       isValidForScan: false,
@@ -261,47 +262,25 @@ export function checkBarcodeLifecycle(booking, clock = getRealtimePondokClock())
     };
   }
 
-  // 3. VALIDASI KEBIJAKAN KATEGORI HARI (HARI KERJA SENIN-KAMIS VS AKHIR PEKAN JUMAT-MINGGU)
+  // 3. Status Sedang Berkunjung (Telah check-in di pos gerbang)
+  if (booking.status_kunjungan === 'Sedang Berkunjung' || booking.status_kunjungan === 'Sedang Berkunjung (Telah Di-Scan)') {
+    return {
+      status: 'CURRENTLY_VISITING',
+      isValidForScan: false, // Sudah di-scan masuk, menunggu check-out
+      isExpired: false,
+      isVisiting: true,
+      canCheckIn: false,
+      badgeLabel: '✅ SEDANG BERKUNJUNG (SUDAH DI-SCAN)',
+      alertType: 'success',
+      message: 'Pengunjung telah berhasil check-in di Pos Satpam dan saat ini sedang berada di lingkungan pondok.'
+    };
+  }
+
   const bookingDayLower = (booking.hari_kunjungan || '').trim().toLowerCase();
-  const isTicketWeekday = 
-    booking.is_weekday === true || 
-    booking.approval_type === 'MANUAL_WEEKDAY' ||
-    ['senin', 'selasa', 'rabu', 'kamis'].includes(bookingDayLower);
 
-  const isTicketWeekend = 
-    booking.is_weekday === false || 
-    booking.approval_type === 'AUTO_WEEKEND' ||
-    ['jumat', 'sabtu', 'minggu'].includes(bookingDayLower);
-
-  // KASUS A: Tiket Hari Kerja (Senin–Kamis), tetapi datang/scan pada hari Akhir Pekan (Jumat–Minggu)
-  if (isTicketWeekday && clock.is_weekend_now) {
-    return {
-      status: 'REJECTED_WEEKDAY_ON_WEEKEND',
-      isValidForScan: false,
-      isExpired: true,
-      canCheckIn: false,
-      badgeLabel: '⛔ AKSES DITOLAK — PELANGGARAN JADWAL HARI KUNJUNGAN!',
-      alertType: 'danger',
-      message: `Tiket ini terdaftar untuk kunjungan HARI KERJA (${booking.hari_kunjungan || 'Senin–Kamis'}${booking.tanggal_kunjungan ? ' • ' + booking.tanggal_kunjungan : ''}), sehingga TIDAK DAPAT digunakan pada hari AKHIR PEKAN (Weekend) hari ini (${clock.nama_hari}${clock.tanggal_ymd ? ' • ' + clock.tanggal_ymd : ''}).`
-    };
-  }
-
-  // KASUS B: Tiket Akhir Pekan (Jumat–Minggu), tetapi datang/scan pada Hari Kerja (Senin–Kamis)
-  if (isTicketWeekend && clock.is_weekday) {
-    return {
-      status: 'REJECTED_WEEKEND_ON_WEEKDAY',
-      isValidForScan: false,
-      isExpired: true,
-      canCheckIn: false,
-      badgeLabel: '⛔ AKSES DITOLAK — KETIDAKSESUAIAN JADWAL!',
-      alertType: 'danger',
-      message: `Tiket khusus Akhir Pekan (Weekend) tidak berlaku pada Hari Kerja (Senin–Kamis). Jadwal tiket: ${booking.hari_kunjungan || 'Akhir Pekan'}${booking.tanggal_kunjungan ? ' • ' + booking.tanggal_kunjungan : ''}, sedangkan hari ini adalah hari ${clock.nama_hari}.`
-    };
-  }
-
-  // 4. VALIDASI TANGGAL KALENDER MUTLAK (tanggal_kunjungan === today_YYYY_MM_DD)
+  // 4. VALIDASI TANGGAL KALENDER MUTLAK (Prioritas Tertinggi: Mendatang vs Hari Ini vs Telah Lewat)
   if (booking.tanggal_kunjungan && /^\d{4}-\d{2}-\d{2}$/.test(booking.tanggal_kunjungan)) {
-    // Tanggal telah lewat (Expired)
+    // 4A. Tanggal Kunjungan Telah Lewat dari Hari Ini -> Hangus / Expired
     if (clock.tanggal_ymd > booking.tanggal_kunjungan) {
       return {
         status: 'EXPIRED_DATE_PAST',
@@ -314,7 +293,7 @@ export function checkBarcodeLifecycle(booking, clock = getRealtimePondokClock())
       };
     }
 
-    // Tanggal masa depan / datang terlalu cepat (Beda Tanggal)
+    // 4B. Tanggal Kunjungan di Masa Depan -> AKTIF & SAH, BUKAN EXPIRED!
     if (clock.tanggal_ymd < booking.tanggal_kunjungan) {
       return {
         status: 'FUTURE_DATE',
@@ -322,27 +301,14 @@ export function checkBarcodeLifecycle(booking, clock = getRealtimePondokClock())
         isExpired: false,
         isFuture: true,
         canCheckIn: false,
-        badgeLabel: '⛔ JADWAL BELUM AKTIF (BEDA TANGGAL)',
-        alertType: 'warning',
-        message: `Kupon ini hanya berlaku untuk hari ${booking.hari_kunjungan || ''} (${booking.tanggal_kunjungan}), bukan hari ini (${clock.nama_hari}, ${clock.tanggal_ymd}).`
+        badgeLabel: `📅 JADWAL MENDATANG (${booking.hari_kunjungan || ''}, ${booking.tanggal_kunjungan})`,
+        alertType: 'info',
+        message: `Kupon izin sah dan terdaftar untuk hari ${booking.hari_kunjungan || ''} (${booking.tanggal_kunjungan}). Barcode resmi aktif dan dapat di-scan di Pos Satpam saat hari kunjungan tiba.`
       };
     }
 
-    // Tanggal sama (clock.tanggal_ymd === booking.tanggal_kunjungan): pastikan nama hari juga sinkron
-    if (bookingDayLower && clock.nama_hari.toLowerCase() !== bookingDayLower) {
-      return {
-        status: 'DAY_NAME_MISMATCH',
-        isValidForScan: false,
-        isExpired: true,
-        canCheckIn: false,
-        badgeLabel: '⛔ JADWAL HARI TIDAK COCOK',
-        alertType: 'danger',
-        message: `Kupon ini terdaftar untuk hari ${booking.hari_kunjungan}, sedangkan hari ini adalah hari ${clock.nama_hari}.`
-      };
-    }
-
-    // 5. VALIDASI RENTANG JAM KUNJUNGAN (jam_kunjungan s/d jam_selesai)
-    const [clockH, clockM] = clock.jam_menit.split(':').map(v => parseInt(v, 10) || 0);
+    // 4C. Tanggal Kunjungan adalah HARI INI (clock.tanggal_ymd === booking.tanggal_kunjungan)
+    const [clockH, clockM] = (clock.jam_menit || '00:00').split(':').map(v => parseInt(v, 10) || 0);
     const clockMinutes = clockH * 60 + clockM;
 
     let startMinutes = 0;
@@ -381,37 +347,51 @@ export function checkBarcodeLifecycle(booking, clock = getRealtimePondokClock())
         canCheckIn: false,
         badgeLabel: '⛔ EXPIRED (JAM BERKUNJUNG SELESAI)',
         alertType: 'danger',
-        message: `Jam operasional kunjungan (${booking.jam_kunjungan || '14:00'} s/d ${booking.jam_selesai} WITA) telah berakhir. Tiket barcode telah hangus.`
+        message: `Jam operasional kunjungan (${booking.jam_kunjungan || '14:00'} s/d ${booking.jam_selesai} WITA) telah berakhir hari ini. Tiket barcode telah hangus.`
       };
     }
-  } else if (bookingDayLower && clock.nama_hari.toLowerCase() !== bookingDayLower) {
-    // Jika tidak ada format tanggal YYYY-MM-DD, wajib cocok nama hari
-    return {
-      status: 'DAY_NAME_MISMATCH',
-      isValidForScan: false,
-      isExpired: true,
-      canCheckIn: false,
-      badgeLabel: '⛔ JADWAL HARI TIDAK COCOK',
-      alertType: 'danger',
-      message: `Kupon ini terdaftar untuk hari ${booking.hari_kunjungan}, sedangkan hari ini adalah hari ${clock.nama_hari}.`
-    };
-  }
 
-  // 4. Jika Sedang Berkunjung
-  if (booking.status_kunjungan === 'Sedang Berkunjung' || booking.status_kunjungan === 'Sedang Berkunjung (Telah Di-Scan)') {
+    // Sedang dalam rentang jam kunjungan hari ini
     return {
-      status: 'CURRENTLY_VISITING',
-      isValidForScan: false, // Sudah di-scan masuk, menunggu check-out
+      status: 'ACTIVE_VALID',
+      isValidForScan: true,
       isExpired: false,
-      isVisiting: true,
-      canCheckIn: false,
-      badgeLabel: '✅ SEDANG BERKUNJUNG (SUDAH DI-SCAN)',
+      isActive: true,
+      canCheckIn: true,
+      badgeLabel: '✅ BARCODE AKTIF & SAH DIGUNAKAN',
       alertType: 'success',
-      message: 'Pengunjung telah berhasil check-in di Pos Satpam dan saat ini sedang berada di lingkungan pondok.'
+      message: 'Barcode tiket kunjungan sah, aktif, dan dapat diverifikasi masuk di Pos Jaga Keamanan.'
     };
   }
 
-  // 5. Tiket Sah dan Aktif untuk Check-In
+  // 5. Fallback jika booking tidak memiliki format YMD (hanya nama hari)
+  if (bookingDayLower) {
+    if (clock.nama_hari.toLowerCase() === bookingDayLower) {
+      return {
+        status: 'ACTIVE_VALID',
+        isValidForScan: true,
+        isExpired: false,
+        isActive: true,
+        canCheckIn: true,
+        badgeLabel: '✅ BARCODE AKTIF HARI INI',
+        alertType: 'success',
+        message: `Barcode kunjungan sah untuk hari ${booking.hari_kunjungan}.`
+      };
+    } else {
+      return {
+        status: 'FUTURE_DATE',
+        isValidForScan: false,
+        isExpired: false,
+        isFuture: true,
+        canCheckIn: false,
+        badgeLabel: `📅 JADWAL HARI ${booking.hari_kunjungan.toUpperCase()}`,
+        alertType: 'info',
+        message: `Kupon ini berlaku untuk kunjungan hari ${booking.hari_kunjungan}, bukan hari ini (${clock.nama_hari}).`
+      };
+    }
+  }
+
+  // 6. Tiket Sah dan Aktif untuk Check-In (Default Fallback)
   return {
     status: 'ACTIVE_VALID',
     isValidForScan: true,

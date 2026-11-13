@@ -5013,7 +5013,7 @@ export const AppProvider = ({ children }) => {
     const clock = getRealtimePondokClock();
     const lifecycle = checkBarcodeLifecycle(booking, clock);
 
-    if (lifecycle.isExpired) {
+    if (lifecycle.status === 'EXPIRED_COMPLETED' || lifecycle.status === 'EXPIRED_DATE_PAST') {
       sound.playBeep?.();
       return {
         success: false,

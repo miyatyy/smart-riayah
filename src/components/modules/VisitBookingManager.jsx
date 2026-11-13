@@ -800,7 +800,7 @@ export default function VisitBookingManager({ isCompact = false }) {
                                 {/* Tombol Kirim Ulang Barcode ke WA */}
                                 {(() => {
                                   const lifecycle = checkBarcodeLifecycle(b, liveClock);
-                                  if (lifecycle.isExpired) {
+                                  if (lifecycle.status === 'EXPIRED_COMPLETED' || lifecycle.status === 'EXPIRED_DATE_PAST') {
                                     return (
                                       <button
                                         disabled
