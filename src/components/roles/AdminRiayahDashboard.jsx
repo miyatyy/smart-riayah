@@ -63,6 +63,7 @@ import BulkCsvImportModal from '../common/BulkCsvImportModal';
 import { downloadCsvFile, getTemplateCsv } from '../../utils/csvUtils';
 import { supabase } from '../../utils/supabaseClient';
 import { insertSantriToSupabase, isNameSimilar } from '../../utils/santriService';
+import { getRoomOccupants, isSantriInRoom } from '../../utils/roomService';
 
 export default function AdminRiayahDashboard() {
   const { 
@@ -1120,7 +1121,8 @@ export default function AdminRiayahDashboard() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {filteredRooms.map((room) => {
               const capacity = room.kapasitas || 8;
-              const occupied = santriList.filter(s => s.kamar.toLowerCase().includes(room.nomorKamar.toLowerCase()) || room.nomorKamar.toLowerCase().includes(s.kamar.toLowerCase())).length || room.terisi || 0;
+              const occupants = getRoomOccupants(room, santriList);
+              const occupied = occupants.length;
               const percent = Math.min(100, Math.round((occupied / capacity) * 100));
               const isFull = occupied >= capacity;
               const isPutri = room.kategoriGedung === 'PUTRI';
@@ -2488,13 +2490,7 @@ export default function AdminRiayahDashboard() {
       {viewingRoomOccupants && (() => {
         const room = viewingRoomOccupants.room;
         const isPutri = room.kategoriGedung === 'PUTRI';
-        const currentOccupants = santriList.filter(s =>
-          (s.kamarId && String(s.kamarId) === String(room.id)) ||
-          (s.kamar && (
-            s.kamar.toLowerCase().includes(room.nomorKamar.toLowerCase()) ||
-            room.nomorKamar.toLowerCase().includes(s.kamar.toLowerCase())
-          ))
-        );
+        const currentOccupants = getRoomOccupants(room, santriList);
         const capacity = room.kapasitas || 8;
         const remainingSlots = Math.max(0, capacity - currentOccupants.length);
 

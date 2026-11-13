@@ -13,6 +13,7 @@ import {
   Layers
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
+import { isSantriInRoom, getRoomOccupants } from '../../utils/roomService';
 
 /**
  * Modal untuk memasukkan / menempatkan Santri & Santriwati terdaftar ke dalam kamar asrama.
@@ -52,12 +53,7 @@ export default function AssignSantriToRoomModal({
       }
 
       // 2. Jangan tampilkan santri yang SUDAH ADA di kamar ini
-      const isAlreadyInThisRoom = (roomIdStr && s.kamarId && String(s.kamarId) === roomIdStr) ||
-        (s.kamar && roomNomor && (
-          s.kamar.toLowerCase().includes(roomNomor) ||
-          roomNomor.includes(s.kamar.toLowerCase())
-        ));
-      if (isAlreadyInThisRoom) return false;
+      if (isSantriInRoom(s, room)) return false;
 
       // 3. Filter Status Kamar
       const hasRoom = s.kamar && s.kamar !== '-' && !s.kamar.toLowerCase().includes('belum');
@@ -93,15 +89,7 @@ export default function AssignSantriToRoomModal({
   if (!isOpen || !room) return null;
 
   // Hitung penghuni kamar saat ini
-  const currentOccupants = santriList.filter(s => {
-    const roomNomor = String(room.nomorKamar || '').toLowerCase();
-    const roomIdStr = room.id ? String(room.id) : null;
-    return (roomIdStr && s.kamarId && String(s.kamarId) === roomIdStr) ||
-      (s.kamar && roomNomor && (
-        s.kamar.toLowerCase().includes(roomNomor) ||
-        roomNomor.includes(s.kamar.toLowerCase())
-      ));
-  });
+  const currentOccupants = getRoomOccupants(room, santriList);
 
   const capacity = room.kapasitas || 8;
   const occupiedCount = currentOccupants.length;

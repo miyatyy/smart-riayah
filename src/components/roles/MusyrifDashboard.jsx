@@ -31,6 +31,7 @@ import RealtimePermitBoard from '../modules/RealtimePermitBoard';
 import SantriActivityAnalytics from '../modules/SantriActivityAnalytics';
 import EditRoomModal from '../modules/EditRoomModal';
 import AssignSantriToRoomModal from '../modules/AssignSantriToRoomModal';
+import { getRoomOccupants } from '../../utils/roomService';
 
 export default function MusyrifDashboard() {
   const { 
@@ -395,13 +396,8 @@ export default function MusyrifDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {rooms.map(room => {
             const capacity = room.kapasitas || 8;
-            const occupied = santriList.filter(s =>
-              (s.kamarId && String(s.kamarId) === String(room.id)) ||
-              (s.kamar && (
-                s.kamar.toLowerCase().includes(room.nomorKamar.toLowerCase()) ||
-                room.nomorKamar.toLowerCase().includes(s.kamar.toLowerCase())
-              ))
-            ).length || room.terisi || 0;
+            const occupants = getRoomOccupants(room, santriList);
+            const occupied = occupants.length;
             const percent = Math.min(100, Math.round((occupied / capacity) * 100));
             const isFull = occupied >= capacity;
             const isPutri = room.kategoriGedung === 'PUTRI';
@@ -638,13 +634,7 @@ export default function MusyrifDashboard() {
       {viewingRoomOccupants && (() => {
         const room = viewingRoomOccupants.room;
         const isPutri = room.kategoriGedung === 'PUTRI';
-        const currentOccupants = santriList.filter(s =>
-          (s.kamarId && String(s.kamarId) === String(room.id)) ||
-          (s.kamar && (
-            s.kamar.toLowerCase().includes(room.nomorKamar.toLowerCase()) ||
-            room.nomorKamar.toLowerCase().includes(s.kamar.toLowerCase())
-          ))
-        );
+        const currentOccupants = getRoomOccupants(room, santriList);
         const capacity = room.kapasitas || 8;
         const remainingSlots = Math.max(0, capacity - currentOccupants.length);
 

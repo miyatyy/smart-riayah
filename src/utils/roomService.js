@@ -151,3 +151,65 @@ export function subscribeToRoomChanges({ onInsert, onUpdate, onDelete }) {
     supabase.removeChannel(channel);
   };
 }
+
+/**
+ * Mengecek apakah santri tertentu menempati kamar yang diberikan.
+ * Memeriksa pencocokan ID kamar, label teks kamar, nomor kamar, dan kategori gedung (Putra/Putri).
+ */
+export function isSantriInRoom(santri, room) {
+  if (!santri || !room) return false;
+
+  const roomIdStr = room.id ? String(room.id).trim().toLowerCase() : '';
+  const roomNomor = String(room.nomorKamar || '').trim().toLowerCase();
+  const roomGedung = String(room.namaGedung || '').trim().toLowerCase();
+  const isRoomPutri = room.kategoriGedung === 'PUTRI';
+
+  // 1. Direct kamarId match
+  if (santri.kamarId) {
+    const sKamarIdStr = String(santri.kamarId).trim().toLowerCase();
+    if (roomIdStr && sKamarIdStr === roomIdStr) return true;
+    if (roomNomor && sKamarIdStr === roomNomor) return true;
+  }
+
+  // 2. Kamar text matching
+  const sKamar = String(santri.kamar || '').trim().toLowerCase();
+  if (!sKamar || sKamar === '-' || sKamar.includes('belum')) return false;
+
+  // Gender safety: Santriwati (Putri) tidak boleh di kamar Putra, dan sebaliknya
+  const isSantriPutri = santri.gender === 'P' || (santri.kelas && santri.kelas.toLowerCase().includes('putri'));
+  if (room.kategoriGedung && ((isRoomPutri && !isSantriPutri) || (!isRoomPutri && isSantriPutri))) {
+    return false;
+  }
+
+  // Exact room name match
+  if (roomNomor && sKamar === roomNomor) return true;
+
+  // String inclusion (contoh: 'Asrama Putri Siti Aisyah - Kamar 202' contains 'kamar 202')
+  if (roomNomor && sKamar.includes(roomNomor)) return true;
+
+  // Nomor kamar contains sKamar jika sKamar minimal 3 karakter
+  if (roomNomor && sKamar.length >= 3 && roomNomor.includes(sKamar)) return true;
+
+  // Digits matching dalam gedung / konteks yang sama
+  const sDigits = (sKamar.match(/\d+/) || [])[0];
+  const rDigits = (roomNomor.match(/\d+/) || [])[0];
+  if (sDigits && rDigits && sDigits === rDigits) {
+    const buildingKeywords = ['aisyah', 'khadijah', 'umar', 'khattab', 'abu bakar', 'utsman', 'ali', 'khalid'];
+    const sFound = buildingKeywords.filter(k => sKamar.includes(k));
+    const rFound = buildingKeywords.filter(k => roomGedung.includes(k) || roomNomor.includes(k));
+    if (sFound.length > 0 && rFound.length > 0) {
+      return sFound.some(k => rFound.includes(k));
+    }
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Mengambil daftar santri yang menempati kamar tertentu.
+ */
+export function getRoomOccupants(room, santriList = []) {
+  if (!room || !Array.isArray(santriList)) return [];
+  return santriList.filter(s => isSantriInRoom(s, room));
+}

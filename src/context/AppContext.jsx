@@ -10,7 +10,7 @@ import {
   getVisitGatePassUrls,
   getGatePassTokenFromUrl
 } from '../utils/barcodeUtils';
-import { deleteRoomData } from '../utils/roomService';
+import { deleteRoomData, getRoomOccupants, isSantriInRoom } from '../utils/roomService';
 import { deleteSantriData } from '../utils/santriService';
 import { supabase } from '../utils/supabaseClient';
 import { sendWhatsAppBroadcast } from '../utils/whatsappRealtime';
@@ -1359,24 +1359,10 @@ export const AppProvider = ({ children }) => {
         setChatLogs(prev => syncChatLogsWithSantriList(prev, normalizedRemoteSantri));
       }
       if (remoteData.rooms?.length) {
-        setRooms(prev => {
-          const saved = localStorage.getItem('sr_rooms');
-          if (!saved) return remoteData.rooms;
-          try {
-            const localRooms = JSON.parse(saved);
-            if (!Array.isArray(localRooms) || localRooms.length === 0) return remoteData.rooms;
-            return remoteData.rooms.map(remote => {
-              const local = localRooms.find(l => String(l.id) === String(remote.id));
-              if (!local) return remote;
-              if (local.updated_at && (!remote.updated_at || new Date(local.updated_at) >= new Date(remote.updated_at))) {
-                return { ...remote, ...local };
-              }
-              return remote;
-            });
-          } catch {
-            return remoteData.rooms;
-          }
-        });
+        setRooms(remoteData.rooms);
+        try {
+          localStorage.setItem('sr_rooms', JSON.stringify(remoteData.rooms));
+        } catch {}
       }
       if (remoteData.permits?.length) setPermits(remoteData.permits);
       if (remoteData.gateLogs?.length) setGateLogs(remoteData.gateLogs);
@@ -1451,7 +1437,10 @@ export const AppProvider = ({ children }) => {
     supabase.auth.getSession()
       .then(({ data }) => {
         if (!isMounted) return;
-        if (!data?.session && localStorage.getItem('sr_is_authenticated') === 'true') {
+        if (data?.session) {
+          // Token terautentikasi siap, ambil data lengkap dari Supabase
+          loadSupabaseSnapshot();
+        } else if (localStorage.getItem('sr_is_authenticated') === 'true') {
           console.warn('⚠️ [Auth] Sesi Supabase Auth belum aktif/kedaluwarsa; mengarahkan ke halaman login agar sinkronisasi RLS berjalan normal.');
           setIsAuthenticated(false);
           setCurrentUser(null);
@@ -1468,9 +1457,9 @@ export const AppProvider = ({ children }) => {
     // Sinkronkan ulang ketika sesi autentikasi Supabase login / refresh / logout
     let authSubscription = null;
     try {
-      const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
+      const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
         if (!isMounted) return;
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        if ((event === 'INITIAL_SESSION' && session) || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
           loadSupabaseSnapshot();
         } else if (event === 'SIGNED_OUT') {
           setIsAuthenticated(false);
@@ -3300,10 +3289,19 @@ export const AppProvider = ({ children }) => {
       return { success: false, error: new Error('Data santri tidak ditemukan.') };
     }
     const roomLabel = room.nomorKamar || room.nama_kamar || 'Kamar Santri';
-    return await updateSantriCard(santriId, {
+    const result = await updateSantriCard(santriId, {
       kamar: roomLabel,
       kamarId: room.id,
     });
+
+    if (result && result.success !== false) {
+      const nextSantriList = santriList.map(s =>
+        s.id === santriId ? { ...s, kamar: roomLabel, kamarId: room.id } : s
+      );
+      const nextCount = getRoomOccupants(room, nextSantriList).length;
+      updateRoom(room.id, { terisi: nextCount });
+    }
+    return result;
   };
 
   const removeSantriFromRoom = async (santriId) => {
@@ -3311,10 +3309,27 @@ export const AppProvider = ({ children }) => {
     if (!existingTarget) {
       return { success: false, error: new Error('Data santri tidak ditemukan.') };
     }
-    return await updateSantriCard(santriId, {
+    const oldKamarId = existingTarget.kamarId;
+    const oldKamar = existingTarget.kamar;
+    const result = await updateSantriCard(santriId, {
       kamar: '',
       kamarId: null,
     });
+
+    if (result && result.success !== false) {
+      const nextSantriList = santriList.map(s =>
+        s.id === santriId ? { ...s, kamar: '', kamarId: null } : s
+      );
+      const targetRoom = rooms.find(r =>
+        (oldKamarId && r.id === oldKamarId) ||
+        (oldKamar && isSantriInRoom(existingTarget, r))
+      );
+      if (targetRoom) {
+        const nextCount = getRoomOccupants(targetRoom, nextSantriList).length;
+        updateRoom(targetRoom.id, { terisi: nextCount });
+      }
+    }
+    return result;
   };
 
   const moveSantriRoom = async (santriId, newRoom) => {
@@ -3806,63 +3821,34 @@ export const AppProvider = ({ children }) => {
   const addRoom = async (roomData) => {
     sound.playSuccess();
     const newRoom = {
-      id: `RM-${Date.now().toString().slice(-4)}`,
+      id: roomData.id || `RM-${Date.now().toString().slice(-4)}`,
       namaGedung: roomData.namaGedung,
       kategoriGedung: roomData.kategoriGedung || 'PUTRA',
       nomorKamar: roomData.nomorKamar,
-      lantai: parseInt(roomData.lantai || 1),
-      kapasitas: parseInt(roomData.kapasitas || 8),
-      terisi: parseInt(roomData.terisi || 0),
+      lantai: parseInt(roomData.lantai || 1, 10),
+      kapasitas: parseInt(roomData.kapasitas || 8, 10),
+      terisi: parseInt(roomData.terisi || 0, 10),
       ketuaKamar: roomData.ketuaKamar || 'Belum Ditentukan',
       skorKerapianTerakhir: 90,
       jadwalPiketHariIni: 'Jadwal Reguler',
-      catatanInspeksi: roomData.catatanInspeksi || 'Kamar siap huni.'
+      catatanInspeksi: roomData.catatanInspeksi || 'Kamar siap huni.',
+      updated_at: new Date().toISOString()
     };
-    setRooms(prev => [...prev, newRoom]);
+    setRooms(prev => {
+      const next = [...prev.filter(r => r.id !== newRoom.id), newRoom];
+      try { localStorage.setItem('sr_rooms', JSON.stringify(next)); } catch {}
+      return next;
+    });
 
-    // Simpan kamar baru ke backend lokal (PostgreSQL / pgAdmin) jika backend aktif
+    // Simpan kamar baru ke Supabase PostgreSQL
+    syncRoomToSupabase(newRoom);
+
+    // Simpan kamar baru ke backend lokal jika aktif
     fetch('/api/rooms', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newRoom)
     }).catch(() => {});
-
-    // Simpan kamar baru ke database Supabase
-    try {
-      const { data, error } = await supabase
-        .from('rooms')
-        .insert([{
-          id: newRoom.id,
-          nama_gedung: newRoom.namaGedung,
-          kategori_gedung: newRoom.kategoriGedung,
-          nomor_kamar: newRoom.nomorKamar,
-          lantai: newRoom.lantai,
-          kapasitas: newRoom.kapasitas,
-          terisi: newRoom.terisi,
-          ketua_kamar: newRoom.ketuaKamar,
-          skor_kerapian_terakhir: newRoom.skorKerapianTerakhir,
-          jadwal_piket_hari_ini: newRoom.jadwalPiketHariIni,
-          catatan_inspeksi: newRoom.catatanInspeksi
-        }])
-        .select();
-
-      if (error) {
-        console.warn('⚠️ [Supabase addRoom] Warning saat menyimpan kamar ke Supabase:', error.message);
-      } else {
-        console.log('✅ [Supabase addRoom] Kamar baru berhasil disimpan ke Supabase:', data);
-      }
-
-      // Sync juga ke tabel 'kamar' Supabase (kompatibilitas dual-table)
-      await supabase.from('kamar').insert([{
-        nama_kamar: `${newRoom.nomorKamar} - Lt. ${newRoom.lantai}`,
-        asrama: newRoom.namaGedung,
-        kapasitas: newRoom.kapasitas,
-        ketua: newRoom.ketuaKamar,
-        catatan: `Keterisian: ${newRoom.terisi} / ${newRoom.kapasitas} Kasur. ${newRoom.catatanInspeksi}`
-      }]).catch(() => {});
-    } catch (err) {
-      console.warn('⚠️ [Supabase addRoom] Exception saat menyimpan ke Supabase:', err);
-    }
   };
 
   const updateRoomCapacity = (roomId, newCapacity) => {
