@@ -135,6 +135,14 @@ export default function AdminRiayahDashboard() {
       : [];
   }, [permits]);
 
+  const approvedPermits = useMemo(() => {
+    return Array.isArray(permits)
+      ? permits.filter(p => p.status === 'APPROVED' || p.status === 'ACTIVE' || p.status === 'COMPLETED' || p.status === 'RETURNED')
+      : [];
+  }, [permits]);
+
+  const [permitSubTab, setPermitSubTab] = useState('pending'); // 'pending' | 'approved' | 'all'
+
   const pendingOsisReports = useMemo(() => {
     return Array.isArray(osisReports)
       ? osisReports.filter(r => r.status === 'PENDING_ADMIN')
@@ -2207,119 +2215,260 @@ export default function AdminRiayahDashboard() {
                 Antrean Approval Izin Keluar / Pulang Santri (Admin Ri&apos;ayah)
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Persetujuan izin santri kini berpusat di Admin Ri&apos;ayah dan langsung tersinkron ke IoT Turnstile Gate &amp; WhatsApp Wali Santri.
+                Persetujuan izin santri berpusat di Admin Ri&apos;ayah dan otomatis tersinkron real-time ke IoT Turnstile Gate &amp; WhatsApp Wali Santri.
               </p>
             </div>
-            <span className="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-mono font-bold self-start sm:self-center">
-              {pendingPermits.length} Antrean Menunggu
-            </span>
+            <div className="flex items-center gap-2 self-start sm:self-center">
+              <span className={`px-3 py-1.5 rounded-xl border text-xs font-mono font-bold ${
+                pendingPermits.length > 0
+                  ? 'bg-rose-50 border-rose-200 text-rose-800 animate-pulse'
+                  : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              }`}>
+                {pendingPermits.length} Antrean Menunggu
+              </span>
+            </div>
           </div>
 
-          {pendingPermits.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-xs">
-              <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 mx-auto flex items-center justify-center mb-3">
-                <Check className="w-6 h-6" />
-              </div>
-              <h3 className="text-sm font-bold text-slate-800 mb-1">
-                Semua Pengajuan Izin Santri Telah Diproses
-              </h3>
-              <p className="text-xs text-slate-500 max-w-md mx-auto">
-                Tidak ada izin santri berstatus PENDING atau EXTEND_REQUESTED saat ini.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {pendingPermits.map((permit) => {
-                const santri = santriList.find((s) => s.id === permit.santriId);
-                return (
-                  <div
-                    key={permit.id}
-                    className="bg-white rounded-2xl border-2 border-emerald-300 p-5 shadow-sm hover:shadow-md transition flex flex-col justify-between"
-                  >
-                    <div>
-                      <div className="flex items-start justify-between gap-3 mb-3">
-                        <div className="flex items-center gap-3">
-                          <img
-                            src={santri?.foto || '/images/avatar_santri_putra.jpg'}
-                            alt={santri?.nama || permit.santriNama || 'Santri'}
-                            className="w-12 h-12 rounded-xl object-cover border border-slate-200 shadow-xs"
-                          />
-                          <div>
-                            <h3 className="font-bold text-slate-900 text-sm leading-tight">
-                              {santri?.nama || permit.santriNama || 'Santri'}
-                            </h3>
-                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                              <span className="text-[10px] font-mono text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded font-bold">
-                                UID: {santri?.rfidUid || '-'}
-                              </span>
-                              <span className="text-[11px] text-slate-500">
-                                NIS: {santri?.nis || '-'}
-                              </span>
+          {/* Subtab Navigasi Status Izin */}
+          <div className="flex items-center gap-2 flex-wrap bg-white p-2 rounded-2xl border border-slate-200 shadow-2xs">
+            <button
+              onClick={() => setPermitSubTab('pending')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                permitSubTab === 'pending'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <span>Antrean Menunggu Approval</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                permitSubTab === 'pending' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+              }`}>
+                {pendingPermits.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setPermitSubTab('approved')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                permitSubTab === 'approved'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <span>Riwayat Disetujui &amp; Aktif</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                permitSubTab === 'approved' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+              }`}>
+                {approvedPermits.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setPermitSubTab('all')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                permitSubTab === 'all'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <span>Semua Data Izin</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                permitSubTab === 'all' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+              }`}>
+                {permits.length}
+              </span>
+            </button>
+          </div>
+
+          {/* TAB 1: ANTREAN MENUNGGU APPROVAL */}
+          {permitSubTab === 'pending' && (
+            <>
+              {pendingPermits.length === 0 ? (
+                <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center shadow-xs space-y-3">
+                  <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 mx-auto flex items-center justify-center">
+                    <Check className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-800">
+                      Semua Pengajuan Izin Santri Telah Diproses
+                    </h3>
+                    <p className="text-xs text-slate-500 max-w-md mx-auto mt-0.5">
+                      Saat ini tidak ada izin santri yang berstatus PENDING atau EXTEND_REQUESTED.
+                    </p>
+                  </div>
+                  {approvedPermits.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setPermitSubTab('approved')}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition inline-flex items-center gap-1.5"
+                    >
+                      <ClipboardList className="w-4 h-4 text-slate-500" />
+                      <span>Lihat Riwayat Disetujui ({approvedPermits.length} Izin)</span>
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {pendingPermits.map((permit) => {
+                    const santri = santriList.find((s) => s.id === permit.santriId);
+                    return (
+                      <div
+                        key={permit.id}
+                        className="bg-white rounded-2xl border-2 border-emerald-300 p-5 shadow-sm hover:shadow-md transition flex flex-col justify-between"
+                      >
+                        <div>
+                          <div className="flex items-start justify-between gap-3 mb-3">
+                            <div className="flex items-center gap-3">
+                              <img
+                                src={santri?.foto || '/images/avatar_santri_putra.jpg'}
+                                alt={santri?.nama || permit.santriNama || 'Santri'}
+                                className="w-12 h-12 rounded-xl object-cover border border-slate-200 shadow-xs"
+                              />
+                              <div>
+                                <h3 className="font-bold text-slate-900 text-sm leading-tight">
+                                  {santri?.nama || permit.santriNama || 'Santri'}
+                                </h3>
+                                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                  <span className="text-[10px] font-mono text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded font-bold">
+                                    UID: {santri?.rfidUid || '-'}
+                                  </span>
+                                  <span className="text-[11px] text-slate-500">
+                                    NIS: {santri?.nis || '-'}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-slate-500 mt-0.5">
+                                  {santri?.kelas || '-'} • {santri?.kamar || '-'}
+                                </p>
+                              </div>
                             </div>
-                            <p className="text-[11px] text-slate-500 mt-0.5">
-                              {santri?.kelas || '-'} • {santri?.kamar || '-'}
+                            <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black px-2.5 py-1 rounded-full uppercase">
+                              {permit.status === 'EXTEND_REQUESTED' ? 'PERPANJANGAN' : (permit.kategori || 'IZIN')}
+                            </span>
+                          </div>
+
+                          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs mb-3 space-y-1.5">
+                            <p className="text-slate-800">
+                              <b className="text-slate-600">Alasan:</b> &ldquo;{permit.keperluan || permit.reason || '-'}&rdquo;
                             </p>
+                            <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-slate-600 pt-1 border-t border-slate-200">
+                              <div>
+                                <span className="text-[10px] text-slate-400 block font-sans">Batas Kembali:</span>
+                                <b className="text-rose-600">
+                                  {permit.batasKembali ? new Date(permit.batasKembali).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-'} WIB
+                                </b>
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-slate-400 block font-sans">Penjemput:</span>
+                                <b>{permit.penjemput || '-'}</b>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="text-[11px] text-slate-500 flex items-center justify-between mb-4">
+                            <span>Wali: <b>{santri?.wali?.nama || santri?.namaWali || '-'}</b></span>
+                            <span className="font-mono text-emerald-700 font-semibold">{santri?.wali?.telepon || santri?.noWali || '-'}</span>
                           </div>
                         </div>
-                        <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black px-2.5 py-1 rounded-full uppercase">
-                          {permit.status === 'EXTEND_REQUESTED' ? 'PERPANJANGAN' : (permit.kategori || 'IZIN')}
-                        </span>
-                      </div>
 
-                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs mb-3 space-y-1.5">
-                        <p className="text-slate-800">
-                          <b className="text-slate-600">Alasan:</b> &ldquo;{permit.keperluan || permit.reason || '-'}&rdquo;
-                        </p>
-                        <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-slate-600 pt-1 border-t border-slate-200">
-                          <div>
-                            <span className="text-[10px] text-slate-400 block font-sans">Batas Kembali:</span>
-                            <b className="text-rose-600">
-                              {permit.batasKembali ? new Date(permit.batasKembali).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-'} WIB
-                            </b>
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-slate-400 block font-sans">Penjemput:</span>
-                            <b>{permit.penjemput || '-'}</b>
-                          </div>
+                        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
+                          <button
+                            onClick={() => {
+                              const catatan = prompt('Masukkan catatan persetujuan Admin Ri\'ayah untuk santri & wali:', 'Disetujui Admin Ri\'ayah. Harap kembali tepat waktu.');
+                              if (catatan !== null) {
+                                approvePermit(permit.id, catatan);
+                              }
+                            }}
+                            className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-3 rounded-xl text-xs transition shadow-sm"
+                          >
+                            <Check className="w-4 h-4" />
+                            <span>SETUJUI (APPROVE)</span>
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              const alasan = prompt('Alasan penolakan izin santri:', 'Jadwal asrama sedang padat atau alasan belum mendesak.');
+                              if (alasan) {
+                                rejectPermit(permit.id, alasan);
+                              }
+                            }}
+                            className="flex items-center justify-center gap-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-bold py-2.5 px-3 rounded-xl text-xs transition"
+                          >
+                            <X className="w-4 h-4" />
+                            <span>TOLAK IZIN</span>
+                          </button>
                         </div>
                       </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
 
-                      <div className="text-[11px] text-slate-500 flex items-center justify-between mb-4">
-                        <span>Wali: <b>{santri?.wali?.nama || santri?.namaWali || '-'}</b></span>
-                        <span className="font-mono text-emerald-700 font-semibold">{santri?.wali?.telepon || santri?.noWali || '-'}</span>
-                      </div>
+          {/* TAB 2 & 3: RIWAYAT DISETUJUI & SEMUA IZIN */}
+          {(permitSubTab === 'approved' || permitSubTab === 'all') && (
+            <div className="space-y-3">
+              {(() => {
+                const displayList = permitSubTab === 'approved' ? approvedPermits : permits;
+                if (displayList.length === 0) {
+                  return (
+                    <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center shadow-xs text-slate-500 text-xs">
+                      Belum ada data izin pada kategori ini.
                     </div>
+                  );
+                }
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {displayList.map(permit => {
+                      const santri = santriList.find(s => s.id === permit.santriId);
+                      const isApproved = permit.status === 'APPROVED';
+                      const isActive = permit.status === 'ACTIVE';
+                      const isCompleted = permit.status === 'COMPLETED' || permit.status === 'RETURNED';
 
-                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
-                      <button
-                        onClick={() => {
-                          const catatan = prompt('Masukkan catatan persetujuan Admin Ri\'ayah untuk santri & wali:', 'Disetujui Admin Ri\'ayah. Harap kembali tepat waktu.');
-                          if (catatan !== null) {
-                            approvePermit(permit.id, catatan);
-                          }
-                        }}
-                        className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-3 rounded-xl text-xs transition shadow-sm"
-                      >
-                        <Check className="w-4 h-4" />
-                        <span>SETUJUI (APPROVE)</span>
-                      </button>
+                      return (
+                        <div key={permit.id} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs space-y-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-3">
+                              <img
+                                src={santri?.foto || (santri?.gender === 'P' ? '/images/avatar_santri_putri.jpg' : '/images/avatar_santri_putra.jpg')}
+                                alt={santri?.nama || permit.santri_name}
+                                className="w-10 h-10 rounded-xl object-cover border border-slate-200"
+                              />
+                              <div>
+                                <h4 className="font-bold text-xs text-slate-900 leading-tight">
+                                  {santri?.nama || permit.santri_name || permit.santriNama || 'Santri'}
+                                </h4>
+                                <div className="text-[10px] text-slate-500 font-mono">
+                                  NIS: {santri?.nis || '-'} • {santri?.kelas || '-'}
+                                </div>
+                              </div>
+                            </div>
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
+                              isApproved
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : isActive
+                                ? 'bg-sky-50 text-sky-700 border-sky-200'
+                                : isCompleted
+                                ? 'bg-slate-100 text-slate-600 border-slate-200'
+                                : 'bg-amber-50 text-amber-700 border-amber-200'
+                            }`}>
+                              {permit.status}
+                            </span>
+                          </div>
 
-                      <button
-                        onClick={() => {
-                          const alasan = prompt('Alasan penolakan izin santri:', 'Jadwal asrama sedang padat atau alasan belum mendesak.');
-                          if (alasan) {
-                            rejectPermit(permit.id, alasan);
-                          }
-                        }}
-                        className="flex items-center justify-center gap-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-bold py-2.5 px-3 rounded-xl text-xs transition"
-                      >
-                        <X className="w-4 h-4" />
-                        <span>TOLAK IZIN</span>
-                      </button>
-                    </div>
+                          <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80 text-[11px] space-y-1">
+                            <div><span className="text-slate-500">Keperluan:</span> <b className="text-slate-800">{permit.reason || permit.keperluan || '-'}</b></div>
+                            <div className="flex justify-between text-[10px] text-slate-500 font-mono pt-1 border-t border-slate-200">
+                              <span>Batas Kembali: <b className="text-slate-700">{permit.batasKembali ? new Date(permit.batasKembali).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : (permit.return_date ? new Date(permit.return_date).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-')}</b></span>
+                              <span>Kode: <b className="text-slate-700">{permit.permit_code || permit.tokenIzin || permit.id}</b></span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 );
-              })}
+              })()}
             </div>
           )}
         </div>

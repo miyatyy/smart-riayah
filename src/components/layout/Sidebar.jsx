@@ -161,7 +161,7 @@ function getMenuItems(role, {
         { id: 'rfid_cards', label: 'Tabel RFID', icon: CreditCard, badge: `${santriList.length}` },
         { id: 'rfid_pairing', label: 'Scanner RFID', icon: Radio, badge: 'Scan' },
         { id: 'express_kiosk', label: 'Kiosk Izin', icon: Zap, badge: 'Cepat' },
-        { id: 'permit_approval', label: 'Approval Izin', icon: ShieldCheck, badge: pendingPermitsCount > 0 ? `${pendingPermitsCount} Menunggu` : `${permits.length}`, urgent: pendingPermitsCount > 0 },
+        { id: 'permit_approval', label: 'Approval Izin', icon: ShieldCheck, badge: pendingPermitsCount > 0 ? `${pendingPermitsCount} Menunggu` : null, urgent: pendingPermitsCount > 0 },
         { id: 'visit_bookings', label: 'Kunjungan Tamu', icon: Calendar, badge: pendingVisitsCount > 0 ? `${pendingVisitsCount} Menunggu` : 'QR Pass', urgent: pendingVisitsCount > 0 },
         { id: 'osis_verification', label: 'Verifikasi OSIS', icon: Shield, badge: pendingOsisCount > 0 ? `${pendingOsisCount} Baru` : null, urgent: pendingOsisCount > 0 },
         { id: 'gate_logs', label: 'Log Gerbang', icon: ClipboardList, badge: `${gateLogs.length}` },
