@@ -23,6 +23,7 @@ import { fetchVisitBookingsFromSupabase } from '../../utils/supabaseSync';
 function findBookingByToken(list, rawToken, santriList = []) {
   if (!rawToken) return null;
   const clean = String(rawToken).trim().toUpperCase();
+  const isCleanTest = clean.includes('TEST');
 
   if (Array.isArray(list) && list.length > 0) {
     // 1. Exact match barcode_token atau id
@@ -33,23 +34,43 @@ function findBookingByToken(list, rawToken, santriList = []) {
     if (exact) return exact;
 
     // 2. Substring match
-    const sub = list.find(item =>
-      (item.barcode_token && (clean.includes(item.barcode_token.toUpperCase()) || item.barcode_token.toUpperCase().includes(clean)))
-    );
+    const sub = list.find(item => {
+      const bToken = String(item.barcode_token || '').toUpperCase();
+      if (!bToken) return false;
+      if (!isCleanTest && (bToken.includes('TEST') || String(item.id || '').includes('TEST') || /simulasi/i.test(item.titipan_barang))) return false;
+      return (clean.includes(bToken) || bToken.includes(clean));
+    });
     if (sub) return sub;
 
     // 3. Match berdasarkan nama santri di dalam token (contoh: GP-DU-NURMIYATY-1027 vs Nurmiyaty / GP-DU-NURMIY-9416)
     const tokenMatch = clean.match(/^GP[-_]DU[-_]([A-Z0-9]+?)(?:[-_]\d+)?$/i);
     if (tokenMatch && tokenMatch[1]) {
       const namePart = tokenMatch[1].toUpperCase();
-      const matchedByName = list.find(item => {
+      const candidates = list.filter(item => {
+        if (!isCleanTest && (String(item.barcode_token || '').includes('TEST') || String(item.id || '').includes('TEST') || /simulasi/i.test(item.titipan_barang))) return false;
         const bSantri = String(item.nama_santri || '').toUpperCase().replace(/[^A-Z]/g, '');
         const bToken = String(item.barcode_token || '').toUpperCase();
         if (bSantri && (bSantri.includes(namePart) || namePart.includes(bSantri.slice(0, 5)))) return true;
         if (bToken && (bToken.includes(namePart) || namePart.includes(bToken.replace(/^GP[-_]DU[-_]/, '').split(/[-_]/)[0]))) return true;
         return false;
       });
-      if (matchedByName) return matchedByName;
+
+      if (candidates.length > 0) {
+        // Prioritaskan yang aktif di atas yang selesai/expired
+        candidates.sort((a, b) => {
+          const rankStatus = (st) => {
+            if (st === 'Sedang Berkunjung' || String(st).includes('Sedang Berkunjung')) return 10;
+            if (String(st).includes('Disetujui')) return 8;
+            if (String(st).includes('Menunggu')) return 5;
+            return 1;
+          };
+          const rA = rankStatus(a.status_kunjungan);
+          const rB = rankStatus(b.status_kunjungan);
+          if (rA !== rB) return rB - rA;
+          return (Date.parse(b.created_at || b.updated_at || 0) || 0) - (Date.parse(a.created_at || a.updated_at || 0) || 0);
+        });
+        return candidates[0];
+      }
     }
   }
 

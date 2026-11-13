@@ -210,8 +210,17 @@ export default function SecurityVisitGateModule() {
       extractedNameFromToken = gpMatch[1].toUpperCase();
     }
 
+    const isCleanTest = token.includes('TEST');
+    const isTestItem = (b) => Boolean(
+      b?.is_test ||
+      String(b?.id || '').includes('TEST') ||
+      String(b?.barcode_token || '').includes('TEST') ||
+      /simulasi/i.test(String(b?.titipan_barang || ''))
+    );
+
     // 1. Cari booking yang cocok di daftar visitBookings
-    let booking = bookings.find(b => {
+    const candidates = bookings.filter(b => {
+      if (!isCleanTest && isTestItem(b)) return false;
       const bToken = String(b.barcode_token || '').toUpperCase();
       const bId = String(b.id || '').toUpperCase();
       const bSantri = String(b.nama_santri || '').toUpperCase();
@@ -242,6 +251,23 @@ export default function SecurityVisitGateModule() {
 
       return false;
     });
+
+    let booking = null;
+    if (candidates.length > 0) {
+      candidates.sort((a, b) => {
+        const rankStatus = (st) => {
+          if (st === 'Sedang Berkunjung' || String(st).includes('Sedang Berkunjung')) return 10;
+          if (String(st).includes('Disetujui')) return 8;
+          if (String(st).includes('Menunggu')) return 5;
+          return 1;
+        };
+        const rA = rankStatus(a.status_kunjungan);
+        const rB = rankStatus(b.status_kunjungan);
+        if (rA !== rB) return rB - rA;
+        return (Date.parse(b.created_at || b.updated_at || 0) || 0) - (Date.parse(a.created_at || a.updated_at || 0) || 0);
+      });
+      booking = candidates[0];
+    }
 
     // 2. Jika tidak ada di visitBookings, cari di database santri (santriList) untuk auto-check-in walk-in
     if (!booking) {

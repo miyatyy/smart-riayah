@@ -87,12 +87,12 @@ const STANDBY_OLED = {
 const VISIT_STATUS_RANK = {
   'Menunggu Approval': 1,
   'Menunggu Approval Admin Ri\'ayah': 1,
-  'Disetujui (Auto-Approved Weekend)': 3,
-  'Disetujui (Siap Datang)': 3,
-  'Disetujui': 3,
-  'Sedang Berkunjung': 4,
-  'Selesai': 5,
-  'Ditolak': 5
+  'Disetujui (Auto-Approved Weekend)': 2,
+  'Disetujui (Siap Datang)': 2,
+  'Disetujui': 2,
+  'Sedang Berkunjung': 3,
+  'Selesai': 4,
+  'Ditolak': 4
 };
 
 function getVisitBookingTimestamp(b) {
@@ -231,19 +231,29 @@ export function consolidateDuplicateVisitBookings(list = []) {
     return { consolidated: [], redundantMessageIds: [], hasChanges: false };
   }
 
+  const isTestBooking = (b) => Boolean(
+    b?.is_test ||
+    String(b?.id || '').includes('TEST') ||
+    String(b?.barcode_token || '').includes('TEST') ||
+    /simulasi/i.test(String(b?.titipan_barang || ''))
+  );
+
   const grouped = new Map();
   const redundantMessageIds = [];
   let hasChanges = false;
 
   for (const item of list) {
     if (!item) continue;
+    const isTest = isTestBooking(item);
     const dateKey = String(item.tanggal_kunjungan || '').trim();
     const rawPhone = item.no_wa_penjenguk || item.phone || item.whatsapp_penjenguk || '';
     const phoneClean = normalizePhone(rawPhone) || String(rawPhone).replace(/[^0-9]/g, '');
     const santriClean = String(item.nama_santri || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 
-    // Kunci grup unik: tanggal + nomor telepon wali + nama santri
-    const compositeKey = `${dateKey}|${phoneClean || 'no_phone'}|${santriClean || item.id}`;
+    // Kunci unik: jika item test simulasi, beri namespace terpisah agar tidak menimpa data real
+    const compositeKey = isTest 
+      ? `TEST|${item.id || item.barcode_token}`
+      : `${dateKey}|${phoneClean || 'no_phone'}|${santriClean || item.id}`;
 
     if (!grouped.has(compositeKey)) {
       grouped.set(compositeKey, { ...item });
@@ -251,32 +261,53 @@ export function consolidateDuplicateVisitBookings(list = []) {
       hasChanges = true;
       const existing = grouped.get(compositeKey);
 
-      const rankExist = VISIT_STATUS_RANK[existing.status_kunjungan] || 2;
-      const rankNew = VISIT_STATUS_RANK[item.status_kunjungan] || 2;
-
-      // Bedakan jam default generic (09:00 - 17:30) vs jam kustom yang spesifik disebutkan wali (misal 15:10 - 17:00)
-      const isDefaultHours = (b) => (b.jam_kunjungan === '09:00' && b.jam_selesai === '17:30');
-      const existIsDefault = isDefaultHours(existing);
-      const newIsDefault = isDefaultHours(item);
-
       const tsExist = getVisitBookingTimestamp(existing);
       const tsNew = getVisitBookingTimestamp(item);
 
+      const isOngoing = (b) => b?.status_kunjungan === 'Sedang Berkunjung' || String(b?.status_kunjungan || '').includes('Sedang Berkunjung');
+      const isCompleted = (b) => b?.status_kunjungan === 'Selesai' || String(b?.status_kunjungan || '').includes('Selesai');
+      const isApproved = (b) => String(b?.status_kunjungan || '').includes('Disetujui');
+
       let chooseNew = false;
-      if (rankNew > rankExist) {
+
+      // ATURAN 1: Tamu yang sedang berkunjung (Sedang Berkunjung) di area pondok adalah prioritas mutlak
+      if (isOngoing(item) && !isOngoing(existing)) {
         chooseNew = true;
-      } else if (rankNew === rankExist) {
-        if (existIsDefault && !newIsDefault) {
-          chooseNew = true; // Data baru memiliki jam spesifik wali
-        } else if (!existIsDefault && newIsDefault) {
+      } else if (isOngoing(existing) && !isOngoing(item)) {
+        // Hanya ganti jika item baru adalah checkout resmi untuk ID YANG SAMA dan tercatat sesudahnya
+        if (existing.id && item.id && existing.id === item.id && isCompleted(item) && tsNew >= tsExist) {
+          chooseNew = true;
+        } else {
           chooseNew = false;
-        } else if (tsNew >= tsExist) {
+        }
+      } else if (tsNew > tsExist) {
+        // Record baru dibuat lebih belakangan:
+        // Jika record baru aktif ('Disetujui') dan record lama sudah 'Selesai' di sesi jam sebelumnya:
+        // Record baru yang aktif harus menang!
+        chooseNew = true;
+      } else if (tsNew === tsExist) {
+        // Jika timestamp sama, pilih yang jamnya spesifik bukan default generic 09:00-17:30
+        const isDefaultHours = (b) => (b.jam_kunjungan === '09:00' && b.jam_selesai === '17:30');
+        if (isDefaultHours(existing) && !isDefaultHours(item)) {
+          chooseNew = true;
+        } else if (isApproved(item) && !isApproved(existing)) {
+          chooseNew = true;
+        } else if (item.barcode_token && !existing.barcode_token) {
           chooseNew = true;
         }
       }
 
+      // Gabungkan field sehingga field valid (barcode, url) tidak hilang
       const winner = chooseNew ? { ...existing, ...item } : { ...item, ...existing };
       const loser = chooseNew ? existing : item;
+
+      // Bersihkan residual jam keluar jika statusnya aktif
+      if (isOngoing(winner) || isApproved(winner)) {
+        winner.jam_keluar_aktual = null;
+        winner.jam_checkout_aktual = null;
+        winner.is_used_completed = false;
+        winner.is_barcode_expired = false;
+      }
 
       if (loser._supabaseMessageId && loser._supabaseMessageId !== winner._supabaseMessageId) {
         redundantMessageIds.push(loser._supabaseMessageId);
@@ -5301,25 +5332,53 @@ export const AppProvider = ({ children }) => {
     const clean = String(token).trim().toUpperCase();
     const clock = getRealtimePondokClock();
 
+    const isCleanTest = clean.includes('TEST');
+
+    // 1. Exact match barcode_token atau ID
     let booking = (visitBookings || []).find(b => 
       (b.barcode_token && b.barcode_token.toUpperCase() === clean) ||
-      (b.id && b.id.toUpperCase() === clean) ||
-      (b.barcode_token && clean.includes(b.barcode_token.toUpperCase())) ||
-      (b.barcode_token && b.barcode_token.toUpperCase().includes(clean))
+      (b.id && b.id.toUpperCase() === clean)
     );
+
+    // 2. Substring match
+    if (!booking) {
+      booking = (visitBookings || []).find(b => {
+        const bToken = String(b.barcode_token || '').toUpperCase();
+        if (!bToken) return false;
+        if (!isCleanTest && (bToken.includes('TEST') || String(b.id || '').includes('TEST') || /simulasi/i.test(b.titipan_barang))) return false;
+        return clean.includes(bToken) || bToken.includes(clean);
+      });
+    }
 
     // Smart fuzzy match berdasarkan nama santri di dalam token tiket (GP-DU-[NAMA]-...)
     if (!booking) {
       const tokenMatch = clean.match(/^GP[-_]DU[-_]([A-Z0-9]+?)(?:[-_]\d+)?$/i);
       if (tokenMatch && tokenMatch[1]) {
         const namePart = tokenMatch[1].toUpperCase();
-        booking = (visitBookings || []).find(b => {
+        const candidates = (visitBookings || []).filter(b => {
+          if (!isCleanTest && (String(b.barcode_token || '').includes('TEST') || String(b.id || '').includes('TEST') || /simulasi/i.test(b.titipan_barang))) return false;
           const bSantri = String(b.nama_santri || '').toUpperCase().replace(/[^A-Z]/g, '');
           const bToken = String(b.barcode_token || '').toUpperCase();
           if (bSantri && (bSantri.includes(namePart) || namePart.includes(bSantri.slice(0, 5)))) return true;
           if (bToken && (bToken.includes(namePart) || namePart.includes(bToken.replace(/^GP[-_]DU[-_]/, '').split(/[-_]/)[0]))) return true;
           return false;
         });
+
+        if (candidates.length > 0) {
+          candidates.sort((a, b) => {
+            const rankStatus = (st) => {
+              if (st === 'Sedang Berkunjung' || String(st).includes('Sedang Berkunjung')) return 10;
+              if (String(st).includes('Disetujui')) return 8;
+              if (String(st).includes('Menunggu')) return 5;
+              return 1;
+            };
+            const rA = rankStatus(a.status_kunjungan);
+            const rB = rankStatus(b.status_kunjungan);
+            if (rA !== rB) return rB - rA;
+            return (Date.parse(b.created_at || b.updated_at || 0) || 0) - (Date.parse(a.created_at || a.updated_at || 0) || 0);
+          });
+          booking = candidates[0];
+        }
       }
     }
 
@@ -5393,26 +5452,53 @@ export const AppProvider = ({ children }) => {
     const clock = getRealtimePondokClock();
     const formattedScanTime = `${clock.nama_hari}, ${clock.tanggal_lengkap} • ${clock.jam_menit_detik} WITA`;
 
-    // Cari booking berdasarkan barcode_token, id, atau substring
+    const isCleanTest = clean.includes('TEST');
+
+    // 1. Exact match barcode_token atau id
     let booking = (visitBookings || []).find(b => 
       (b.barcode_token && b.barcode_token.toUpperCase() === clean) ||
-      (b.id && b.id.toUpperCase() === clean) ||
-      (b.barcode_token && clean.includes(b.barcode_token.toUpperCase())) ||
-      (b.barcode_token && b.barcode_token.toUpperCase().includes(clean))
+      (b.id && b.id.toUpperCase() === clean)
     );
+
+    // 2. Substring match
+    if (!booking) {
+      booking = (visitBookings || []).find(b => {
+        const bToken = String(b.barcode_token || '').toUpperCase();
+        if (!bToken) return false;
+        if (!isCleanTest && (bToken.includes('TEST') || String(b.id || '').includes('TEST') || /simulasi/i.test(b.titipan_barang))) return false;
+        return clean.includes(bToken) || bToken.includes(clean);
+      });
+    }
 
     // Smart fuzzy match berdasarkan nama santri di token
     if (!booking) {
       const tokenMatch = clean.match(/^GP[-_]DU[-_]([A-Z0-9]+?)(?:[-_]\d+)?$/i);
       if (tokenMatch && tokenMatch[1]) {
         const namePart = tokenMatch[1].toUpperCase();
-        booking = (visitBookings || []).find(b => {
+        const candidates = (visitBookings || []).filter(b => {
+          if (!isCleanTest && (String(b.barcode_token || '').includes('TEST') || String(b.id || '').includes('TEST') || /simulasi/i.test(b.titipan_barang))) return false;
           const bSantri = String(b.nama_santri || '').toUpperCase().replace(/[^A-Z]/g, '');
           const bToken = String(b.barcode_token || '').toUpperCase();
           if (bSantri && (bSantri.includes(namePart) || namePart.includes(bSantri.slice(0, 5)))) return true;
           if (bToken && (bToken.includes(namePart) || namePart.includes(bToken.replace(/^GP[-_]DU[-_]/, '').split(/[-_]/)[0]))) return true;
           return false;
         });
+
+        if (candidates.length > 0) {
+          candidates.sort((a, b) => {
+            const rankStatus = (st) => {
+              if (st === 'Sedang Berkunjung' || String(st).includes('Sedang Berkunjung')) return 10;
+              if (String(st).includes('Disetujui')) return 8;
+              if (String(st).includes('Menunggu')) return 5;
+              return 1;
+            };
+            const rA = rankStatus(a.status_kunjungan);
+            const rB = rankStatus(b.status_kunjungan);
+            if (rA !== rB) return rB - rA;
+            return (Date.parse(b.created_at || b.updated_at || 0) || 0) - (Date.parse(a.created_at || a.updated_at || 0) || 0);
+          });
+          booking = candidates[0];
+        }
       }
     }
 
