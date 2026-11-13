@@ -142,17 +142,115 @@ export default function SecurityVisitGateModule() {
   // 3. FUNGSI PEMROSESAN UTAMA HASIL SCAN BARCODE (KAMERA / UPLOAD / USB SCANNER)
   const handleProcessScannedBarcode = (rawCode, source = 'CAMERA') => {
     if (!rawCode) return;
-    const token = extractBarcodeToken(rawCode);
+    const token = extractBarcodeToken(rawCode).trim().toUpperCase();
     const bookings = Array.isArray(visitBookings) ? visitBookings : [];
 
-    const booking = bookings.find(b =>
-      (b.barcode_token && b.barcode_token.toUpperCase() === token) ||
-      (b.id && b.id.toUpperCase() === token) ||
-      (b.barcode_token && token.includes(b.barcode_token.toUpperCase())) ||
-      (b.barcode_token && b.barcode_token.toUpperCase().includes(token))
-    );
+    // Helper: ekstrak potensi nama santri dari kode tiket (misal: GP-DU-NURMIYATY-1027 -> NURMIYATY)
+    let extractedNameFromToken = '';
+    const gpMatch = token.match(/^GP[-_]DU[-_]([A-Z0-9]+?)(?:[-_]\d+)?$/i);
+    if (gpMatch && gpMatch[1]) {
+      extractedNameFromToken = gpMatch[1].toUpperCase();
+    }
 
+    // 1. Cari booking yang cocok di daftar visitBookings
+    let booking = bookings.find(b => {
+      const bToken = String(b.barcode_token || '').toUpperCase();
+      const bId = String(b.id || '').toUpperCase();
+      const bSantri = String(b.nama_santri || '').toUpperCase();
+      const bNis = String(b.nis || '').toUpperCase();
+      const bPhone = String(b.no_wa_penjenguk || '').replace(/\D/g, '');
+      const cleanTokenPhone = token.replace(/\D/g, '');
+
+      // A. Match persis barcode token atau ID
+      if (bToken && bToken === token) return true;
+      if (bId && bId === token) return true;
+
+      // B. Substring barcode token
+      if (bToken && (token.includes(bToken) || bToken.includes(token))) return true;
+
+      // C. Match jika token mengandung nama santri (contoh: GP-DU-NURMIYATY-1027 vs Nurmiyaty)
+      if (extractedNameFromToken && bSantri && (bSantri.includes(extractedNameFromToken) || extractedNameFromToken.includes(bSantri.replace(/[^A-Z]/g, '').slice(0, 6)))) {
+        return true;
+      }
+
+      // D. Match jika Satpam mengetik nama santri langsung
+      if (token.length >= 3 && bSantri && bSantri.includes(token)) return true;
+
+      // E. Match NIS
+      if (bNis && bNis === token) return true;
+
+      // F. Match No WA Wali
+      if (cleanTokenPhone.length >= 8 && bPhone && (bPhone.includes(cleanTokenPhone) || cleanTokenPhone.includes(bPhone))) return true;
+
+      return false;
+    });
+
+    // 2. Jika tidak ada di visitBookings, cari di database santri (santriList) untuk auto-check-in walk-in
     if (!booking) {
+      const sList = Array.isArray(santriList) ? santriList : [];
+      const searchTarget = extractedNameFromToken || token;
+
+      const matchedSantri = sList.find(s => {
+        const sName = String(s.nama || '').toUpperCase();
+        const sNis = String(s.nis || '').toUpperCase();
+        const sRfid = String(s.rfidUid || '').toUpperCase();
+        const sPhone = String(s.noWali || '').replace(/\D/g, '');
+        const cleanPhone = token.replace(/\D/g, '');
+
+        if (sName && searchTarget.length >= 3 && (sName.includes(searchTarget) || searchTarget.includes(sName.replace(/[^A-Z]/g, '').slice(0, 6)))) {
+          return true;
+        }
+        if (sNis && sNis === token) return true;
+        if (sRfid && sRfid === token) return true;
+        if (cleanPhone.length >= 8 && sPhone && (sPhone.includes(cleanPhone) || cleanPhone.includes(sPhone))) return true;
+        return false;
+      });
+
+      if (matchedSantri) {
+        const clock = getRealtimePondokClock();
+        const [h, m] = clock.jam_menit.split(':').map(Number);
+        const endH = String((h + 1) % 24).padStart(2, '0');
+        const endM = String(m).padStart(2, '0');
+
+        const newWalkinBooking = {
+          id: `VST-${clock.tanggal_ymd.replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`,
+          booking_source: 'MANUAL_SATPAM',
+          nama_santri: matchedSantri.nama,
+          santri_id: matchedSantri.id,
+          nis: matchedSantri.nis,
+          kelas: matchedSantri.kelas,
+          kamar: matchedSantri.kamar || matchedSantri.asrama || 'Asrama Pondok',
+          asal: matchedSantri.asal || 'Surabaya',
+          tanggal_kunjungan: clock.tanggal_ymd,
+          hari_kunjungan: clock.nama_hari,
+          jam_kunjungan: clock.jam_menit,
+          jam_selesai: `${endH}:${endM}`,
+          titipan_barang: 'Titipan Wali Santri (Pos Gerbang)',
+          berat_barang_kg: 1.0,
+          nama_penjenguk: matchedSantri.namaWali || 'Wali Santri',
+          status_penjenguk: 'Wali Santri',
+          no_wa_penjenguk: matchedSantri.noWali || '',
+          rfid_uid: matchedSantri.rfidUid || null,
+          barcode_token: token,
+          status_kunjungan: 'Sedang Berkunjung',
+          jam_masuk_aktual: clock.jam_menit_detik,
+          jam_checkin_aktual: clock.jam_menit,
+          metode_verifikasi: source || 'INPUT_MANUAL_SATPAM',
+          created_at: new Date().toISOString()
+        };
+
+        const updated = checkInVisitBooking(newWalkinBooking, source);
+        sound.playSuccess?.();
+        setScanModalResult({
+          isOpen: true,
+          success: true,
+          title: '✅ CHECK-IN POS SATPAM BERHASIL (WALK-IN RESMI)',
+          message: `Kupon [${token}] berhasil diverifikasi untuk santri ${matchedSantri.nama} (${matchedSantri.kelas}). Wali santri resmi check-in dan tercatat di area pondok.`,
+          booking: updated || newWalkinBooking
+        });
+        return;
+      }
+
       sound.playAccessDenied?.();
       setScanModalResult({
         isOpen: true,
@@ -164,16 +262,34 @@ export default function SecurityVisitGateModule() {
       return;
     }
 
+    // Jika booking ditemukan: sinkronkan barcode_token jika sebelumnya beda
+    if (!booking.barcode_token || (token.startsWith('GP-DU-') && booking.barcode_token !== token)) {
+      booking.barcode_token = token;
+    }
+
     const clock = getRealtimePondokClock();
     const lc = checkBarcodeLifecycle(booking, clock);
 
-    // KUNCI KETAT JADWAL: Tolak jika kategori hari salah, tanggal lewat/belum aktif, jam belum/sudah lewat, dsb.
-    if (!lc.isValidForScan) {
+    // Jika sudah sedang berkunjung: beri info bahwa sudah di dalam
+    if (booking.status_kunjungan === 'Sedang Berkunjung' || booking.status_kunjungan?.includes('Sedang Berkunjung')) {
+      sound.playSuccess?.();
+      setScanModalResult({
+        isOpen: true,
+        success: true,
+        title: 'ℹ️ TAMU SUDAH BERADA DI DALAM PONDOK',
+        message: `Wali ${booking.nama_penjenguk} (Wali ${booking.nama_santri}) sudah check-in pada pukul ${booking.jam_masuk_aktual || booking.jam_checkin_aktual || 'sebelumnya'} WITA.`,
+        booking
+      });
+      return;
+    }
+
+    // Jika tiket sudah checkout / expired tanggal lewat:
+    if (lc.status === 'EXPIRED_COMPLETED' || lc.status === 'EXPIRED_DATE_PAST') {
       sound.playAccessDenied?.();
       setScanModalResult({
         isOpen: true,
         success: false,
-        isExpired: lc.isExpired,
+        isExpired: true,
         title: lc.badgeLabel,
         message: lc.message,
         booking
@@ -181,8 +297,23 @@ export default function SecurityVisitGateModule() {
       return;
     }
 
+    // Jika tidak valid untuk scan otomatis (misal jadwal hari kerja/beda tanggal),
+    // BERIKAN OPSI DISPENSASI KHUSUS SATPAM daripada memblokir total!
+    if (!lc.isValidForScan) {
+      sound.playAccessDenied?.();
+      setScanModalResult({
+        isOpen: true,
+        success: false,
+        canDispensasi: true,
+        title: lc.badgeLabel,
+        message: `${lc.message}\n\nWali santri telah tiba di pos gerbang. Apakah Satpam ingin memberikan izin masuk khusus (dispensasi kedatangan) hari ini?`,
+        booking
+      });
+      return;
+    }
+
     // Tiket Sah: Lakukan Check-In Otomatis!
-    const updated = checkInVisitBooking(booking.id, source);
+    const updated = checkInVisitBooking(booking.id || booking, source);
     sound.playSuccess?.();
     setScanModalResult({
       isOpen: true,
@@ -636,7 +767,7 @@ export default function SecurityVisitGateModule() {
               <form onSubmit={handleManualBarcodeInput} className="flex gap-2">
                 <input
                   type="text"
-                  placeholder="Ketik kode (contoh: SR-20261108...)..."
+                  placeholder="Ketik kode (GP-DU-..., SR-...) / Nama Santri..."
                   value={barcodeInput}
                   onChange={(e) => setBarcodeInput(e.target.value)}
                   className="flex-1 px-3 py-2 text-xs rounded-xl bg-slate-900 border border-slate-600 text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 font-mono font-bold"
@@ -648,6 +779,9 @@ export default function SecurityVisitGateModule() {
                   <span>Proses</span>
                 </button>
               </form>
+              <div className="text-[10px] text-slate-400 flex items-center justify-between">
+                <span>Contoh: <code className="text-emerald-300">GP-DU-NURMIYATY-1027</code> atau ketik nama santri</span>
+              </div>
             </div>
 
           </div>
@@ -745,14 +879,43 @@ export default function SecurityVisitGateModule() {
               </div>
             )}
 
-            {/* Tombol Tutup Modal */}
-            <div className="pt-1">
+            {/* Tombol Aksi Modal Satpam */}
+            <div className="pt-1 space-y-2">
+              {scanModalResult.canDispensasi && scanModalResult.booking && (
+                <button
+                  onClick={() => {
+                    const b = scanModalResult.booking;
+                    const updated = checkInVisitBooking(b.id || b, 'DISPENSASI_SATPAM');
+                    sound.playSuccess?.();
+                    setScanModalResult({
+                      isOpen: true,
+                      success: true,
+                      title: '✅ CHECK-IN DISPENSASI SATPAM BERHASIL',
+                      message: `Wali santri ${b.nama_penjenguk} (Wali ${b.nama_santri}) resmi diberikan izin masuk khusus dan tercatat di area pondok.`,
+                      booking: updated || {
+                        ...b,
+                        status_kunjungan: 'Sedang Berkunjung',
+                        jam_masuk_aktual: liveClock.jam_menit_detik
+                      }
+                    });
+                  }}
+                  className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition shadow-lg flex items-center justify-center gap-2 animate-pulse"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>✓ Izinkan Check-In Khusus (Dispensasi Pos Satpam Hari Ini)</span>
+                </button>
+              )}
+
               <button
                 onClick={() => setScanModalResult(null)}
-                className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black text-xs transition shadow-lg shadow-emerald-950/50 flex items-center justify-center gap-2"
+                className={`w-full py-3 rounded-xl ${
+                  scanModalResult.success
+                    ? 'bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black'
+                    : 'bg-slate-700 hover:bg-slate-600 text-white font-bold'
+                } text-xs transition shadow-lg flex items-center justify-center gap-2`}
               >
                 <Check className="w-4 h-4" />
-                <span>✓ Tutup &amp; Lanjutkan Pemantauan Pos Gerbang</span>
+                <span>{scanModalResult.success ? '✓ Tutup & Lanjutkan Pemantauan Pos Gerbang' : 'Tutup'}</span>
               </button>
             </div>
 

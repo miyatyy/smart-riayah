@@ -4624,18 +4624,24 @@ export const AppProvider = ({ children }) => {
     sound.playBeep?.();
   };
 
-  const checkInVisitBooking = (bookingId, method = 'BARCODE') => {
+  const checkInVisitBooking = (bookingOrId, method = 'BARCODE') => {
     const clock = getRealtimePondokClock();
     let updatedBooking = null;
-    const cleanId = String(bookingId || '').trim().toUpperCase();
+    const isObject = typeof bookingOrId === 'object' && bookingOrId !== null;
+    const targetObj = isObject ? bookingOrId : null;
+    const cleanId = String(isObject ? (bookingOrId.id || bookingOrId.barcode_token || '') : (bookingOrId || '')).trim().toUpperCase();
 
     setVisitBookings(prev => {
+      let foundExisting = false;
       const next = prev.map(b => {
         const matchId = String(b.id || '').toUpperCase() === cleanId;
         const matchToken = b.barcode_token && b.barcode_token.toUpperCase() === cleanId;
-        if (matchId || matchToken) {
+        const matchObjId = targetObj && String(b.id || '').toUpperCase() === String(targetObj.id || '').toUpperCase();
+        if (matchId || matchToken || matchObjId) {
+          foundExisting = true;
           updatedBooking = {
             ...b,
+            ...(targetObj || {}),
             status_kunjungan: 'Sedang Berkunjung',
             jam_masuk_aktual: clock.jam_menit_detik,
             jam_checkin_aktual: clock.jam_menit,
@@ -4645,6 +4651,22 @@ export const AppProvider = ({ children }) => {
         }
         return b;
       });
+
+      if (!foundExisting && targetObj) {
+        updatedBooking = {
+          ...targetObj,
+          status_kunjungan: 'Sedang Berkunjung',
+          jam_masuk_aktual: clock.jam_menit_detik,
+          jam_checkin_aktual: clock.jam_menit,
+          metode_verifikasi: method
+        };
+        const updatedList = [updatedBooking, ...prev];
+        try {
+          localStorage.setItem('sr_visit_bookings', JSON.stringify(updatedList));
+        } catch (e) {}
+        return updatedList;
+      }
+
       try {
         localStorage.setItem('sr_visit_bookings', JSON.stringify(next));
       } catch (e) {}
