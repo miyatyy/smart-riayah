@@ -15,6 +15,7 @@ import {
   getVisitGatePassUrls,
   downloadBarcodeImage,
   generateLocalQrDataUrl,
+  drawLocalQrOnCanvas,
   drawLocalCode128OnCanvas
 } from '../../utils/barcodeUtils';
 import { fetchVisitBookingsFromSupabase } from '../../utils/supabaseSync';
@@ -108,23 +109,56 @@ export default function GatePassVerificationPage({ token }) {
   });
 
   const [couponImageUrl, setCouponImageUrl] = useState('');
-  const [isGeneratingCanvas, setIsGeneratingCanvas] = useState(true);
+  const [isGeneratingCanvas, setIsGeneratingCanvas] = useState(false);
 
   const canvasRef = useRef(null);
   const lastCanvasKeyRef = useRef('');
+  const lastProcessedTokenRef = useRef('');
 
-  // Reset saat token berubah atau user klik Muat Ulang
+  // 1. Single Pure Read-Only Lookup Kupon (TIDAK Auto-Check-in saat wali santri membuka link di HP)
   useEffect(() => {
-    lastCanvasKeyRef.current = '';
-    setCouponImageUrl('');
-    setIsGeneratingCanvas(true);
+    // Reset gambar HANYA jika token berubah atau user klik tombol Muat Ulang (retryCount)
+    const isTokenChanged = lastProcessedTokenRef.current !== token;
+    if (isTokenChanged || retryCount > 0) {
+      lastProcessedTokenRef.current = token;
+      lastCanvasKeyRef.current = '';
+      setCouponImageUrl('');
+    }
 
     if (!token) {
       setBooking(null);
-      setRemoteLookupDone(true);
+      setLookupState({
+        loading: false,
+        success: false,
+        notFound: true,
+        message: '⛔ Parameter kode tiket tidak ditemukan pada URL.',
+        isExpired: false,
+        isPending: false,
+        isOngoing: false,
+        isApproved: false
+      });
+      setIsGeneratingCanvas(false);
       return;
     }
 
+    // A. Cek di lookupVisitBooking context
+    const res = lookupVisitBooking ? lookupVisitBooking(token) : null;
+    if (res && res.booking) {
+      setBooking(res.booking);
+      setLookupState({
+        loading: false,
+        success: res.success,
+        notFound: false,
+        message: res.message,
+        isExpired: res.isExpired,
+        isPending: res.isPending,
+        isOngoing: res.isOngoing,
+        isApproved: res.isApproved
+      });
+      return;
+    }
+
+    // B. Cek di visitBookings lokal
     const existing = findBookingByToken(visitBookings, token, santriList);
     if (existing) {
       setBooking(existing);
@@ -141,20 +175,24 @@ export default function GatePassVerificationPage({ token }) {
         isOngoing: existing.status_kunjungan === 'Sedang Berkunjung',
         isApproved: existing.status_kunjungan?.includes('Disetujui')
       });
-      setRemoteLookupDone(true);
       return;
     }
 
+    // C. Jika belum ada di lokal, lakukan fetch ke Supabase & endpoint /api/visits/wa-booking secara paralel
     let isMounted = true;
-    setRemoteLookupDone(false);
+    setLookupState(prev => ({
+      ...prev,
+      loading: true,
+      notFound: false,
+      message: 'Mengambil data kupon resmi dari server pondok...'
+    }));
 
-    // Ambil data dari Supabase dan endpoint backend /api/visits/wa-booking secara paralel
     const fetchApiBookings = fetch('/api/visits/wa-booking')
       .then(r => r.ok ? r.json() : null)
       .then(j => j?.bookings || [])
       .catch(() => []);
 
-    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve([]), 6000));
+    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve([]), 5000));
     Promise.allSettled([
       Promise.race([fetchVisitBookingsFromSupabase(), timeoutPromise]),
       Promise.race([fetchApiBookings, timeoutPromise])
@@ -181,89 +219,39 @@ export default function GatePassVerificationPage({ token }) {
             isOngoing: matched.status_kunjungan === 'Sedang Berkunjung',
             isApproved: matched.status_kunjungan?.includes('Disetujui')
           });
+        } else {
+          setLookupState({
+            loading: false,
+            success: false,
+            notFound: true,
+            message: '⛔ Kupon tidak ditemukan atau kode tiket belum terdaftar.',
+            isExpired: false,
+            isPending: false,
+            isOngoing: false,
+            isApproved: false
+          });
+          setIsGeneratingCanvas(false);
         }
       })
-      .catch(() => {})
-      .finally(() => {
-        if (isMounted) setRemoteLookupDone(true);
+      .catch(() => {
+        if (!isMounted) return;
+        setLookupState({
+          loading: false,
+          success: false,
+          notFound: true,
+          message: '⛔ Kupon tidak ditemukan atau kode tiket belum terdaftar.',
+          isExpired: false,
+          isPending: false,
+          isOngoing: false,
+          isApproved: false
+        });
+        setIsGeneratingCanvas(false);
       });
 
     return () => {
       isMounted = false;
     };
   }, [token, retryCount, visitBookings, santriList]);
-
-  // 1. Pure Read-Only Lookup Kupon (TIDAK Auto-Check-in saat wali santri membuka link di HP)
-  useEffect(() => {
-    if (!token) {
-      setBooking(null);
-      setLookupState({
-        loading: false,
-        success: false,
-        notFound: true,
-        message: '⛔ Parameter kode tiket tidak ditemukan pada URL.',
-        isExpired: false,
-        isPending: false,
-        isOngoing: false,
-        isApproved: false
-      });
-      setIsGeneratingCanvas(false);
-      return;
-    }
-
-    const res = lookupVisitBooking ? lookupVisitBooking(token) : null;
-    if (res && res.booking) {
-      setBooking(res.booking);
-      setLookupState({
-        loading: false,
-        success: res.success,
-        notFound: false,
-        message: res.message,
-        isExpired: res.isExpired,
-        isPending: res.isPending,
-        isOngoing: res.isOngoing,
-        isApproved: res.isApproved
-      });
-      return;
-    }
-
-    const b = findBookingByToken(visitBookings, token);
-    if (b) {
-      const clock = getRealtimePondokClock();
-      const lc = checkBarcodeLifecycle(b, clock);
-      setBooking(b);
-      setLookupState({
-        loading: false,
-        success: true,
-        notFound: false,
-        message: lc.isExpired ? '⛔ MASA BERLAKU KUPON TELAH HABIS' : lc.message || '✅ KUPON RESMI AKTIF',
-        isExpired: lc.isExpired || b.status_kunjungan === 'Selesai',
-        isFuture: lc.isFuture,
-        isPending: b.status_kunjungan === 'Menunggu Approval',
-        isOngoing: b.status_kunjungan === 'Sedang Berkunjung',
-        isApproved: b.status_kunjungan?.includes('Disetujui')
-      });
-    } else if (!remoteLookupDone) {
-      setLookupState(prev => ({
-        ...prev,
-        loading: true,
-        notFound: false,
-        message: 'Mengambil data kupon resmi dari server pondok...'
-      }));
-    } else if (!booking) {
-      setLookupState({
-        loading: false,
-        success: false,
-        notFound: true,
-        message: '⛔ Kupon tidak ditemukan atau kode tiket belum terdaftar.',
-        isExpired: false,
-        isPending: false,
-        isOngoing: false,
-        isApproved: false
-      });
-      setIsGeneratingCanvas(false);
-    }
-  }, [token, visitBookings, remoteLookupDone]);
 
   // 2. Generator Gambar Kupon Kunjungan Digital (.PNG Instan Lokal Tanpa Server QR Eksternal)
   useEffect(() => {
@@ -281,7 +269,7 @@ export default function GatePassVerificationPage({ token }) {
     let isCancelled = false;
     setIsGeneratingCanvas(true);
 
-    const renderCouponCanvas = async () => {
+    const renderCouponCanvas = () => {
       const { gatePassUrl } = getVisitGatePassUrls(tokenCode);
 
       // Canvas Dimensions: 1000 x 560 px
@@ -490,20 +478,15 @@ export default function GatePassVerificationPage({ token }) {
       ctx.font = '10px sans-serif';
       ctx.fillText('PINDAI DI POS GERBANG PONDOK', 730, 146);
 
-      // Generate QR Code LOKAL secara instan (< 5ms, tanpa api.qrserver.com)
+      // Gambar QR Code secara 100% SINKRON langsung ke canvas (< 0.5ms, tanpa Image onload / Promise)
       try {
-        const localQrDataUrl = await generateLocalQrDataUrl(gatePassUrl || tokenCode, 340);
-        if (isCancelled) return;
-        await new Promise((resolve) => {
-          const qrImg = new Image();
-          qrImg.onload = () => {
-            ctx.drawImage(qrImg, 755, 165, 170, 170);
-            resolve();
-          };
-          qrImg.onerror = () => resolve();
-          qrImg.src = localQrDataUrl;
+        drawLocalQrOnCanvas(ctx, gatePassUrl || tokenCode, 755, 165, 170, {
+          darkColor: '#0F172A',
+          lightColor: '#FFFFFF',
+          margin: 1
         });
-      } catch {
+      } catch (err) {
+        console.warn('drawLocalQrOnCanvas fallback:', err);
         // Fallback kotak QR lokal bila gagal encode
         ctx.fillStyle = '#F8FAFC';
         ctx.fillRect(755, 165, 170, 170);
@@ -516,9 +499,7 @@ export default function GatePassVerificationPage({ token }) {
         ctx.fillText('E-GATE PASS', 840, 265);
       }
 
-      if (isCancelled) return;
-
-      // Barcode Code 128 Asli (1D Scanner-Readable) di bawah QR
+      // Barcode Code 128 Asli (1D Scanner-Readable) di bawah QR (100% Sinkron)
       drawLocalCode128OnCanvas(ctx, tokenCode, 735, 355, 210, 46, {
         includeText: false,
         barColor: '#0F172A',
@@ -561,14 +542,11 @@ export default function GatePassVerificationPage({ token }) {
 
       try {
         const pngUrl = canvas.toDataURL('image/png');
-        if (!isCancelled) {
-          setCouponImageUrl(pngUrl);
-          lastCanvasKeyRef.current = canvasKey;
-        }
+        setCouponImageUrl(pngUrl);
+        lastCanvasKeyRef.current = canvasKey;
       } catch (e) {
         console.warn('Canvas export warning:', e);
-      }
-      if (!isCancelled) {
+      } finally {
         setIsGeneratingCanvas(false);
       }
     };
@@ -694,7 +672,7 @@ export default function GatePassVerificationPage({ token }) {
         {!lookupState.notFound && booking && (
           <section className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-2xl space-y-5">
             <div className="relative group flex items-center justify-center p-2 sm:p-3 bg-slate-950/80 rounded-2xl border border-slate-800/80 overflow-hidden">
-              {isGeneratingCanvas ? (
+              {isGeneratingCanvas && !couponImageUrl ? (
                 <div className="py-16 text-center space-y-3">
                   <RefreshCw className="w-9 h-9 text-emerald-400 animate-spin mx-auto" />
                   <p className="text-xs text-slate-400 font-semibold font-mono">

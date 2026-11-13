@@ -95,6 +95,49 @@ export function drawLocalCode128OnCanvas(ctx, text, x, y, width, height, options
 }
 
 /**
+ * Gambar QR Code secara 100% SINKRON langsung ke Canvas 2D context (< 1ms, tanpa Image onload / Promise)
+ */
+export function drawLocalQrOnCanvas(ctx, text, x, y, size, options = {}) {
+  const payload = String(text || '').trim();
+  if (!payload || !ctx) return;
+
+  const darkColor = options.darkColor || '#0F172A';
+  const lightColor = options.lightColor !== undefined ? options.lightColor : '#FFFFFF';
+
+  ctx.save();
+  if (lightColor) {
+    ctx.fillStyle = lightColor;
+    ctx.fillRect(x, y, size, size);
+  }
+
+  try {
+    const qr = QRCode.create(payload, { errorCorrectionLevel: 'M' });
+    const moduleCount = qr.modules.size;
+    const margin = options.margin ?? 1;
+    const totalCount = moduleCount + margin * 2;
+    const cellSize = size / totalCount;
+
+    ctx.fillStyle = darkColor;
+    for (let r = 0; r < moduleCount; r++) {
+      for (let c = 0; c < moduleCount; c++) {
+        if (qr.modules.get(r, c)) {
+          const px = Math.floor(x + (c + margin) * cellSize);
+          const py = Math.floor(y + (r + margin) * cellSize);
+          const pw = Math.ceil(cellSize);
+          const ph = Math.ceil(cellSize);
+          ctx.fillRect(px, py, pw, ph);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('drawLocalQrOnCanvas error:', err);
+    ctx.strokeStyle = '#94A3B8';
+    ctx.strokeRect(x, y, size, size);
+  }
+  ctx.restore();
+}
+
+/**
  * Generate Data URL PNG QR Code secara lokal (< 5ms)
  */
 export async function generateLocalQrDataUrl(text, size = 320) {
