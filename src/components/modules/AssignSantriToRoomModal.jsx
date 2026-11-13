@@ -34,27 +34,16 @@ export default function AssignSantriToRoomModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [notification, setNotification] = useState(null);
 
-  if (!isOpen || !room) return null;
-
-  const isPutri = room.kategoriGedung === 'PUTRI';
+  const isPutri = room?.kategoriGedung === 'PUTRI';
   const targetGender = genderFilter === 'AUTO' ? (isPutri ? 'P' : 'L') : genderFilter;
   const genderLabel = isPutri ? 'Santriwati' : 'Santri';
 
-  // Hitung penghuni kamar saat ini
-  const currentOccupants = santriList.filter(s =>
-    (s.kamarId && String(s.kamarId) === String(room.id)) ||
-    (s.kamar && (
-      s.kamar.toLowerCase().includes(room.nomorKamar.toLowerCase()) ||
-      room.nomorKamar.toLowerCase().includes(s.kamar.toLowerCase())
-    ))
-  );
-
-  const capacity = room.kapasitas || 8;
-  const occupiedCount = currentOccupants.length;
-  const remainingSlots = Math.max(0, capacity - occupiedCount);
-
-  // Filter santri sesuai gender, pencarian, dan status kamar
+  // Filter santri sesuai gender, pencarian, dan status kamar (Hook dipanggil tanpa conditional)
   const candidateSantri = useMemo(() => {
+    if (!room) return [];
+    const roomNomor = String(room.nomorKamar || '').toLowerCase();
+    const roomIdStr = room.id ? String(room.id) : null;
+
     return santriList.filter(s => {
       // 1. Filter Gender
       if (targetGender !== 'ALL') {
@@ -63,10 +52,10 @@ export default function AssignSantriToRoomModal({
       }
 
       // 2. Jangan tampilkan santri yang SUDAH ADA di kamar ini
-      const isAlreadyInThisRoom = (s.kamarId && String(s.kamarId) === String(room.id)) ||
-        (s.kamar && (
-          s.kamar.toLowerCase().includes(room.nomorKamar.toLowerCase()) ||
-          room.nomorKamar.toLowerCase().includes(s.kamar.toLowerCase())
+      const isAlreadyInThisRoom = (roomIdStr && s.kamarId && String(s.kamarId) === roomIdStr) ||
+        (s.kamar && roomNomor && (
+          s.kamar.toLowerCase().includes(roomNomor) ||
+          roomNomor.includes(s.kamar.toLowerCase())
         ));
       if (isAlreadyInThisRoom) return false;
 
@@ -90,7 +79,7 @@ export default function AssignSantriToRoomModal({
     });
   }, [santriList, room, targetGender, filterMode, searchQuery]);
 
-  // Hitung jumlah santri yang belum punya kamar
+  // Hitung jumlah santri yang belum punya kamar (Hook dipanggil tanpa conditional)
   const unassignedCount = useMemo(() => {
     return santriList.filter(s => {
       if (targetGender !== 'ALL') {
@@ -100,6 +89,23 @@ export default function AssignSantriToRoomModal({
       return !s.kamar || s.kamar === '-' || s.kamar.toLowerCase().includes('belum');
     }).length;
   }, [santriList, targetGender]);
+
+  if (!isOpen || !room) return null;
+
+  // Hitung penghuni kamar saat ini
+  const currentOccupants = santriList.filter(s => {
+    const roomNomor = String(room.nomorKamar || '').toLowerCase();
+    const roomIdStr = room.id ? String(room.id) : null;
+    return (roomIdStr && s.kamarId && String(s.kamarId) === roomIdStr) ||
+      (s.kamar && roomNomor && (
+        s.kamar.toLowerCase().includes(roomNomor) ||
+        roomNomor.includes(s.kamar.toLowerCase())
+      ));
+  });
+
+  const capacity = room.kapasitas || 8;
+  const occupiedCount = currentOccupants.length;
+  const remainingSlots = Math.max(0, capacity - occupiedCount);
 
   // Handler toggle checkbox santri
   const toggleSelectSantri = (id) => {

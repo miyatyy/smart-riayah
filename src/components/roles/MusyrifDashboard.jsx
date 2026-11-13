@@ -624,13 +624,15 @@ export default function MusyrifDashboard() {
       />
 
       {/* MODAL: MASUKKAN SANTRIWATI / SANTRI KE KAMAR */}
-      <AssignSantriToRoomModal
-        isOpen={Boolean(assigningRoom)}
-        room={assigningRoom}
-        onClose={() => setAssigningRoom(null)}
-        santriList={santriList}
-        onAssignSantri={assignSantriToRoom}
-      />
+      {Boolean(assigningRoom) && (
+        <AssignSantriToRoomModal
+          isOpen={Boolean(assigningRoom)}
+          room={assigningRoom}
+          onClose={() => setAssigningRoom(null)}
+          santriList={santriList}
+          onAssignSantri={assignSantriToRoom}
+        />
+      )}
 
       {/* MODAL LIHAT PENGHUNI KAMAR */}
       {viewingRoomOccupants && (() => {

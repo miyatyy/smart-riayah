@@ -38,7 +38,12 @@ export default function WhatsAppDrawer() {
     role
   } = useApp();
 
-  // Hanya tampil untuk role admin_riayah
+  const [testCustomMsg, setTestCustomMsg] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
+  const [showSocketMonitor, setShowSocketMonitor] = useState(false);
+  const [copiedId, setCopiedId] = useState(null);
+
+  // Hanya tampil untuk role admin_riayah (diletakkan setelah semua Hook)
   if (role !== 'admin_riayah') return null;
 
   const matchedDrawerSantri = Array.isArray(santriList)
@@ -52,11 +57,6 @@ export default function WhatsAppDrawer() {
   const drawerSantriLabel = matchedDrawerSantri
     ? `${drawerWaliName} (Wali ${matchedDrawerSantri.nama})`
     : drawerWaliName;
-
-  const [testCustomMsg, setTestCustomMsg] = useState('');
-  const [showSettings, setShowSettings] = useState(false);
-  const [showSocketMonitor, setShowSocketMonitor] = useState(false);
-  const [copiedId, setCopiedId] = useState(null);
 
   const handleIncomingSocketMessage = (msg) => {
     const newEntry = {

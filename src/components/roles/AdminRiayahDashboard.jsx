@@ -2647,13 +2647,15 @@ export default function AdminRiayahDashboard() {
       })()}
 
       {/* MODAL: MASUKKAN SANTRIWATI / SANTRI TERDAFTAR KE KAMAR */}
-      <AssignSantriToRoomModal
-        isOpen={Boolean(assigningRoom)}
-        room={assigningRoom}
-        onClose={() => setAssigningRoom(null)}
-        santriList={santriList}
-        onAssignSantri={assignSantriToRoom}
-      />
+      {Boolean(assigningRoom) && (
+        <AssignSantriToRoomModal
+          isOpen={Boolean(assigningRoom)}
+          room={assigningRoom}
+          onClose={() => setAssigningRoom(null)}
+          santriList={santriList}
+          onAssignSantri={assignSantriToRoom}
+        />
+      )}
 
       {/* MODAL: PINDAH KAMAR CEPAT */}
       {quickTransferSantri && (
