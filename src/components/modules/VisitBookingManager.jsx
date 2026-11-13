@@ -51,7 +51,9 @@ export default function VisitBookingManager({ isCompact = false }) {
     santriList,
     addVisitBooking,
     isFonnteEnabled,
-    resendBarcodeToWa
+    resendBarcodeToWa,
+    reminderThresholdMinutes,
+    sendVisitWarningReminder
   } = useApp();
 
   const [activeFilter, setActiveFilter] = useState('ALL'); // 'ALL' | 'TODAY' | 'APPROVED_LOGS' | 'PENDING' | 'WEEKEND' | 'SATPAM' | 'ACTIVE' | 'COMPLETED' | 'MONTHLY_RECAP'
@@ -826,6 +828,32 @@ export default function VisitBookingManager({ isCompact = false }) {
                                   <AlertCircle className="w-2.5 h-2.5 text-rose-600" />
                                   ⚠️ Waktu Habis ({cd.remainingText})
                                 </span>
+                              </div>
+                            );
+                          }
+                          const isWarning = (cd.diffMs / 60000) <= (reminderThresholdMinutes || 15);
+                          if (isWarning) {
+                            return (
+                              <div className="mt-1 space-y-1">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
+                                  <Clock className="w-2.5 h-2.5 text-amber-600 animate-spin" />
+                                  ⏳ Hampir Habis ({cd.remainingText})
+                                </span>
+                                <div>
+                                  <button
+                                    onClick={() => {
+                                      sendVisitWarningReminder?.(b.id);
+                                      setToastNotification(`Pesan pengingat batas waktu dikirim ke WA ${b.nama_penjenguk}`);
+                                    }}
+                                    className={`px-2 py-0.5 rounded text-[9px] font-bold flex items-center gap-1 transition ${
+                                      b.reminderSent ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' : 'bg-amber-500 hover:bg-amber-600 text-slate-950 font-black'
+                                    }`}
+                                    title={b.reminderSent ? 'Pengingat telah dikirim. Klik untuk kirim ulang.' : 'Kirim WA pengingat ke wali santri'}
+                                  >
+                                    <Send className="w-2.5 h-2.5" />
+                                    <span>{b.reminderSent ? '✓ WA Terkirim' : '📲 Ingatkan WA'}</span>
+                                  </button>
+                                </div>
                               </div>
                             );
                           }

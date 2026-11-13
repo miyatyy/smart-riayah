@@ -92,11 +92,11 @@ export default function MusyrifAlarmMonitor() {
   const handleApplyCustomMinutes = (e) => {
     e.preventDefault();
     const val = parseInt(customMinutesInput, 10);
-    if (!isNaN(val) && val >= 5 && val <= 360) {
+    if (!isNaN(val) && val >= 15 && val <= 360) {
       setReminderThresholdMinutes(val);
       showToast(`Ambang batas alarm pengingat berhasil diatur ke H-${val} Menit.`);
     } else {
-      alert('Harap masukkan angka batas waktu antara 5 hingga 360 menit!');
+      alert('Harap masukkan angka batas waktu minimal 15 menit (antara 15 hingga 360 menit)!');
     }
   };
 
@@ -334,7 +334,7 @@ export default function MusyrifAlarmMonitor() {
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {[
-                { min: 15, label: 'H-15 Menit', desc: 'Mendesak' },
+                { min: 15, label: 'H-15 Menit', desc: 'Minimal & Default' },
                 { min: 30, label: 'H-30 Menit', desc: 'Standar Pesantren' },
                 { min: 45, label: 'H-45 Menit', desc: 'Waktu Longgar' },
                 { min: 60, label: 'H-60 Menit (1 Jam)', desc: 'Persiapan Jauh' }
@@ -365,16 +365,16 @@ export default function MusyrifAlarmMonitor() {
           {/* Custom Minute Form */}
           <div className="lg:col-span-5 bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
             <label className="block text-xs font-bold text-slate-700">
-              Atur Menit Kustom (Bebas):
+              Atur Menit Kustom (Minimal 15 Menit):
             </label>
             <form onSubmit={handleApplyCustomMinutes} className="flex items-center gap-2">
               <input
                 type="number"
-                min="5"
+                min="15"
                 max="360"
                 value={customMinutesInput}
                 onChange={(e) => setCustomMinutesInput(e.target.value)}
-                placeholder="Contoh: 30"
+                placeholder="Minimal 15 menit..."
                 className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
               />
               <button
@@ -385,7 +385,7 @@ export default function MusyrifAlarmMonitor() {
               </button>
             </form>
             <span className="text-[10px] text-slate-500 block">
-              Saat ini aktif: Peringatan dipicu <b>{reminderThresholdMinutes} menit</b> sebelum batas kembali.
+              Saat ini aktif: Peringatan dipicu <b>{reminderThresholdMinutes} menit</b> (minimal 15 menit) sebelum batas kembali.
             </span>
           </div>
 

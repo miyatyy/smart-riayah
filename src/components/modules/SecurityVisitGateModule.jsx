@@ -34,7 +34,12 @@ import {
   FileSpreadsheet,
   BarChart3,
   Filter,
-  X
+  X,
+  Bell,
+  BellRing,
+  Volume2,
+  VolumeX,
+  Sliders
 } from 'lucide-react';
 import { sound } from '../../utils/audio';
 import { getRealtimePondokClock, calculateVisitCountdown, checkBarcodeLifecycle } from '../../utils/pondokTimeUtils';
@@ -71,8 +76,37 @@ export default function SecurityVisitGateModule() {
     verifyVisitRfid,
     santriList,
     lastScannedUid,
-    isSerialConnected
+    isSerialConnected,
+    reminderThresholdMinutes,
+    setReminderThresholdMinutes,
+    isAutoSendWaReminder,
+    setIsAutoSendWaReminder,
+    isAlarmSoundEnabled,
+    setIsAlarmSoundEnabled,
+    sendVisitWarningReminder,
+    broadcastAllVisitWarningReminders,
+    simulateVisitNearExpiry
   } = useApp();
+
+  // Ambang Batas & Alarm States
+  const [customMinutesInput, setCustomMinutesInput] = useState(String(reminderThresholdMinutes || 15));
+  const [alarmSuccessToast, setAlarmSuccessToast] = useState(null);
+
+  const showAlarmToast = (msg) => {
+    setAlarmSuccessToast(msg);
+    setTimeout(() => setAlarmSuccessToast(null), 4500);
+  };
+
+  const handleApplyCustomMinutes = (e) => {
+    e.preventDefault();
+    const val = parseInt(customMinutesInput, 10);
+    if (!isNaN(val) && val >= 15 && val <= 360) {
+      setReminderThresholdMinutes(val);
+      showAlarmToast(`Ambang batas pengingat berhasil diatur ke H-${val} Menit.`);
+    } else {
+      alert('Harap masukkan angka batas waktu minimal 15 menit (antara 15 hingga 360 menit)!');
+    }
+  };
 
   // Verification & Camera States
   const [barcodeInput, setBarcodeInput] = useState('');
@@ -523,6 +557,17 @@ export default function SecurityVisitGateModule() {
       const timeB = b.jam_masuk_aktual || b.jam_checkin_aktual || '00:00';
       return timeB.localeCompare(timeA);
     });
+
+  // Analisis Ambang Batas Pengingat & Overstay Tamu Berkunjung Hari Ini
+  const warningGuests = activeVisitingGuests.filter(item => {
+    const cd = calculateVisitCountdown(item.jam_selesai, item.tanggal_kunjungan);
+    return cd && !cd.isOverstay && (cd.diffMs / 60000) <= reminderThresholdMinutes;
+  });
+
+  const overdueGuests = activeVisitingGuests.filter(item => {
+    const cd = calculateVisitCountdown(item.jam_selesai, item.tanggal_kunjungan);
+    return cd && cd.isOverstay;
+  });
 
   // Deteksi kunjungan hari lampau yang belum selesai (agar tidak overstay ribuan menit)
   const stalePastVisits = bookings.filter(b => {
@@ -1072,6 +1117,249 @@ export default function SecurityVisitGateModule() {
         </div>
       )}
 
+      {/* ─── TOAST NOTIFIKASI SUKSES ALARM & PENGINGAT ─── */}
+      {alarmSuccessToast && (
+        <div className="bg-emerald-500/20 border-2 border-emerald-400 text-emerald-300 p-3.5 rounded-2xl text-xs font-bold flex items-center justify-between gap-2.5 shadow-lg animate-fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            <span>{alarmSuccessToast}</span>
+          </div>
+          <button onClick={() => setAlarmSuccessToast(null)} className="text-emerald-300 hover:text-white font-bold">✕</button>
+        </div>
+      )}
+
+      {/* ─── BANNER OVERSTAY JIKA ADA TAMU MELEWATI BATAS WAKTU ─── */}
+      {overdueGuests.length > 0 && (
+        <div className="bg-gradient-to-r from-rose-950 via-slate-900 to-rose-950 border-2 border-rose-500/80 rounded-3xl p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-rose-200 shadow-xl animate-pulse">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-lg shadow-rose-500/40">
+              <AlertTriangle className="w-6 h-6 animate-bounce" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-black bg-rose-600 text-white uppercase tracking-wider">
+                  🚨 OVERSTAY POS GERBANG ({overdueGuests.length} TAMU)
+                </span>
+                <span className="text-xs font-extrabold text-rose-300 font-mono">
+                  Waktu Kunjungan Telah Habis
+                </span>
+              </div>
+              <p className="text-xs text-rose-100/90 mt-1 leading-snug">
+                Terdapat tamu yang telah melewati jam selesai kunjungan namun belum check-out di pos gerbang utama. Segera hubungi wali santri untuk penyelesaian kunjungan.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── BANNER EARLY WARNING JIKA ADA TAMU MENDEKATI BATAS WAKTU (H-15 MENIT ATAU KUSTOM) ─── */}
+      {warningGuests.length > 0 && (
+        <div className="bg-gradient-to-r from-amber-950 via-slate-900 to-amber-950 border-2 border-amber-500/80 rounded-3xl p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-amber-200 shadow-xl animate-pulse">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/40">
+              <BellRing className="w-6 h-6 animate-bounce" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-black bg-amber-500 text-slate-950 uppercase tracking-wider">
+                  ⏳ PERINGATAN DINI SATPAM (H-{reminderThresholdMinutes} MENIT)
+                </span>
+                <span className="text-xs font-extrabold text-amber-300 font-mono">
+                  {warningGuests.length} Tamu Mendekati Batas Akhir Kunjungan
+                </span>
+              </div>
+              <p className="text-xs text-amber-100/90 mt-1 leading-snug">
+                Waktu berkunjung segera berakhir. Satpam dapat mengirimkan pesan pengingat resmi ke nomor WhatsApp wali santri agar bersiap menuju pos gerbang.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => {
+                const count = broadcastAllVisitWarningReminders?.() || warningGuests.length;
+                showAlarmToast(`Pesan pengingat batas waktu kunjungan berhasil dikirim ke ${count} wali santri via WhatsApp!`);
+              }}
+              className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition shadow-lg flex items-center gap-2 cursor-pointer active:scale-95"
+            >
+              <Send className="w-4 h-4" />
+              <span>Kirim WA Pengingat ke Semua ({warningGuests.length})</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          PANEL KONTROL ALARM & PENGINGAT BATAS KUNJUNGAN (MINIMAL 15 MENIT)
+          ───────────────────────────────────────────────────────────── */}
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl text-white space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-400 shrink-0">
+              <BellRing className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="font-black text-sm sm:text-base text-white tracking-tight">
+                  🔔 Panel Kontrol Alarm &amp; Pengingat Batas Kunjungan
+                </h4>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                  Minimal 15 Menit
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Konfigurasi alarm audio &amp; notifikasi WhatsApp otomatis saat waktu kunjungan wali santri tersisa H-X menit.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => sound.playReminderChime?.()}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 text-xs font-bold transition flex items-center gap-1.5"
+              title="Uji bunyi lonceng pengingat"
+            >
+              <Volume2 className="w-4 h-4 text-amber-400" />
+              <span>Tes Lonceng</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => sound.playOverdueAlarm?.()}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-rose-300 border border-rose-500/30 text-xs font-bold transition flex items-center gap-1.5"
+              title="Uji bunyi sirine overdue"
+            >
+              <AlertTriangle className="w-4 h-4 text-rose-400" />
+              <span>Tes Sirine Overdue</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                simulateVisitNearExpiry?.(10);
+                showAlarmToast('Simulasi tamu kritis (<10 Menit) berhasil dipicu untuk pengujian alarm!');
+              }}
+              className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm active:scale-95"
+              title="Simulasikan kunjungan yang sisa waktunya < 10 menit"
+            >
+              <span>🧪 Uji Simulasi Tamu Kritis</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Preset & Custom Minutes Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
+          
+          {/* Preset Buttons */}
+          <div className="lg:col-span-7 space-y-1.5">
+            <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider font-mono">
+              Preset Cepat Ambang Batas Pengingat:
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {[
+                { min: 15, label: 'H-15 Menit', desc: 'Minimal & Default' },
+                { min: 30, label: 'H-30 Menit', desc: 'Standar Pondok' },
+                { min: 45, label: 'H-45 Menit', desc: 'Waktu Longgar' },
+                { min: 60, label: 'H-60 Menit', desc: '1 Jam Sebelum' }
+              ].map(preset => (
+                <button
+                  key={preset.min}
+                  type="button"
+                  onClick={() => {
+                    setReminderThresholdMinutes(preset.min);
+                    setCustomMinutesInput(String(preset.min));
+                    showAlarmToast(`Ambang batas pengingat diatur ke ${preset.label}`);
+                  }}
+                  className={`p-2.5 rounded-2xl border text-left transition ${
+                    reminderThresholdMinutes === preset.min
+                      ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md font-bold'
+                      : 'bg-slate-800 hover:bg-slate-700/80 text-slate-200 border-slate-700'
+                  }`}
+                >
+                  <span className="block text-xs font-black">{preset.label}</span>
+                  <span className={`block text-[10px] mt-0.5 ${reminderThresholdMinutes === preset.min ? 'text-amber-950 font-bold' : 'text-slate-400'}`}>
+                    {preset.desc}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Form Menit Kustom */}
+          <div className="lg:col-span-5 bg-slate-800/80 p-3.5 rounded-2xl border border-slate-700 space-y-1.5">
+            <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider font-mono">
+              Atur Menit Kustom (Minimal 15 Menit):
+            </label>
+            <form onSubmit={handleApplyCustomMinutes} className="flex items-center gap-2">
+              <input
+                type="number"
+                min="15"
+                max="360"
+                value={customMinutesInput}
+                onChange={(e) => setCustomMinutesInput(e.target.value)}
+                placeholder="Minimal 15 menit..."
+                className="w-full bg-slate-900 border border-slate-600 rounded-xl px-3 py-1.5 text-xs font-bold text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 font-mono"
+              />
+              <button
+                type="submit"
+                className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-black shrink-0 transition cursor-pointer"
+              >
+                Terapkan
+              </button>
+            </form>
+            <span className="text-[10px] text-slate-400 block">
+              Saat ini aktif: Peringatan dipicu <b>{reminderThresholdMinutes} menit</b> (minimal 15 menit) sebelum jam selesai.
+            </span>
+          </div>
+
+        </div>
+
+        {/* Status Sakelar & Toggles */}
+        <div className="pt-2 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-300">
+              <input
+                type="checkbox"
+                checked={isAlarmSoundEnabled}
+                onChange={(e) => {
+                  setIsAlarmSoundEnabled(e.target.checked);
+                  showAlarmToast(e.target.checked ? '🔊 Alarm Suara Browser: DIAKTIFKAN' : '🔇 Alarm Suara Browser: DIMUTE');
+                }}
+                className="w-4 h-4 text-amber-500 rounded"
+              />
+              <span className="flex items-center gap-1.5">
+                {isAlarmSoundEnabled ? <Volume2 className="w-3.5 h-3.5 text-amber-400" /> : <VolumeX className="w-3.5 h-3.5 text-slate-500" />}
+                <span>Alarm Audio Browser {isAlarmSoundEnabled ? '(Aktif)' : '(Mute)'}</span>
+              </span>
+            </label>
+
+            <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-300">
+              <input
+                type="checkbox"
+                checked={isAutoSendWaReminder}
+                onChange={(e) => {
+                  setIsAutoSendWaReminder(e.target.checked);
+                  showAlarmToast(e.target.checked ? '📲 Kirim Otomatis WA Pengingat: DIAKTIFKAN' : '📲 Kirim Otomatis WA Pengingat: DIMATIKAN');
+                }}
+                className="w-4 h-4 text-emerald-500 rounded"
+              />
+              <span className="flex items-center gap-1.5">
+                <Send className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Kirim Otomatis WA Pengingat {isAutoSendWaReminder ? '(Aktif)' : '(Nonaktif)'}</span>
+              </span>
+            </label>
+          </div>
+
+          <div className="text-[11px] font-mono text-slate-400">
+            <span>Tamu Kritis (&lt;{reminderThresholdMinutes}M): </span>
+            <strong className={warningGuests.length > 0 ? 'text-amber-400' : 'text-slate-300'}>{warningGuests.length}</strong>
+            <span className="mx-1.5">•</span>
+            <span>Overstay: </span>
+            <strong className={overdueGuests.length > 0 ? 'text-rose-400' : 'text-slate-300'}>{overdueGuests.length}</strong>
+          </div>
+        </div>
+
+      </div>
+
       {/* ─────────────────────────────────────────────────────────────
           TABEL UTAMA: DAFTAR REAL-TIME WALI SANTRI SEDANG CHECK-IN HARI INI
           (TERVERIFIKASI KAMERA / SATPAM DENGAN HITUNG MUNDUR SISA WAKTU)
@@ -1130,9 +1418,20 @@ export default function SecurityVisitGateModule() {
               ) : (
                 activeVisitingGuests.map((item, idx) => {
                   const cd = calculateVisitCountdown(item.jam_selesai, item.tanggal_kunjungan);
+                  const isOverstay = cd && cd.isOverstay;
+                  const isWarning = cd && !cd.isOverstay && (cd.diffMs / 60000) <= reminderThresholdMinutes;
 
                   return (
-                    <tr key={item.id} className="hover:bg-emerald-50/40 transition">
+                    <tr 
+                      key={item.id} 
+                      className={`transition ${
+                        isOverstay 
+                          ? 'bg-rose-50/80 hover:bg-rose-100/60 border-l-4 border-l-rose-500' 
+                          : isWarning 
+                            ? 'bg-amber-50/80 hover:bg-amber-100/60 border-l-4 border-l-amber-500' 
+                            : 'hover:bg-emerald-50/40'
+                      }`}
+                    >
                       <td className="py-3 px-3 font-mono font-bold text-slate-500">
                         {idx + 1}.
                       </td>
@@ -1153,10 +1452,15 @@ export default function SecurityVisitGateModule() {
                         </div>
                       </td>
                       <td className="py-3 px-3 font-mono">
-                        {cd && cd.isOverstay ? (
+                        {isOverstay ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 animate-pulse">
                             <AlertTriangle className="w-3 h-3 text-rose-600" />
                             Overstay ({cd.remainingText})
+                          </span>
+                        ) : isWarning ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
+                            <BellRing className="w-3 h-3 text-amber-600" />
+                            ⏳ Hampir Habis ({cd.remainingText})
                           </span>
                         ) : cd ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-300">
@@ -1174,24 +1478,51 @@ export default function SecurityVisitGateModule() {
                         </span>
                       </td>
                       <td className="py-3 px-3">
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 inline-flex items-center gap-1 shadow-2xs">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          <span>Sudah Scan &amp; Sedang Berkunjung</span>
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border inline-flex items-center gap-1 shadow-2xs ${
+                          isOverstay
+                            ? 'bg-rose-100 text-rose-800 border-rose-300'
+                            : isWarning
+                              ? 'bg-amber-100 text-amber-800 border-amber-300'
+                              : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                        }`}>
+                          <CheckCircle2 className={`w-3 h-3 ${isOverstay ? 'text-rose-600' : isWarning ? 'text-amber-600' : 'text-emerald-600'}`} />
+                          <span>{isOverstay ? 'Overstay di Pondok' : isWarning ? 'Kritis Batas Waktu' : 'Sedang Berkunjung'}</span>
                         </span>
                       </td>
                       <td className="py-3 px-3 text-center">
-                        <button
-                          onClick={() => {
-                            if (confirm(`Konfirmasi kepulangan tamu ${item.nama_penjenguk} (Wali ${item.nama_santri})? Barcode akan dihanguskan.`)) {
-                              checkOutVisitBooking(item.id);
-                              sound.playSuccess?.();
-                            }
-                          }}
-                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black transition shadow-xs flex items-center gap-1 mx-auto"
-                        >
-                          <LogOut className="w-3.5 h-3.5" />
-                          <span>🏁 Selesai Berkunjung (Check-Out)</span>
-                        </button>
+                        <div className="flex flex-col sm:flex-row items-center justify-center gap-1.5">
+                          {/* Tombol Ingatkan WA jika mendekati batas waktu */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              sendVisitWarningReminder?.(item.id);
+                              showAlarmToast(`Pesan pengingat batas waktu berhasil dikirimkan ke nomor WhatsApp ${item.nama_penjenguk} (${item.no_wa_penjenguk || 'wali'})!`);
+                            }}
+                            className={`px-2.5 py-1 rounded-xl text-[10px] font-bold transition shadow-xs flex items-center gap-1 cursor-pointer active:scale-95 ${
+                              item.reminderSent
+                                ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300'
+                                : 'bg-amber-500 hover:bg-amber-400 text-slate-950 font-black'
+                            }`}
+                            title={item.reminderSent ? 'Pengingat WA telah dikirim. Klik untuk kirim ulang.' : 'Kirim pesan pengingat WA batas waktu ke wali santri'}
+                          >
+                            <Send className="w-3 h-3" />
+                            <span>{item.reminderSent ? '✓ WA Terkirim' : '📲 Ingatkan WA'}</span>
+                          </button>
+
+                          {/* Tombol Selesai (Check-Out) */}
+                          <button
+                            onClick={() => {
+                              if (confirm(`Konfirmasi kepulangan tamu ${item.nama_penjenguk} (Wali ${item.nama_santri})? Barcode akan dihanguskan.`)) {
+                                checkOutVisitBooking(item.id);
+                                sound.playSuccess?.();
+                              }
+                            }}
+                            className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black transition shadow-xs flex items-center gap-1 cursor-pointer active:scale-95"
+                          >
+                            <LogOut className="w-3 h-3" />
+                            <span>🏁 Check-Out</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

@@ -3,7 +3,7 @@ import confetti from 'canvas-confetti';
 import { sound } from '../utils/audio';
 import { webSerial } from '../utils/webSerial';
 import { DEFAULT_DEEPSEEK_TOKEN, testDeepSeekConnection } from '../utils/deepseekApi';
-import { getRealtimePondokClock, checkBarcodeLifecycle } from '../utils/pondokTimeUtils';
+import { getRealtimePondokClock, checkBarcodeLifecycle, calculateVisitCountdown } from '../utils/pondokTimeUtils';
 import {
   generateBarcodeToken,
   getGatePassDirectUrl,
@@ -1058,11 +1058,18 @@ export const AppProvider = ({ children }) => {
     }
   };
 
-  // 5b. Musyrif Early-Warning & Alarm Reminder System Settings
-  const [reminderThresholdMinutes, setReminderThresholdMinutes] = useState(() => {
+  // 5b. Universal Early-Warning & Alarm Reminder System Settings (Minimal 15 Menit & Universal untuk Kunjungan & Santri)
+  const [reminderThresholdMinutes, setReminderThresholdMinutesState] = useState(() => {
     const saved = localStorage.getItem('sr_reminder_threshold');
-    return saved ? Number(saved) : 30; // Default H-30 Menit
+    return saved ? Math.max(15, Number(saved) || 15) : 15; // Default & Minimal H-15 Menit
   });
+
+  const setReminderThresholdMinutes = useCallback((val) => {
+    setReminderThresholdMinutesState(prev => {
+      const resolved = typeof val === 'function' ? val(prev) : val;
+      return Math.max(15, Number(resolved) || 15);
+    });
+  }, []);
 
   const [isAutoSendWaReminder, setIsAutoSendWaReminder] = useState(() => {
     const saved = localStorage.getItem('sr_auto_send_wa_reminder');
@@ -3419,6 +3426,137 @@ export const AppProvider = ({ children }) => {
     }));
   };
 
+  // 5c. Send Official Visit Early-Warning Reminder to Visiting Wali (Configurable H-X Menit, Min 15M)
+  const sendVisitWarningReminder = (bookingId) => {
+    const booking = visitBookings.find(b => b.id === bookingId);
+    if (!booking) return;
+
+    sound.playWhatsApp?.();
+    if (isAlarmSoundEnabled) {
+      sound.playReminderChime?.();
+    }
+
+    const cd = calculateVisitCountdown(booking.jam_selesai, booking.tanggal_kunjungan);
+    const sisaMenit = cd ? Math.max(1, Math.round(cd.diffMs / 60000)) : reminderThresholdMinutes;
+    const jamSelesai = (booking.jam_selesai || '17:30').replace(/^23:/, '17:30');
+
+    // Nyalakan LED Kuning Virtual di Layar Laptop & Virtual OLED Screen
+    setOledState({
+      mode: 'WARNING',
+      line1: 'PENGINGAT BATAS KUNJUNGAN',
+      line2: (booking.nama_santri || 'SANTRI').toUpperCase(),
+      line3: `WALI: ${(booking.nama_penjenguk || 'WALI SANTRI').toUpperCase()}`,
+      line4: `SISA WAKTU: ${sisaMenit} MENIT`,
+      line5: `BATAS SELESAI: ${jamSelesai} WITA`,
+      ledHijau: false,
+      ledKuning: true,
+      ledMerah: false,
+      buzzer: false,
+      lastCommandSent: 'VIRTUAL:LED_YELLOW_ACTIVE'
+    });
+    setTimeout(() => {
+      setOledState(STANDBY_OLED);
+    }, 4500);
+
+    if (booking.no_wa_penjenguk) {
+      const waliAddr = resolveWaliAddressing(booking.nama_penjenguk || 'Wali Santri', '', [], { namaWali: booking.nama_penjenguk });
+      sendWhatsAppNotification(
+        `${booking.nama_penjenguk || 'Wali Santri'} (Wali ${booking.nama_santri})`,
+        booking.no_wa_penjenguk,
+        'WARNING_VISIT_TIME',
+        `⏳ *[PENGINGAT SMART GATE - SISA WAKTU KUNJUNGAN]*\nAssalamu'alaikum Wr. Wb. ${waliAddr.panggilan} (Wali dari *${booking.nama_santri}* - ${booking.kelas || ''}).\nWaktu berkunjung ananda tersisa *${sisaMenit} menit* lagi (Batas akhir kunjungan: *${jamSelesai} WITA*).\nMohon bersiap untuk menyelesaikan kunjungan dan melakukan konfirmasi check-out di Pos Jaga Satpam gerbang utama sebelum batas waktu berakhir. Syukron. — Pos Keamanan & Admin Ri'ayah Darul Ulum`
+      );
+    }
+
+    setVisitBookings(prev => {
+      const updated = prev.map(b => {
+        if (b.id === bookingId) {
+          return {
+            ...b,
+            reminderSent: true,
+            reminderSentAt: getIsoNow()
+          };
+        }
+        return b;
+      });
+      try {
+        localStorage.setItem('sr_visit_bookings', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+  };
+
+  // Broadcast warning reminder to all active visiting guests nearing expiry
+  const broadcastAllVisitWarningReminders = () => {
+    let count = 0;
+    visitBookings.forEach(b => {
+      const isOngoing = b.status_kunjungan === 'Sedang Berkunjung' || b.status_kunjungan?.includes('Sedang Berkunjung');
+      if (isOngoing && b.jam_selesai) {
+        const cd = calculateVisitCountdown(b.jam_selesai, b.tanggal_kunjungan);
+        if (cd && !cd.isOverstay && (cd.diffMs / 60000) <= reminderThresholdMinutes) {
+          sendVisitWarningReminder(b.id);
+          count++;
+        }
+      }
+    });
+    return count;
+  };
+
+  // Simulate Visit Guest near expiry for live testing alarm & warning
+  const simulateVisitNearExpiry = (minutesLeft = 10) => {
+    const clock = getRealtimePondokClock();
+    const now = new Date();
+    const targetTime = new Date(now.getTime() + minutesLeft * 60 * 1000);
+    const pad = (n) => String(n).padStart(2, '0');
+    const newJamSelesai = `${pad(targetTime.getHours())}:${pad(targetTime.getMinutes())}`;
+
+    setVisitBookings(prev => {
+      const active = prev.find(b => b.status_kunjungan === 'Sedang Berkunjung' || b.status_kunjungan?.includes('Sedang Berkunjung'));
+      if (active) {
+        const updated = prev.map(b => b.id === active.id ? {
+          ...b,
+          jam_selesai: newJamSelesai,
+          reminderSent: false,
+          overdueAlertTriggered: false
+        } : b);
+        try { localStorage.setItem('sr_visit_bookings', JSON.stringify(updated)); } catch (e) {}
+        return updated;
+      }
+
+      const mockGuest = {
+        id: `VST-${clock.tanggal_ymd.replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`,
+        booking_source: 'SIMULASI_ALARM',
+        nama_santri: 'Nurmiyaty',
+        santri_id: 1,
+        kelas: '10-B (Putri)',
+        asal: 'Surabaya',
+        tanggal_kunjungan: clock.tanggal_ymd,
+        hari_kunjungan: clock.nama_hari,
+        jam_kunjungan: clock.jam_menit,
+        jam_selesai: newJamSelesai,
+        titipan_barang: 'Kue & Perlengkapan Asrama (Simulasi Alarm)',
+        berat_barang_kg: 2.0,
+        nama_penjenguk: 'Arbainah (Wali Santri)',
+        status_penjenguk: 'Wali Santri',
+        no_wa_penjenguk: '081234567890',
+        barcode_token: 'GP-DU-NURMIYATY-TEST',
+        status_kunjungan: 'Sedang Berkunjung',
+        jam_masuk_aktual: clock.jam_menit_detik,
+        jam_checkin_aktual: clock.jam_menit,
+        metode_verifikasi: 'SIMULASI_ALARM_POS_SATPAM',
+        reminderSent: false,
+        created_at: new Date().toISOString()
+      };
+      const updated = [mockGuest, ...prev];
+      try { localStorage.setItem('sr_visit_bookings', JSON.stringify(updated)); } catch (e) {}
+      return updated;
+    });
+
+    if (isAlarmSoundEnabled) {
+      sound.playReminderChime?.();
+    }
+  };
+
   // Helper: Trigger Virtual Yellow LED on Laptop Screen (Warning / Test / Notification)
   const triggerYellowLedVirtual = (durationMs = 4000, message = 'PERINGATAN WAKTU (H-X)') => {
     sound.playReminderChime();
@@ -3555,18 +3693,24 @@ export const AppProvider = ({ children }) => {
     );
   };
 
-  // Auto-check live permits every 15s for automatic early-warning reminder & overdue detection
+  // Auto-check live permits & visit bookings every 15s for early-warning alarm & overdue detection
   useEffect(() => {
     const timer = setInterval(() => {
       const now = Date.now();
+
+      // 1. Check Santri Permits (Izin Keluar / Pesiar / Pulang)
       permits.forEach(p => {
         if (p.status === 'ACTIVE') {
           const diffMs = new Date(p.batasKembali).getTime() - now;
           const sisaMenit = diffMs / 60000;
 
           // Auto-send WhatsApp reminder if within threshold and not yet sent
-          if (sisaMenit <= reminderThresholdMinutes && sisaMenit > 0 && isAutoSendWaReminder && !p.reminderSent) {
-            sendEarlyWarningReminder(p.id);
+          if (sisaMenit <= reminderThresholdMinutes && sisaMenit > 0 && !p.reminderSent) {
+            if (isAutoSendWaReminder) {
+              sendEarlyWarningReminder(p.id);
+            } else if (isAlarmSoundEnabled) {
+              sound.playReminderChime?.();
+            }
           }
 
           // Auto-overdue if time has expired
@@ -3575,10 +3719,38 @@ export const AppProvider = ({ children }) => {
           }
         }
       });
+
+      // 2. Check Active Visit Bookings (Wali Santri Sedang Berkunjung)
+      visitBookings.forEach(b => {
+        const isOngoing = b.status_kunjungan === 'Sedang Berkunjung' || b.status_kunjungan?.includes('Sedang Berkunjung');
+        if (isOngoing && b.jam_selesai) {
+          const cd = calculateVisitCountdown(b.jam_selesai, b.tanggal_kunjungan);
+          if (cd) {
+            const sisaMenit = cd.diffMs / 60000;
+
+            // Warning threshold: e.g. <= reminderThresholdMinutes & not yet sent
+            if (sisaMenit <= reminderThresholdMinutes && sisaMenit > 0 && !b.reminderSent) {
+              if (isAutoSendWaReminder) {
+                sendVisitWarningReminder(b.id);
+              } else if (isAlarmSoundEnabled) {
+                sound.playReminderChime?.();
+              }
+            }
+
+            // Overstay alarm sound
+            if (cd.isOverstay && !b.overdueAlertTriggered) {
+              if (isAlarmSoundEnabled) {
+                sound.playOverdueAlarm?.();
+              }
+              b.overdueAlertTriggered = true;
+            }
+          }
+        }
+      });
     }, 15000);
 
     return () => clearInterval(timer);
-  }, [permits, reminderThresholdMinutes, isAutoSendWaReminder, isAlarmSoundEnabled]);
+  }, [permits, visitBookings, reminderThresholdMinutes, isAutoSendWaReminder, isAlarmSoundEnabled]);
 
   // 7. Add Discipline Record
   const addDisciplineRecord = (santriId, jenis, kategori, poin, deskripsi) => {
@@ -5832,6 +6004,9 @@ export const AppProvider = ({ children }) => {
         openGatePass,
         clearGatePassToken,
         simulateWaBooking,
+        sendVisitWarningReminder,
+        broadcastAllVisitWarningReminders,
+        simulateVisitNearExpiry,
 
         // DeepSeek AI Character & Activity Engine
         deepseekToken,
