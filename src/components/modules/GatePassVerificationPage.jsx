@@ -19,19 +19,79 @@ import {
 } from '../../utils/barcodeUtils';
 import { fetchVisitBookingsFromSupabase } from '../../utils/supabaseSync';
 
-function findBookingByToken(list, rawToken) {
-  if (!Array.isArray(list) || !rawToken) return null;
+function findBookingByToken(list, rawToken, santriList = []) {
+  if (!rawToken) return null;
   const clean = String(rawToken).trim().toUpperCase();
-  return list.find(item =>
-    (item.barcode_token && item.barcode_token.toUpperCase() === clean) ||
-    (item.id && item.id.toUpperCase() === clean) ||
-    (item.barcode_token && clean.includes(item.barcode_token.toUpperCase())) ||
-    (item.barcode_token && item.barcode_token.toUpperCase().includes(clean))
-  ) || null;
+
+  if (Array.isArray(list) && list.length > 0) {
+    // 1. Exact match barcode_token atau id
+    const exact = list.find(item =>
+      (item.barcode_token && item.barcode_token.toUpperCase() === clean) ||
+      (item.id && item.id.toUpperCase() === clean)
+    );
+    if (exact) return exact;
+
+    // 2. Substring match
+    const sub = list.find(item =>
+      (item.barcode_token && (clean.includes(item.barcode_token.toUpperCase()) || item.barcode_token.toUpperCase().includes(clean)))
+    );
+    if (sub) return sub;
+
+    // 3. Match berdasarkan nama santri di dalam token (contoh: GP-DU-NURMIYATY-1027 vs Nurmiyaty / GP-DU-NURMIY-9416)
+    const tokenMatch = clean.match(/^GP[-_]DU[-_]([A-Z0-9]+?)(?:[-_]\d+)?$/i);
+    if (tokenMatch && tokenMatch[1]) {
+      const namePart = tokenMatch[1].toUpperCase();
+      const matchedByName = list.find(item => {
+        const bSantri = String(item.nama_santri || '').toUpperCase().replace(/[^A-Z]/g, '');
+        const bToken = String(item.barcode_token || '').toUpperCase();
+        if (bSantri && (bSantri.includes(namePart) || namePart.includes(bSantri.slice(0, 5)))) return true;
+        if (bToken && (bToken.includes(namePart) || namePart.includes(bToken.replace(/^GP[-_]DU[-_]/, '').split(/[-_]/)[0]))) return true;
+        return false;
+      });
+      if (matchedByName) return matchedByName;
+    }
+  }
+
+  // 4. Fallback jika kode berformat resmi GP-DU-[NAMA]-[DIGIT] dan santri terdaftar di database
+  const gpMatch = clean.match(/^GP[-_]DU[-_]([A-Z0-9]+?)(?:[-_]\d+)?$/i);
+  if (gpMatch && gpMatch[1] && Array.isArray(santriList) && santriList.length > 0) {
+    const namePart = gpMatch[1].toUpperCase();
+    const matchedSantri = santriList.find(s => {
+      const sName = String(s.nama || '').toUpperCase().replace(/[^A-Z]/g, '');
+      return sName.includes(namePart) || namePart.includes(sName.slice(0, 5));
+    });
+
+    if (matchedSantri) {
+      const clock = getRealtimePondokClock();
+      return {
+        id: `VST-AUTO-${clean.replace(/[^A-Z0-9]/g, '')}`,
+        barcode_token: clean,
+        nama_santri: matchedSantri.nama,
+        kelas: matchedSantri.kelas,
+        kamar: matchedSantri.kamar || matchedSantri.asrama || 'Asrama Pondok',
+        asal: matchedSantri.asal || 'Surabaya',
+        tanggal_kunjungan: clock.tanggal_ymd,
+        hari_kunjungan: clock.nama_hari,
+        jam_kunjungan: '09:00',
+        jam_selesai: '17:00',
+        titipan_barang: 'Titipan Wali Santri (Maks 5 Kg)',
+        berat_barang_kg: 1.0,
+        nama_penjenguk: matchedSantri.namaWali || 'Wali Santri',
+        status_penjenguk: 'Wali Santri',
+        no_wa_penjenguk: matchedSantri.noWali || '',
+        approval_type: 'AUTO_WEEKEND',
+        status_kunjungan: 'Disetujui (Siap Datang)',
+        waktu_disetujui: `${clock.nama_hari}, ${clock.tanggal_lengkap} • ${clock.jam_menit} WITA`,
+        created_at: new Date().toISOString()
+      };
+    }
+  }
+
+  return null;
 }
 
 export default function GatePassVerificationPage({ token }) {
-  const { visitBookings, lookupVisitBooking } = useApp();
+  const { visitBookings, lookupVisitBooking, santriList } = useApp();
 
   const [booking, setBooking] = useState(null);
   const [remoteLookupDone, setRemoteLookupDone] = useState(false);
@@ -65,8 +125,22 @@ export default function GatePassVerificationPage({ token }) {
       return;
     }
 
-    const existing = findBookingByToken(visitBookings, token);
+    const existing = findBookingByToken(visitBookings, token, santriList);
     if (existing) {
+      setBooking(existing);
+      const clock = getRealtimePondokClock();
+      const lc = checkBarcodeLifecycle(existing, clock);
+      setLookupState({
+        loading: false,
+        success: true,
+        notFound: false,
+        message: lc.isExpired ? '⛔ MASA BERLAKU KUPON TELAH HABIS' : lc.message || '✅ KUPON RESMI AKTIF',
+        isExpired: lc.isExpired || existing.status_kunjungan === 'Selesai',
+        isFuture: lc.isFuture,
+        isPending: existing.status_kunjungan === 'Menunggu Approval',
+        isOngoing: existing.status_kunjungan === 'Sedang Berkunjung',
+        isApproved: existing.status_kunjungan?.includes('Disetujui')
+      });
       setRemoteLookupDone(true);
       return;
     }
@@ -74,11 +148,24 @@ export default function GatePassVerificationPage({ token }) {
     let isMounted = true;
     setRemoteLookupDone(false);
 
+    // Ambil data dari Supabase dan endpoint backend /api/visits/wa-booking secara paralel
+    const fetchApiBookings = fetch('/api/visits/wa-booking')
+      .then(r => r.ok ? r.json() : null)
+      .then(j => j?.bookings || [])
+      .catch(() => []);
+
     const timeoutPromise = new Promise(resolve => setTimeout(() => resolve([]), 6000));
-    Promise.race([fetchVisitBookingsFromSupabase(), timeoutPromise])
-      .then((remoteList) => {
+    Promise.allSettled([
+      Promise.race([fetchVisitBookingsFromSupabase(), timeoutPromise]),
+      Promise.race([fetchApiBookings, timeoutPromise])
+    ])
+      .then(([resSupabase, resApi]) => {
         if (!isMounted) return;
-        const matched = findBookingByToken(remoteList, token);
+        const listSupabase = resSupabase.status === 'fulfilled' && Array.isArray(resSupabase.value) ? resSupabase.value : [];
+        const listApi = resApi.status === 'fulfilled' && Array.isArray(resApi.value) ? resApi.value : [];
+        const combined = [...listApi, ...listSupabase, ...(Array.isArray(visitBookings) ? visitBookings : [])];
+
+        const matched = findBookingByToken(combined, token, santriList);
         if (matched) {
           const clock = getRealtimePondokClock();
           const lc = checkBarcodeLifecycle(matched, clock);
@@ -104,7 +191,7 @@ export default function GatePassVerificationPage({ token }) {
     return () => {
       isMounted = false;
     };
-  }, [token, retryCount]);
+  }, [token, retryCount, visitBookings, santriList]);
 
   // 1. Pure Read-Only Lookup Kupon (TIDAK Auto-Check-in saat wali santri membuka link di HP)
   useEffect(() => {

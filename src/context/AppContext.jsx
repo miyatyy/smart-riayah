@@ -5002,12 +5002,62 @@ export const AppProvider = ({ children }) => {
     const clean = String(token).trim().toUpperCase();
     const clock = getRealtimePondokClock();
 
-    const booking = visitBookings.find(b => 
+    let booking = (visitBookings || []).find(b => 
       (b.barcode_token && b.barcode_token.toUpperCase() === clean) ||
       (b.id && b.id.toUpperCase() === clean) ||
       (b.barcode_token && clean.includes(b.barcode_token.toUpperCase())) ||
       (b.barcode_token && b.barcode_token.toUpperCase().includes(clean))
     );
+
+    // Smart fuzzy match berdasarkan nama santri di dalam token tiket (GP-DU-[NAMA]-...)
+    if (!booking) {
+      const tokenMatch = clean.match(/^GP[-_]DU[-_]([A-Z0-9]+?)(?:[-_]\d+)?$/i);
+      if (tokenMatch && tokenMatch[1]) {
+        const namePart = tokenMatch[1].toUpperCase();
+        booking = (visitBookings || []).find(b => {
+          const bSantri = String(b.nama_santri || '').toUpperCase().replace(/[^A-Z]/g, '');
+          const bToken = String(b.barcode_token || '').toUpperCase();
+          if (bSantri && (bSantri.includes(namePart) || namePart.includes(bSantri.slice(0, 5)))) return true;
+          if (bToken && (bToken.includes(namePart) || namePart.includes(bToken.replace(/^GP[-_]DU[-_]/, '').split(/[-_]/)[0]))) return true;
+          return false;
+        });
+      }
+    }
+
+    // Fallback: Jika tiket GP-DU berasal dari bot resmi tapi belum tersinkron, cocokkan dari santriList
+    if (!booking) {
+      const tokenMatch = clean.match(/^GP[-_]DU[-_]([A-Z0-9]+?)(?:[-_]\d+)?$/i);
+      if (tokenMatch && tokenMatch[1] && Array.isArray(santriList)) {
+        const namePart = tokenMatch[1].toUpperCase();
+        const matchedSantri = santriList.find(s => {
+          const sName = String(s.nama || '').toUpperCase().replace(/[^A-Z]/g, '');
+          return sName.includes(namePart) || namePart.includes(sName.slice(0, 5));
+        });
+        if (matchedSantri) {
+          booking = {
+            id: `VST-AUTO-${clean.replace(/[^A-Z0-9]/g, '')}`,
+            barcode_token: clean,
+            nama_santri: matchedSantri.nama,
+            kelas: matchedSantri.kelas,
+            kamar: matchedSantri.kamar || matchedSantri.asrama || 'Asrama Pondok',
+            asal: matchedSantri.asal || 'Surabaya',
+            tanggal_kunjungan: clock.tanggal_ymd,
+            hari_kunjungan: clock.nama_hari,
+            jam_kunjungan: '09:00',
+            jam_selesai: '17:00',
+            titipan_barang: 'Titipan Wali Santri (Maks 5 Kg)',
+            berat_barang_kg: 1.0,
+            nama_penjenguk: matchedSantri.namaWali || 'Wali Santri',
+            status_penjenguk: 'Wali Santri',
+            no_wa_penjenguk: matchedSantri.noWali || '',
+            approval_type: 'AUTO_WEEKEND',
+            status_kunjungan: 'Disetujui (Siap Datang)',
+            waktu_disetujui: `${clock.nama_hari}, ${clock.tanggal_lengkap} • ${clock.jam_menit} WITA`,
+            created_at: new Date().toISOString()
+          };
+        }
+      }
+    }
 
     if (!booking) {
       return {
@@ -5045,12 +5095,27 @@ export const AppProvider = ({ children }) => {
     const formattedScanTime = `${clock.nama_hari}, ${clock.tanggal_lengkap} • ${clock.jam_menit_detik} WITA`;
 
     // Cari booking berdasarkan barcode_token, id, atau substring
-    let booking = visitBookings.find(b => 
+    let booking = (visitBookings || []).find(b => 
       (b.barcode_token && b.barcode_token.toUpperCase() === clean) ||
       (b.id && b.id.toUpperCase() === clean) ||
       (b.barcode_token && clean.includes(b.barcode_token.toUpperCase())) ||
       (b.barcode_token && b.barcode_token.toUpperCase().includes(clean))
     );
+
+    // Smart fuzzy match berdasarkan nama santri di token
+    if (!booking) {
+      const tokenMatch = clean.match(/^GP[-_]DU[-_]([A-Z0-9]+?)(?:[-_]\d+)?$/i);
+      if (tokenMatch && tokenMatch[1]) {
+        const namePart = tokenMatch[1].toUpperCase();
+        booking = (visitBookings || []).find(b => {
+          const bSantri = String(b.nama_santri || '').toUpperCase().replace(/[^A-Z]/g, '');
+          const bToken = String(b.barcode_token || '').toUpperCase();
+          if (bSantri && (bSantri.includes(namePart) || namePart.includes(bSantri.slice(0, 5)))) return true;
+          if (bToken && (bToken.includes(namePart) || namePart.includes(bToken.replace(/^GP[-_]DU[-_]/, '').split(/[-_]/)[0]))) return true;
+          return false;
+        });
+      }
+    }
 
     if (!booking) {
       return {

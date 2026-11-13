@@ -923,7 +923,7 @@ export function normalizeBookingWeekdayAndStatus(rawData = {}, rtc = getRealtime
     ? `https://smart-riayah.vercel.app/?gatepass=${encodeURIComponent(barcodeToken)}`
     : null;
   const barcodeImageUrl = barcodeToken
-    ? `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(barcodeToken)}`
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=400x400&format=png&data=${encodeURIComponent(barcodeToken)}`
     : null;
 
   return {
@@ -1278,6 +1278,10 @@ export async function generateAutonomousReplyWithContext(
           ? `Sapa dengan "${addr.panggilan}" (karena jenis kelamin wali belum diketahui, boleh pakai "Bapak/Ibu" jika perlu).`
           : `WAJIB sapa dengan "${addr.sapaan}" / "${addr.panggilan}" (${addr.formal}). DILARANG KERAS menulis "Bapak/Ibu" atau "Bpk/Ibu" karena wali sudah jelas ${addr.gender === 'male' ? 'Laki-laki (Pak)' : 'Perempuan (Bu)'}.`;
 
+      const cleanSantriToken = (waliData.santriNama || 'SANTRI').replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase() || 'SANTRI';
+      const pregeneratedWeekendToken = `GP-DU-${cleanSantriToken}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const pregeneratedGatePassUrl = `https://smart-riayah.vercel.app/?gatepass=${pregeneratedWeekendToken}`;
+
       const systemPrompt = `Anda adalah admin pengasuhan Pesantren Modern Darul Ulum yang membalas WhatsApp wali santri secara singkat, hangat, dan jelas.
 
 WAKTU REAL-TIME PONDOK:
@@ -1300,9 +1304,9 @@ ATURAN BOOKING KUNJUNGAN:
 - Jika wali baru bilang mau jenguk tanpa hari/jam: konfirmasi santri (${waliData.santriNama}) & tanya hari serta jam kedatangannya secara singkat.
 - Jika jadwal (hari/tanggal + jam) sudah disebutkan atau wali mengonfirmasi ("oke/konfirmasi/iya jadi"):
   * Senin–Kamis (hari kerja): catat & infokan diteruskan ke Admin Ri'ayah untuk persetujuan, barcode dikirim otomatis ke WA ini setelah disetujui (titipan maks 5 Kg).
-  * Jumat–Minggu (akhir pekan): otomatis disetujui seketika! Wajib sertakan kode Gate Pass *GP-DU-[NAMA]-[4 ANGKA]* dan link e-barcode https://smart-riayah.vercel.app/?gatepass=GP-DU-[NAMA]-[4 ANGKA] agar wali santri bisa langsung membuka barcode di HP saat tiba di gerbang satpam (titipan maks 5 Kg).
+  * Jumat–Minggu (akhir pekan): otomatis disetujui seketika! Wajib sertakan kode Gate Pass *${pregeneratedWeekendToken}* dan link e-barcode ${pregeneratedGatePassUrl} agar wali santri bisa langsung membuka barcode di HP saat tiba di gerbang satpam (titipan maks 5 Kg).
 - WAJIB sertakan di baris paling akhir saat booking sudah lengkap/dikonfirmasi:
-  <!--BOOKING_DATA:{"nama_santri":"...","kelas":"...","hari_kunjungan":"...","tanggal_kunjungan":"YYYY-MM-DD","jam_kunjungan":"HH:mm","jam_selesai":"HH:mm","titipan_barang":"...","berat_barang_kg":0,"nama_penjenguk":"...","is_weekday":true}-->`;
+  <!--BOOKING_DATA:{"nama_santri":"...","kelas":"...","hari_kunjungan":"...","tanggal_kunjungan":"YYYY-MM-DD","jam_kunjungan":"HH:mm","jam_selesai":"HH:mm","titipan_barang":"...","berat_barang_kg":0,"nama_penjenguk":"...","is_weekday":true,"barcode_token":"${pregeneratedWeekendToken}"}-->`;
 
       const messagesPayload = [
         { role: 'system', content: systemPrompt },
@@ -1329,6 +1333,10 @@ ATURAN BOOKING KUNJUNGAN:
         let reply = dsJson.choices?.[0]?.message?.content?.trim();
 
         if (reply) {
+          // Ekstrak kode token GP-DU jika ada di dalam balasan AI
+          const replyTokenMatch = reply.match(/\b(GP[-_]DU[-_][A-Za-z0-9_-]+)\b/i);
+          const candidateToken = replyTokenMatch ? replyTokenMatch[1].trim().toUpperCase() : pregeneratedWeekendToken;
+
           let bookingSaved = false;
           const bookingMatch = reply.match(/<!--\s*BOOKING_DATA\s*:\s*(\{[\s\S]*?\})\s*-->/i);
           if (bookingMatch && bookingMatch[1]) {
@@ -1353,6 +1361,7 @@ ATURAN BOOKING KUNJUNGAN:
               await persistNormalizedBooking(
                 {
                   ...bData,
+                  barcode_token: bData.barcode_token || candidateToken,
                   nama_santri: safeBookingSantri,
                   kelas: safeBookingKelas,
                   nama_penjenguk: safeBookingPenjenguk,
@@ -1385,12 +1394,21 @@ ATURAN BOOKING KUNJUNGAN:
             await persistNormalizedBooking(
               {
                 ...parsed,
+                barcode_token: candidateToken,
                 nama_santri: waliData.santriNama !== 'Ananda' ? waliData.santriNama : 'Santri',
                 kelas: waliData.kelas,
                 nama_penjenguk: waliData.namaWali,
               },
               'WHATSAPP_AI_RECOVERY'
             );
+          }
+
+          // Harmonisasi: jika bookingRecord weekend dibuat, pastikan token dan link di teks WA 100% cocok dengan barcode_token yang tersimpan
+          if (activeBookingRecord && activeBookingRecord.barcode_token && !activeBookingRecord.is_weekday) {
+            const finalToken = activeBookingRecord.barcode_token;
+            const finalUrl = `https://smart-riayah.vercel.app/?gatepass=${encodeURIComponent(finalToken)}`;
+            reply = reply.replace(/\bGP[-_]DU[-_][A-Za-z0-9_-]+\b/gi, finalToken);
+            reply = reply.replace(/https:\/\/smart-riayah\.vercel\.app\/\?gatepass=[^\s)]+/gi, finalUrl);
           }
 
           reply = sanitizeAutonomousReplyForPhone(reply, cleanPhone, waliData, addr);
@@ -1555,6 +1573,7 @@ export async function sendFonnteAutoReply(targetPhone, replyText, customToken = 
     formData.append('preview', 'false');
     if (mediaUrl) {
       formData.append('url', mediaUrl);
+      formData.append('filename', 'kupon-gatepass.png');
     }
 
     const response = await fetch('https://api.fonnte.com/send', {
