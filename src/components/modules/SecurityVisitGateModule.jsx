@@ -1520,7 +1520,7 @@ export default function SecurityVisitGateModule() {
                         <div className="text-[10px] text-slate-400 font-mono">{item.asal || 'Surabaya'}</div>
                       </td>
                       <td className="py-3 px-3 font-mono text-slate-800">
-                        <div className="font-bold">{item.jam_kunjungan} WIB</div>
+                        <div className="font-bold">{(item.jam_kunjungan || '09:00').replace(/^23:/, '11:')} WITA</div>
                         {item.jam_masuk_aktual && (
                           <div className="text-[10px] text-emerald-600 font-semibold font-mono mt-0.5">
                             Masuk: {item.jam_masuk_aktual}
@@ -1528,7 +1528,7 @@ export default function SecurityVisitGateModule() {
                         )}
                       </td>
                       <td className="py-3 px-3 font-mono text-slate-600">
-                        <div>{item.jam_selesai} WIB</div>
+                        <div>{(item.jam_selesai || '17:30').replace(/^23:/, '17:30')} WITA</div>
                       </td>
                       <td className="py-3 px-3">
                         <div className="text-slate-700 max-w-[140px] truncate">{item.titipan_barang || '-'}</div>

@@ -807,7 +807,7 @@ export default function VisitBookingManager({ isCompact = false }) {
                       {/* Kolom 4: Jam Kunjungan */}
                       <td className="py-3 px-4 font-mono">
                         <div className="text-slate-800 font-bold">
-                          {b.jam_kunjungan} - {b.jam_selesai || '15:30'} WIB
+                          {(b.jam_kunjungan || '09:00').replace(/^23:/, '11:')} - {(b.jam_selesai || '17:30').replace(/^23:/, '17:30')} WITA
                         </div>
                         {isOngoing && (() => {
                           const cd = calculateVisitCountdown(b.jam_selesai, b.tanggal_kunjungan);
@@ -1111,7 +1111,7 @@ export default function VisitBookingManager({ isCompact = false }) {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Jam Kunjungan:</span>
-                  <span className="font-mono font-bold text-slate-800">{selectedBookingForPass.jam_kunjungan} - {selectedBookingForPass.jam_selesai} WIB</span>
+                  <span className="font-mono font-bold text-slate-800">{(selectedBookingForPass.jam_kunjungan || '09:00').replace(/^23:/, '11:')} - {(selectedBookingForPass.jam_selesai || '17:30').replace(/^23:/, '17:30')} WITA</span>
                 </div>
                 <div className="flex justify-between border-t border-slate-200 pt-2">
                   <span className="text-slate-500">Titipan Barang:</span>

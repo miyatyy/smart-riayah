@@ -108,7 +108,9 @@ ${calendarLines}
 PANDUAN RESOLUSI WAKTU RELATIF OLEH AI:
 1. Jika wali menulis "sekarang", "hari ini", "siang ini", "malam ini", otomatis gunakan: hari_kunjungan = "${clock.nama_hari}", tanggal_kunjungan = "${clock.tanggal_ymd}".
 2. Jika wali menulis "besok", "lusa", atau menyebut nama hari (misal "Sabtu", "Senin depan"), cocokkan secara persis dengan daftar referensi kalender di atas.
-3. Jika jam_selesai tidak disebutkan, otomatis set jam_selesai = jam_kunjungan + 60 hingga 90 menit (contoh: jika jam 14:00, set jam_selesai "15:30").
+3. Aturan jam operasional kunjungan (WITA):
+   - "jam_kunjungan": jam mulai kedatangan (format HH:mm, misal jam 11 siang = "11:00", DILARANG mengubah jam 11 siang menjadi 23:00 malam!).
+   - "jam_selesai": Jika wali tidak menyebutkan jam selesai, WAJIB otomatis set "17:30" (mengikuti jam operasional kunjungan pondok berakhir). Jika wali menyebutkan jam selesai (contoh: "sampai jam 5 sore"), gunakan jam tersebut ("17:00").
 4. Cek apakah tanggal_kunjungan jatuh pada hari Senin–Kamis (is_weekday: true) atau Jumat–Minggu (is_weekday: false).`;
 }
 
@@ -311,35 +313,55 @@ export function checkBarcodeLifecycle(booking, clock = getRealtimePondokClock())
     const [clockH, clockM] = (clock.jam_menit || '00:00').split(':').map(v => parseInt(v, 10) || 0);
     const clockMinutes = clockH * 60 + clockM;
 
+    let rawJamMulai = booking.jam_kunjungan || '09:00';
+    if (rawJamMulai && rawJamMulai.startsWith('23:')) {
+      rawJamMulai = rawJamMulai.replace('23:', '11:');
+    }
+
     let startMinutes = 0;
-    if (booking.jam_kunjungan && booking.jam_kunjungan.includes(':')) {
-      const [h, m] = booking.jam_kunjungan.split(':').map(v => parseInt(v, 10) || 0);
+    if (rawJamMulai && rawJamMulai.includes(':')) {
+      let [h, m] = rawJamMulai.split(':').map(v => parseInt(v, 10) || 0);
+      if (h === 23) h = 11;
       startMinutes = h * 60 + m;
     }
 
-    let endMinutes = 24 * 60;
-    if (booking.jam_selesai && booking.jam_selesai.includes(':')) {
-      const [h, m] = booking.jam_selesai.split(':').map(v => parseInt(v, 10) || 0);
+    // Default jam tutup kunjungan pondok: 17:30 WITA
+    let endMinutes = 17 * 60 + 30;
+    let rawJamSelesai = booking.jam_selesai;
+    if (rawJamSelesai && rawJamSelesai.startsWith('23:')) {
+      rawJamSelesai = '17:30';
+    }
+    if (rawJamSelesai && rawJamSelesai.includes(':')) {
+      let [h, m] = rawJamSelesai.split(':').map(v => parseInt(v, 10) || 0);
+      if (h === 23) h = 11;
       endMinutes = h * 60 + m;
+    }
+
+    // Safeguard: Jika startMinutes > endMinutes (misal 23:00 vs 17:00), koreksi jam mulai ke siang hari
+    if (startMinutes > endMinutes && startMinutes >= 12 * 60) {
+      startMinutes -= 12 * 60;
     }
 
     // Toleransi 15 menit sebelum jam_kunjungan untuk persiapan pos satpam
     const allowedStartMinutes = Math.max(0, startMinutes - 15);
 
     if (startMinutes > 0 && clockMinutes < allowedStartMinutes) {
+      const displayStart = rawJamMulai;
       return {
         status: 'BEFORE_HOURS',
         isValidForScan: false,
         isExpired: false,
         isBeforeHours: true,
         canCheckIn: false,
-        badgeLabel: `⏳ BELUM WAKTUNYA MASUK (${booking.jam_kunjungan} WITA)`,
+        badgeLabel: `⏳ BELUM WAKTUNYA MASUK (${displayStart} WITA)`,
         alertType: 'warning',
-        message: `Belum waktunya masuk. Jam operasional kunjungan santri dimulai pukul ${booking.jam_kunjungan} WITA (dibuka toleransi 15 menit sebelumnya).`
+        message: `Belum waktunya masuk. Jam operasional kunjungan santri dimulai pukul ${displayStart} WITA (dibuka toleransi 15 menit sebelumnya).`
       };
     }
 
     if (endMinutes < 24 * 60 && clockMinutes > endMinutes) {
+      const displayStart = rawJamMulai;
+      const displayEnd = rawJamSelesai || '17:30';
       return {
         status: 'EXPIRED_HOURS_OVER',
         isValidForScan: false,
@@ -347,7 +369,7 @@ export function checkBarcodeLifecycle(booking, clock = getRealtimePondokClock())
         canCheckIn: false,
         badgeLabel: '⛔ EXPIRED (JAM BERKUNJUNG SELESAI)',
         alertType: 'danger',
-        message: `Jam operasional kunjungan (${booking.jam_kunjungan || '14:00'} s/d ${booking.jam_selesai} WITA) telah berakhir hari ini. Tiket barcode telah hangus.`
+        message: `Jam operasional kunjungan (${displayStart} s/d ${displayEnd} WITA) telah berakhir hari ini. Tiket barcode telah hangus.`
       };
     }
 

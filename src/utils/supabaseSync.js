@@ -664,6 +664,12 @@ export async function fetchVisitBookingsFromSupabase() {
         try {
           const parsed = JSON.parse(row.message_text);
           if (parsed && parsed.id) {
+            if (typeof parsed.jam_kunjungan === 'string' && /^23:/.test(parsed.jam_kunjungan)) {
+              parsed.jam_kunjungan = parsed.jam_kunjungan.replace(/^23:/, '11:');
+            }
+            if (!parsed.jam_selesai || parsed.jam_selesai === '15:30' || parsed.jam_selesai === '10:00' || /^23:/.test(parsed.jam_selesai)) {
+              parsed.jam_selesai = '17:30';
+            }
             bookings.push({
               ...parsed,
               _supabaseMessageId: row.id

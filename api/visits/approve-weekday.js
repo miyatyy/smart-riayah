@@ -41,7 +41,7 @@ export default async function handler(req, res) {
 
     const approvalWaText = `🎉 *[PERMOHONAN KUNJUNGAN DISETUJUI ADMIN RI'AYAH]*\n` +
       `Assalamu'alaikum *${addr.panggilan}*.\n\n` +
-      `Permohonan kunjungan ananda *${booking.nama_santri}* (${booking.kelas || 'Pondok'}) untuk hari *${booking.hari_kunjungan || 'Senin–Kamis'}, ${booking.tanggal_kunjungan}* pukul *${booking.jam_kunjungan} - ${booking.jam_selesai || '15:30'} WIB* telah *DISETUJUI* oleh Admin Ri'ayah.\n\n` +
+      `Permohonan kunjungan ananda *${booking.nama_santri}* (${booking.kelas || 'Pondok'}) untuk hari *${booking.hari_kunjungan || 'Senin–Kamis'}, ${booking.tanggal_kunjungan}* pukul *${(booking.jam_kunjungan || '09:00').replace(/^23:/, '11:')} - ${(booking.jam_selesai || '17:30').replace(/^23:/, '17:30')} WITA* telah *DISETUJUI* oleh Admin Ri'ayah.\n\n` +
       `📦 *Titipan Barang:* ${booking.titipan_barang || '-'} (${booking.berat_barang_kg || 0} Kg)\n` +
       `🎫 *Kode Pass Resmi:* *${barcodeToken}*\n\n` +
       `📷 *Gambar Barcode Gate Pass:*\n${qrImageUrl}\n\n` +

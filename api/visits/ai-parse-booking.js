@@ -154,8 +154,8 @@ export default async function handler(req, res) {
       asal: extracted.asal,
       tanggal_kunjungan: extracted.tanggal_kunjungan || rtc.ymd,
       hari_kunjungan: hariKunjunganNormalized,
-      jam_kunjungan: extracted.jam_kunjungan || '14:00',
-      jam_selesai: extracted.jam_selesai || '15:30',
+      jam_kunjungan: (extracted.jam_kunjungan || '11:00').replace(/^23:/, '11:'),
+      jam_selesai: (extracted.jam_selesai || '17:30').replace(/^23:/, '17:30'),
       titipan_barang: extracted.titipan_barang || '-',
       berat_barang_kg: extracted.berat_barang_kg || 0,
       nama_penjenguk: extracted.nama_penjenguk,
@@ -300,7 +300,9 @@ PANDUAN RESOLUSI WAKTU & TANGGAL OLEH AI:
    - "hari_kunjungan": "${rtc.namaHari}"
    - "tanggal_kunjungan": "${rtc.ymd}"
 2. Jika wali menulis "besok", "lusa", atau menyebutkan nama hari (misal "hari Sabtu", "Minggu", "Selasa depan"), WAJIB mencocokkan tanggal YYYY-MM-DD secara presisi dari referensi kalender 7 hari di atas.
-3. Jika wali tidak menyebutkan "jam_selesai", otomatis hitung jam_selesai = jam_kunjungan + 90 menit (contoh: jika mulai 14:00, jam_selesai menjadi "15:30").
+3. Aturan jam operasional kunjungan (WITA):
+   - "jam_kunjungan": format HH:mm 24 jam (misal 09:00, 11:00, 14:00 - DILARANG mengubah jam 11 siang/pagi menjadi 23:00 malam!).
+   - "jam_selesai": batas jam selesai. JIKA wali menyebutkan jam selesai (contoh: "sampai sore jam 5" = "17:00", "sampai jam 4" = "16:00"), gunakan jam tersebut. JIKA wali TIDAK menyebutkan jam selesai, WAJIB set "17:30" (sesuai jam operasional kunjungan pondok berakhir).
 4. Aturan Hari (is_weekday):
    - true jika tanggal_kunjungan jatuh pada hari Senin, Selasa, Rabu, atau Kamis (butuh approval admin).
    - false jika tanggal_kunjungan jatuh pada hari Jumat, Sabtu, atau Minggu (auto-approved).
@@ -425,12 +427,12 @@ function fallbackRegexParser(text, sender, senderName, rtc = getRealtimeClockAnd
 
   const jamMulai = matchField([
     /(?:jam|waktu|pukul)\s*[:=]?\s*([0-9]{1,2}[:.][0-9]{2})/i
-  ], '14:00').replace('.', ':');
+  ], '11:00').replace('.', ':').replace(/^23:/, '11:');
 
   const jamSelesai = matchField([
     /(?:s\/d|sampai|-)\s*([0-9]{1,2}[:.][0-9]{2})/i,
     /(?:jam\s*selesai|selesai)\s*[:=]?\s*([0-9]{1,2}[:.][0-9]{2})/i
-  ], '15:30').replace('.', ':');
+  ], '17:30').replace('.', ':').replace(/^23:/, '17:30');
 
   const titipan = matchField([
     /(?:titipan|barang|titip|bawaan)\s*[:=]\s*([^\n]+)/i

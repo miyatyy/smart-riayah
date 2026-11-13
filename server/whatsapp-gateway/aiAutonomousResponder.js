@@ -915,6 +915,28 @@ export function normalizeBookingWeekdayAndStatus(rawData = {}, rtc = getRealtime
       : rawSantri;
   const cleanSantriToken = santriNama.replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase() || 'SANTRI';
 
+  let jamMulai = String(rawData.jam_kunjungan || '09:00').trim();
+  let jamSelesai = String(rawData.jam_selesai || '17:30').trim();
+
+  // Safeguard: Jam 23:xx pada pesantren adalah kesalahan konversi dari 11:xx siang
+  if (/^23:/.test(jamMulai)) {
+    jamMulai = jamMulai.replace(/^23:/, '11:');
+  }
+  if (/^23:/.test(jamSelesai) || jamSelesai === '15:30' || jamSelesai === '10:00' || !jamSelesai) {
+    jamSelesai = '17:30';
+  }
+
+  // Jika jamMulai > jamSelesai (contoh: 23:00 vs 17:00), perbaiki jamMulai ke siang
+  const [jmH, jmM] = jamMulai.split(':').map((v) => parseInt(v, 10) || 0);
+  const [jsH, jsM] = jamSelesai.split(':').map((v) => parseInt(v, 10) || 0);
+  if (jmH * 60 + jmM > jsH * 60 + jsM) {
+    if (jmH >= 12 && (jmH - 12) * 60 + jmM <= jsH * 60 + jsM) {
+      jamMulai = `${String(jmH - 12).padStart(2, '0')}:${String(jmM).padStart(2, '0')}`;
+    } else {
+      jamSelesai = '17:30';
+    }
+  }
+
   const barcodeToken = isWeekday
     ? null
     : (rawData.barcode_token || `GP-DU-${cleanSantriToken}-${Math.floor(1000 + Math.random() * 9000)}`);
@@ -932,6 +954,8 @@ export function normalizeBookingWeekdayAndStatus(rawData = {}, rtc = getRealtime
     kelas: rawData.kelas || waliData?.kelas || 'Santri Darul Ulum',
     hari_kunjungan: targetDay,
     tanggal_kunjungan: targetYmd,
+    jam_kunjungan: jamMulai,
+    jam_selesai: jamSelesai,
     is_weekday: isWeekday,
     barcode_token: barcodeToken,
     barcode_image_url: barcodeImageUrl,
@@ -1061,28 +1085,60 @@ export function parseScheduleDetailsFromText(primaryText, secondaryText = '', rt
   const targetDay = dayInfo.day || refRtc.namaHari;
   const targetYmd = dayInfo.date || refRtc.ymd;
 
+  const DEFAULT_END_TIME = '17:30';
+
+  const normalizeTimeText = (txt) => {
+    if (!txt) return '';
+    let norm = String(txt).toLowerCase();
+    norm = norm.replace(/\b(?:agi)\b/gi, 'pagi');
+    norm = norm.replace(/\b(?:dri)\b/gi, 'dari');
+    norm = norm.replace(/\b(?:sampai|sampe|s\/d|hingga|sd)\b|[-–—~]/gi, ' __sampai__ ');
+    norm = norm.replace(/\b(pagi|siang|sore|malam)\s+(?:jam|pukul)?\s*(\d{1,2}(?::\d{2})?)/gi, 'jam $2 $1');
+    norm = norm.replace(/\b(\d{1,2})\s*(?:lebih|lewat)\s*(\d{1,2})\b/gi, '$1:$2');
+    norm = norm.replace(/\b(\d{1,2})\.(\d{2})\b/gi, '$1:$2');
+    norm = norm.replace(/\b(?:jam|pukul)\s*(\d{1,2})\s+(\d{2})\b/gi, 'jam $1:$2');
+    return norm;
+  };
+
   const to24h = (hourNum, minStr = '00', period = '', defaultPeriod = '') => {
     let h = parseInt(hourNum, 10);
+    let m = parseInt(minStr, 10) || 0;
+    if (isNaN(h)) return null;
+
+    if (h > 23) {
+      if (h >= 100 && h <= 2359) {
+        m = h % 100;
+        h = Math.floor(h / 100);
+      } else {
+        return null;
+      }
+    }
+
     let p = String(period || defaultPeriod || '').toLowerCase();
-    if ((p === 'siang' || p === 'sore') && h >= 1 && h <= 7) h += 12;
-    else if (p === 'malam' && h >= 1 && h <= 11) h += 12;
-    else if (p === 'pagi' && h === 12) h = 0;
-    else if (!p) {
+    if (p === 'pagi') {
+      if (h === 12) h = 0;
+    } else if (p === 'siang') {
+      if (h >= 1 && h <= 6) h += 12;
+    } else if (p === 'sore') {
+      if (h >= 1 && h <= 7) h += 12;
+    } else if (p === 'malam') {
+      if (h >= 1 && h <= 11) h += 12;
+    } else if (!p) {
       if (h >= 1 && h <= 6) h += 12;
     }
+
     h = Math.max(0, Math.min(23, h));
-    return `${String(h).padStart(2, '0')}:${String(minStr || '00').padStart(2, '0')}`;
+    m = Math.max(0, Math.min(59, m));
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   };
 
   const getTimeRange = (txt) => {
     if (!txt) return null;
-    let norm = txt.toLowerCase();
-    // Normalisasi 'pagi jam 9' -> 'jam 9 pagi'
-    norm = norm.replace(/(pagi|siang|sore|malam)\s+(?:jam|pukul)?\s*(\d{1,2}(?:[:.]\d{2})?)/gi, 'jam $2 $1');
+    const norm = normalizeTimeText(txt);
 
-    // 1. Rentang waktu eksplisit: "jam 9 - 5 sore", "09.00–17.00", "09:00 s/d 17:00", dsb.
-    const rangeRegex = /(?:jam|pukul)?\s*(\d{1,2})(?:[:.](\d{2}))?\s*(pagi|siang|sore|malam)?\s*(?:sampai|sampe|s\/d|hingga|[-–—~])\s*(?:jam|pukul)?\s*(\d{1,2})(?:[:.](\d{2}))?\s*(pagi|siang|sore|malam)?/i;
-    const match = norm.match(rangeRegex);
+    // 1. Rentang waktu eksplisit: A __sampai__ B
+    const rangePattern = /(?:jam|pukul)?\s*(\d{1,2})(?::(\d{2}))?\s*(pagi|siang|sore|malam)?\s*__sampai__\s*(?:jam|pukul)?\s*(\d{1,2})(?::(\d{2}))?\s*(pagi|siang|sore|malam)?/i;
+    const match = norm.match(rangePattern);
     if (match) {
       const startH = match[1];
       const startM = match[2] || '00';
@@ -1092,38 +1148,32 @@ export function parseScheduleDetailsFromText(primaryText, secondaryText = '', rt
       const endP = match[6] || '';
 
       if (!startP && endP) {
-        if ((endP === 'sore' || endP === 'siang') && parseInt(startH, 10) >= 7 && parseInt(startH, 10) <= 11) {
+        const sHNum = parseInt(startH, 10);
+        if ((endP === 'sore' || endP === 'siang') && sHNum >= 7 && sHNum <= 11) {
           startP = 'pagi';
         }
       }
       const jMulai = to24h(startH, startM, startP, parseInt(startH, 10) >= 7 && parseInt(startH, 10) <= 11 ? 'pagi' : '');
       const jSelesai = to24h(endH, endM, endP, 'sore');
-      return { jamMulai: jMulai, jamSelesai: jSelesai };
+      if (jMulai) {
+        return { jamMulai: jMulai, jamSelesai: jSelesai || DEFAULT_END_TIME };
+      }
     }
 
-    // 2. Jam tunggal: "jam 9", "pukul 14.30"
-    const singleMatch = norm.match(/(?:jam|pukul)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(pagi|siang|sore|malam)?/i);
+    // 2. Jam tunggal: "jam 11:45", "jam 11 45", "jam 11", "pukul 09.00"
+    const singlePattern = /(?:jam|pukul)\s*(\d{1,2})(?::(\d{2}))?\s*(pagi|siang|sore|malam)?/i;
+    const singleMatch = norm.match(singlePattern);
     if (singleMatch) {
       const jMulai = to24h(singleMatch[1], singleMatch[2] || '00', singleMatch[3] || '');
-      const [sh, sm] = jMulai.split(':').map((n) => parseInt(n, 10));
-      const startMinutes = (Number.isFinite(sh) ? sh : 14) * 60 + (Number.isFinite(sm) ? sm : 0);
-      const isWeekendDay = ['Jumat', 'Sabtu', 'Minggu'].includes(targetDay);
-      let eh, em;
-      if (isWeekendDay && sh <= 11) {
-        eh = 17;
-        em = 0;
-      } else {
-        const endMinutes = Math.min(23 * 60 + 59, startMinutes + 90);
-        eh = Math.floor(endMinutes / 60);
-        em = endMinutes % 60;
+      if (jMulai) {
+        return { jamMulai: jMulai, jamSelesai: DEFAULT_END_TIME };
       }
-      return { jamMulai: jMulai, jamSelesai: `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}` };
     }
 
     // 3. Keterangan waktu deskriptif
-    if (/\bpagi\b/.test(norm)) return { jamMulai: '09:00', jamSelesai: ['Jumat', 'Sabtu', 'Minggu'].includes(targetDay) ? '17:00' : '11:00' };
-    if (/\bsiang\b/.test(norm)) return { jamMulai: '13:30', jamSelesai: '16:00' };
-    if (/\bsore\b/.test(norm)) return { jamMulai: '15:00', jamSelesai: '17:30' };
+    if (/\bpagi\b/.test(norm)) return { jamMulai: '09:00', jamSelesai: DEFAULT_END_TIME };
+    if (/\bsiang\b/.test(norm)) return { jamMulai: '13:00', jamSelesai: DEFAULT_END_TIME };
+    if (/\bsore\b/.test(norm)) return { jamMulai: '15:00', jamSelesai: DEFAULT_END_TIME };
     if (/\bmalam\b/.test(norm)) return { jamMulai: '19:30', jamSelesai: '21:00' };
 
     return null;
@@ -1131,7 +1181,7 @@ export function parseScheduleDetailsFromText(primaryText, secondaryText = '', rt
 
   const parsedTime = getTimeRange(lowerPrimary) || (lowerSecondary ? getTimeRange(lowerSecondary) : null) || {
     jamMulai: '09:00',
-    jamSelesai: ['Jumat', 'Sabtu', 'Minggu'].includes(targetDay) ? '17:00' : '10:30'
+    jamSelesai: DEFAULT_END_TIME
   };
 
   const combinedLower = `${lowerPrimary} ${lowerSecondary}`;
@@ -1433,6 +1483,9 @@ ATURAN BOOKING KUNJUNGAN:
 - Jika jadwal (hari/tanggal + jam) sudah disebutkan atau wali mengonfirmasi ("oke/konfirmasi/iya jadi"):
   * Senin–Kamis (hari kerja): catat & infokan diteruskan ke Admin Ri'ayah untuk persetujuan, barcode dikirim otomatis ke WA ini setelah disetujui (titipan maks 5 Kg).
   * Jumat–Minggu (akhir pekan): otomatis disetujui seketika! Wajib sertakan kode Gate Pass *${pregeneratedWeekendToken}* dan link e-barcode ${pregeneratedGatePassUrl} agar wali santri bisa langsung membuka barcode di HP saat tiba di gerbang satpam (titipan maks 5 Kg).
+- ATURAN JAM OPERASIONAL KUNJUNGAN (WITA):
+  * "jam_kunjungan": jam mulai kedatangan (format HH:mm, misal 09:00, 11:00, 11:45, 14:00). DILARANG KERAS mengubah jam 11 siang/pagi menjadi 23:00 malam! Seluruh kunjungan pondok berlangsung pada siang hari.
+  * "jam_selesai": batas akhir jam berkunjung. JIKA wali menyebutkan jam selesai (contoh: "sampe sore jam 5" = "17:00", "sampai jam 4" = "16:00"), gunakan jam tersebut. JIKA wali TIDAK menyebutkan jam selesai, WAJIB isi "17:30" (mengikuti batas jam operasional kunjungan pondok berakhir pukul 17:30 WITA).
 - WAJIB sertakan di baris paling akhir saat booking sudah lengkap/dikonfirmasi:
   <!--BOOKING_DATA:{"nama_santri":"...","kelas":"...","hari_kunjungan":"...","tanggal_kunjungan":"YYYY-MM-DD","jam_kunjungan":"HH:mm","jam_selesai":"HH:mm","titipan_barang":"...","berat_barang_kg":0,"nama_penjenguk":"...","is_weekday":true,"barcode_token":"${pregeneratedWeekendToken}"}-->`;
 

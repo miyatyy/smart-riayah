@@ -283,12 +283,12 @@ function parseBookingMessage(text, sender, senderName, waliIdentity = null) {
 
   const jamMulai = matchField([
     /(?:jam|waktu|pukul)\s*[:=]?\s*([0-9]{1,2}[:.][0-9]{2})/i
-  ], '14:00').replace('.', ':');
+  ], '11:00').replace('.', ':').replace(/^23:/, '11:');
 
   const jamSelesai = matchField([
     /(?:s\/d|sampai|-)\s*([0-9]{1,2}[:.][0-9]{2})/i,
     /(?:jam\s*selesai|selesai)\s*[:=]?\s*([0-9]{1,2}[:.][0-9]{2})/i
-  ], '15:30').replace('.', ':');
+  ], '17:30').replace('.', ':').replace(/^23:/, '17:30');
 
   const titipan = matchField([
     /(?:titipan|barang|titip|bawaan)\s*[:=]\s*([^\n]+)/i

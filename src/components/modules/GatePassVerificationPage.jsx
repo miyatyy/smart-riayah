@@ -73,7 +73,7 @@ function findBookingByToken(list, rawToken, santriList = []) {
         tanggal_kunjungan: clock.tanggal_ymd,
         hari_kunjungan: clock.nama_hari,
         jam_kunjungan: '09:00',
-        jam_selesai: '17:00',
+        jam_selesai: '17:30',
         titipan_barang: 'Titipan Wali Santri (Maks 5 Kg)',
         berat_barang_kg: 1.0,
         nama_penjenguk: matchedSantri.namaWali || 'Wali Santri',
@@ -419,16 +419,15 @@ export default function GatePassVerificationPage({ token }) {
       ctx.font = 'bold 15px sans-serif';
       ctx.fillText(`${booking.hari_kunjungan || 'Sabtu'}, ${booking.tanggal_kunjungan || clock.tanggal_lengkap}`, 370, 294);
 
-      const displayJamMulai = booking.jam_kunjungan || '09:00';
+      const displayJamMulai = (booking.jam_kunjungan || '09:00').replace(/^23:/, '11:');
       let displayJamSelesai = booking.jam_selesai;
-      const isWeekendSchedule = booking.approval_type === 'AUTO_WEEKEND' || ['Jumat', 'Sabtu', 'Minggu'].includes(booking.hari_kunjungan);
-      if (!displayJamSelesai || displayJamSelesai === displayJamMulai || (isWeekendSchedule && displayJamSelesai === '10:00')) {
-        displayJamSelesai = isWeekendSchedule ? '17:00' : '15:30';
+      if (!displayJamSelesai || displayJamSelesai === displayJamMulai || displayJamSelesai === '15:30' || displayJamSelesai === '10:00' || displayJamSelesai.startsWith('23:')) {
+        displayJamSelesai = '17:30';
       }
 
       ctx.fillStyle = '#0284C7';
       ctx.font = 'bold 14px monospace';
-      ctx.fillText(`Pukul: ${displayJamMulai} s/d ${displayJamSelesai} WIB`, 370, 314);
+      ctx.fillText(`Pukul: ${displayJamMulai} s/d ${displayJamSelesai} WITA`, 370, 314);
 
       // Garis Pemisah 2
       ctx.beginPath();

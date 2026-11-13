@@ -1580,6 +1580,12 @@ export const AppProvider = ({ children }) => {
           try {
             const booking = JSON.parse(payload.new.message_text);
             if (booking && booking.id) {
+              if (typeof booking.jam_kunjungan === 'string' && /^23:/.test(booking.jam_kunjungan)) {
+                booking.jam_kunjungan = booking.jam_kunjungan.replace(/^23:/, '11:');
+              }
+              if (!booking.jam_selesai || booking.jam_selesai === '15:30' || booking.jam_selesai === '10:00' || /^23:/.test(booking.jam_selesai)) {
+                booking.jam_selesai = '17:30';
+              }
               const bookingData = { ...booking, _supabaseMessageId: payload.new.id };
               if (payload.eventType === 'INSERT') {
                 sound.playSuccess?.();
@@ -4641,8 +4647,8 @@ export const AppProvider = ({ children }) => {
       asal: bookingData.asal || 'Surabaya',
       tanggal_kunjungan: tgl,
       hari_kunjungan: hari,
-      jam_kunjungan: bookingData.jam_kunjungan || clock.jam_menit,
-      jam_selesai: bookingData.jam_selesai || '15:30',
+      jam_kunjungan: (bookingData.jam_kunjungan || clock.jam_menit).replace(/^23:/, '11:'),
+      jam_selesai: (bookingData.jam_selesai || '17:30').replace(/^23:/, '17:30'),
       titipan_barang: bookingData.titipan_barang || '-',
       berat_barang_kg: parseFloat(bookingData.berat_barang_kg) || 0,
       nama_penjenguk: bookingData.nama_penjenguk || 'Wali Santri',
