@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useApp } from '../../context/AppContext';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useApp, consolidateDuplicateVisitBookings } from '../../context/AppContext';
 import {
   Calendar,
   Clock,
@@ -118,8 +118,10 @@ export default function VisitBookingManager({ isCompact = false }) {
     setIsManualModalOpen(true);
   };
 
-  // Calculate metrics
-  const bookings = Array.isArray(visitBookings) ? visitBookings : [];
+  // Calculate metrics (Deduplikasi cerdas untuk mencegah doubling baris santri yang sama di hari yang sama)
+  const bookings = useMemo(() => {
+    return consolidateDuplicateVisitBookings(visitBookings || []).consolidated;
+  }, [visitBookings]);
   const todayStr = new Date().toISOString().slice(0, 10);
   
   const isPendingApprovalStatus = (status) => {

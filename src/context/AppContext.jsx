@@ -148,11 +148,13 @@ function areArraysEqualShallow(arr1, arr2) {
  */
 function mergeVisitBookingsLists(currentList = [], incomingList = []) {
   if (!Array.isArray(incomingList) || incomingList.length === 0) {
-    return Array.isArray(currentList) ? currentList : [];
+    const { consolidated } = consolidateDuplicateVisitBookings(Array.isArray(currentList) ? currentList : []);
+    return consolidated;
   }
   const currentArray = Array.isArray(currentList) ? currentList : [];
   if (currentArray.length === 0) {
-    return [...incomingList].sort((a, b) => getVisitBookingTimestamp(b) - getVisitBookingTimestamp(a));
+    const { consolidated } = consolidateDuplicateVisitBookings(incomingList);
+    return consolidated;
   }
 
   const mergedMap = new Map();
@@ -209,13 +211,86 @@ function mergeVisitBookingsLists(currentList = [], incomingList = []) {
     }
   }
 
-  if (!hasRealChanges && mergedMap.size === currentArray.length) {
+  const allItems = Array.from(mergedMap.values());
+  const { consolidated, hasChanges: wasConsolidated } = consolidateDuplicateVisitBookings(allItems);
+
+  if (!hasRealChanges && !wasConsolidated && mergedMap.size === currentArray.length) {
     return currentList;
   }
 
-  return Array.from(mergedMap.values()).sort(
+  return consolidated;
+}
+
+/**
+ * Utility: Konsolidasi dan eliminasi data ganda (doubling) booking kunjungan santri.
+ * Menggabungkan beberapa data booking yang merujuk pada santri yang sama, wali yang sama,
+ * dan tanggal kunjungan yang sama (misal saat proses chat WhatsApp multi-turn).
+ */
+export function consolidateDuplicateVisitBookings(list = []) {
+  if (!Array.isArray(list) || list.length === 0) {
+    return { consolidated: [], redundantMessageIds: [], hasChanges: false };
+  }
+
+  const grouped = new Map();
+  const redundantMessageIds = [];
+  let hasChanges = false;
+
+  for (const item of list) {
+    if (!item) continue;
+    const dateKey = String(item.tanggal_kunjungan || '').trim();
+    const rawPhone = item.no_wa_penjenguk || item.phone || item.whatsapp_penjenguk || '';
+    const phoneClean = normalizePhone(rawPhone) || String(rawPhone).replace(/[^0-9]/g, '');
+    const santriClean = String(item.nama_santri || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    // Kunci grup unik: tanggal + nomor telepon wali + nama santri
+    const compositeKey = `${dateKey}|${phoneClean || 'no_phone'}|${santriClean || item.id}`;
+
+    if (!grouped.has(compositeKey)) {
+      grouped.set(compositeKey, { ...item });
+    } else {
+      hasChanges = true;
+      const existing = grouped.get(compositeKey);
+
+      const rankExist = VISIT_STATUS_RANK[existing.status_kunjungan] || 2;
+      const rankNew = VISIT_STATUS_RANK[item.status_kunjungan] || 2;
+
+      // Bedakan jam default generic (09:00 - 17:30) vs jam kustom yang spesifik disebutkan wali (misal 15:10 - 17:00)
+      const isDefaultHours = (b) => (b.jam_kunjungan === '09:00' && b.jam_selesai === '17:30');
+      const existIsDefault = isDefaultHours(existing);
+      const newIsDefault = isDefaultHours(item);
+
+      const tsExist = getVisitBookingTimestamp(existing);
+      const tsNew = getVisitBookingTimestamp(item);
+
+      let chooseNew = false;
+      if (rankNew > rankExist) {
+        chooseNew = true;
+      } else if (rankNew === rankExist) {
+        if (existIsDefault && !newIsDefault) {
+          chooseNew = true; // Data baru memiliki jam spesifik wali
+        } else if (!existIsDefault && newIsDefault) {
+          chooseNew = false;
+        } else if (tsNew >= tsExist) {
+          chooseNew = true;
+        }
+      }
+
+      const winner = chooseNew ? { ...existing, ...item } : { ...item, ...existing };
+      const loser = chooseNew ? existing : item;
+
+      if (loser._supabaseMessageId && loser._supabaseMessageId !== winner._supabaseMessageId) {
+        redundantMessageIds.push(loser._supabaseMessageId);
+      }
+
+      grouped.set(compositeKey, winner);
+    }
+  }
+
+  const consolidated = Array.from(grouped.values()).sort(
     (a, b) => getVisitBookingTimestamp(b) - getVisitBookingTimestamp(a)
   );
+
+  return { consolidated, redundantMessageIds, hasChanges };
 }
 
 // Utility: Consolidate duplicate Santri profiles (e.g. lowercase vs capitalized names)
@@ -618,8 +693,13 @@ export const AppProvider = ({ children }) => {
   const [visitBookings, setVisitBookings] = useState(() => {
     try {
       const saved = localStorage.getItem('sr_visit_bookings');
-      if (saved) return JSON.parse(saved);
-      return INITIAL_VISIT_BOOKINGS;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const { consolidated } = consolidateDuplicateVisitBookings(parsed);
+        return consolidated;
+      }
+      const { consolidated } = consolidateDuplicateVisitBookings(INITIAL_VISIT_BOOKINGS);
+      return consolidated;
     } catch {
       return INITIAL_VISIT_BOOKINGS;
     }
@@ -1234,6 +1314,25 @@ export const AppProvider = ({ children }) => {
       localStorage.setItem('sr_santri', JSON.stringify(res.santriList));
       localStorage.setItem('sr_permits', JSON.stringify(res.permits));
     }
+
+    // Auto-heal & synchronize duplicate visit bookings and clean redundant Supabase messages
+    setVisitBookings(prev => {
+      const { consolidated, redundantMessageIds, hasChanges } = consolidateDuplicateVisitBookings(prev);
+      if (hasChanges) {
+        try {
+          localStorage.setItem('sr_visit_bookings', JSON.stringify(consolidated));
+        } catch (e) {}
+        if (redundantMessageIds.length > 0) {
+          supabase
+            .from('messages')
+            .delete()
+            .in('id', redundantMessageIds)
+            .catch(() => {});
+        }
+        return consolidated;
+      }
+      return prev;
+    });
   }, []);
 
   // =========================================================================

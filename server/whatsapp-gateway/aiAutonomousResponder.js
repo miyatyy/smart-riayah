@@ -1209,34 +1209,101 @@ function isConfirmationMessage(textLower) {
 
 /**
  * Simpan booking kunjungan ke antrean dan broadcast ke Supabase Realtime
+ * Dilengkapi deteksi upsert cerdas untuk mencegah duplikasi (doubling) data kunjungan santri yang sama di hari yang sama
  */
 export async function saveBookingToSystem(bookingData) {
   try {
-    const phoneKey = normalizePhone(bookingData.no_wa_penjenguk) || String(bookingData.no_wa_penjenguk || '');
+    const phoneKey = normalizePhone(bookingData.no_wa_penjenguk) || String(bookingData.no_wa_penjenguk || '').replace(/[^0-9]/g, '');
+    const santriKey = String(bookingData.nama_santri || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    const dateKey = String(bookingData.tanggal_kunjungan || '').trim();
     const recentStore = getRecentBookingMemoryStore();
-    const dedupeKey = `${phoneKey}:${bookingData.tanggal_kunjungan || ''}:${bookingData.hari_kunjungan || ''}`;
-
-    const broadcastRes = await broadcastToSupabaseRealtime('whatsapp.visit_booking', bookingData);
-    if (!broadcastRes?.success) {
-      console.warn('⚠️ [Broadcast whatsapp.visit_booking warning]:', broadcastRes?.error || broadcastRes);
-    }
+    const dedupeKey = `${phoneKey}:${dateKey}:${santriKey}`;
 
     const client = await getAuthenticatedSupabaseClient();
     const { data: userData } = await client.auth.getUser().catch(() => ({ data: {} }));
     const systemEmail = userData?.user?.email || 'adminriayah@smartriayah.sch.id';
 
-    const { error: insertErr } = await client.from('messages').insert([{
-      room_id: 'visit_bookings_log',
-      sender_email: systemEmail,
-      sender_name: 'Smart Riayah AI Gate Pass',
-      sender_role: 'system',
-      message_text: JSON.stringify(bookingData),
-      reaction: bookingData.is_weekday ? 'VISIT_MANUAL_WEEKDAY' : 'VISIT_AUTO_WEEKEND',
-      is_read: false
-    }]);
+    // Cek apakah sudah ada catatan booking di Supabase messages untuk wali & santri pada tanggal ini
+    const { data: existingRows } = await client
+      .from('messages')
+      .select('id, message_text')
+      .eq('room_id', 'visit_bookings_log')
+      .order('created_at', { ascending: false })
+      .limit(60);
 
-    if (insertErr) {
-      console.warn('⚠️ [Supabase visit_bookings_log insert warning]:', insertErr.message);
+    let existingMsgId = null;
+    let existingBookingId = null;
+    let existingToken = null;
+
+    if (Array.isArray(existingRows)) {
+      const match = existingRows.find(r => {
+        try {
+          const parsed = JSON.parse(r.message_text);
+          if (!parsed) return false;
+          const sameId = parsed.id && parsed.id === bookingData.id;
+          const rDate = String(parsed.tanggal_kunjungan || '').trim();
+          const rPhone = normalizePhone(parsed.no_wa_penjenguk || parsed.phone) || String(parsed.no_wa_penjenguk || '').replace(/[^0-9]/g, '');
+          const rSantri = String(parsed.nama_santri || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+
+          const phoneMatches = Boolean(
+            phoneKey && rPhone && (phoneKey.endsWith(rPhone.slice(-8)) || rPhone.endsWith(phoneKey.slice(-8)))
+          );
+          const santriMatches = Boolean(
+            santriKey && rSantri && (santriKey.includes(rSantri) || rSantri.includes(santriKey))
+          );
+          const dateMatches = Boolean(rDate && dateKey && rDate === dateKey);
+
+          return sameId || (dateMatches && phoneMatches && santriMatches);
+        } catch {
+          return false;
+        }
+      });
+
+      if (match) {
+        existingMsgId = match.id;
+        try {
+          const parsed = JSON.parse(match.message_text);
+          existingBookingId = parsed.id;
+          existingToken = parsed.barcode_token;
+        } catch {}
+      }
+    }
+
+    // Jika record sudah ada sebelumnya, pertahankan ID dan Barcode aslinya agar stabil
+    if (existingBookingId && (!bookingData.id || bookingData.id.startsWith('VST-'))) {
+      bookingData.id = existingBookingId;
+      if (existingToken && !bookingData.barcode_token) {
+        bookingData.barcode_token = existingToken;
+      }
+    }
+
+    let insertErr = null;
+    if (existingMsgId) {
+      // UPDATE baris yang sudah ada (menghindari duplikasi baris di tabel Admin Ri'ayah)
+      const { error: updErr } = await client.from('messages').update({
+        message_text: JSON.stringify(bookingData),
+        reaction: bookingData.is_weekday ? 'VISIT_MANUAL_WEEKDAY' : 'VISIT_AUTO_WEEKEND',
+        is_read: false
+      }).eq('id', existingMsgId);
+      insertErr = updErr;
+      if (updErr) {
+        console.warn('⚠️ [Supabase update visit_bookings_log warning]:', updErr.message);
+      }
+    } else {
+      // INSERT baru jika belum pernah ada
+      const { error } = await client.from('messages').insert([{
+        room_id: 'visit_bookings_log',
+        sender_email: systemEmail,
+        sender_name: 'Smart Riayah AI Gate Pass',
+        sender_role: 'system',
+        message_text: JSON.stringify(bookingData),
+        reaction: bookingData.is_weekday ? 'VISIT_MANUAL_WEEKDAY' : 'VISIT_AUTO_WEEKEND',
+        is_read: false
+      }]);
+      insertErr = error;
+      if (error) {
+        console.warn('⚠️ [Supabase visit_bookings_log insert warning]:', error.message);
+      }
     }
 
     recentStore.set(dedupeKey, {
@@ -1244,7 +1311,14 @@ export async function saveBookingToSystem(bookingData) {
       savedAt: Date.now(),
     });
 
-    console.log(`🎫 [Visit Booking Saved]: ${bookingData.id} for ${bookingData.nama_santri} (${bookingData.hari_kunjungan}) - ${bookingData.status_kunjungan}`);
+    // Broadcast event realtime: gunakan visit_booking_updated jika update, atau visit_booking jika insert baru
+    const broadcastEvent = existingMsgId ? 'whatsapp.visit_booking_updated' : 'whatsapp.visit_booking';
+    const broadcastRes = await broadcastToSupabaseRealtime(broadcastEvent, bookingData);
+    if (!broadcastRes?.success) {
+      console.warn(`⚠️ [Broadcast ${broadcastEvent} warning]:`, broadcastRes?.error || broadcastRes);
+    }
+
+    console.log(`🎫 [Visit Booking ${existingMsgId ? 'Updated' : 'Saved'}]: ${bookingData.id} for ${bookingData.nama_santri} (${bookingData.hari_kunjungan}) - ${bookingData.jam_kunjungan} s/d ${bookingData.jam_selesai} - ${bookingData.status_kunjungan}`);
 
     // Simpan juga data booking AI ke MongoDB collection 'ai_whatsapp_bookings'
     await saveAiDocument('ai_whatsapp_bookings', {
@@ -1449,9 +1523,15 @@ export async function generateAutonomousReplyWithContext(
       waliData
     );
 
-    const dedupeKey = `${cleanPhone}:${normalized.tanggal_kunjungan}:${normalized.hari_kunjungan}`;
-    const recentEntry = getRecentBookingMemoryStore().get(dedupeKey);
-    // Hindari duplikasi jika baru saja tersimpan < 10 menit dan tidak ada perubahan jam/titipan
+    const santriKey = String(normalized.nama_santri || waliData.santriNama || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    const dedupeKey = `${cleanPhone}:${normalized.tanggal_kunjungan}:${santriKey}`;
+    const recentStore = getRecentBookingMemoryStore();
+    const recentEntry = recentStore.get(dedupeKey);
+
+    const existingId = recentEntry?.booking?.id;
+    const existingToken = recentEntry?.booking?.barcode_token;
+
+    // Hindari duplikasi jika baru saja tersimpan < 10 menit dan data persis sama
     if (
       recentEntry &&
       Date.now() - recentEntry.savedAt < 10 * 60 * 1000 &&
@@ -1464,7 +1544,8 @@ export async function generateAutonomousReplyWithContext(
     }
 
     const bookingRecord = {
-      id: `VST-${rtc.ymd.replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`,
+      ...(recentEntry?.booking || {}),
+      id: existingId || `VST-${rtc.ymd.replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`,
       booking_source: sourceLabel,
       nama_santri: normalized.nama_santri,
       kelas: normalized.kelas,
@@ -1472,14 +1553,14 @@ export async function generateAutonomousReplyWithContext(
       tanggal_kunjungan: normalized.tanggal_kunjungan,
       hari_kunjungan: normalized.hari_kunjungan,
       jam_kunjungan: normalized.jam_kunjungan || '14:00',
-      jam_selesai: normalized.jam_selesai || '15:30',
+      jam_selesai: normalized.jam_selesai || '17:30',
       titipan_barang: normalized.titipan_barang || '-',
       berat_barang_kg: Number(normalized.berat_barang_kg) || 0,
       nama_penjenguk: normalized.nama_penjenguk || waliData.namaWali,
       status_penjenguk: 'Wali Santri',
       no_wa_penjenguk: cleanPhone,
       rfid_uid: waliData.rfidUid || null,
-      barcode_token: normalized.barcode_token,
+      barcode_token: existingToken || normalized.barcode_token,
       barcode_image_url: normalized.barcode_image_url,
       gate_pass_url: normalized.gate_pass_url,
       approval_type: normalized.approval_type,
@@ -1487,12 +1568,13 @@ export async function generateAutonomousReplyWithContext(
       is_weekday: normalized.is_weekday,
       waktu_chat_masuk: `${rtc.namaHari}, ${rtc.tglLengkap} • ${rtc.jamMenitDetik} WITA`,
       waktu_disetujui: normalized.waktu_disetujui,
-      created_at: new Date().toISOString()
+      created_at: recentEntry?.booking?.created_at || new Date().toISOString(),
+      updated_at: new Date().toISOString()
     };
 
     activeBookingRecord = bookingRecord;
     await saveBookingToSystem(bookingRecord);
-    return { bookingRecord, deduplicated: false };
+    return { bookingRecord, deduplicated: Boolean(recentEntry) };
   };
 
   // 1. Coba gunakan DeepSeek AI jika token tersedia
@@ -1615,21 +1697,29 @@ ATURAN BOOKING KUNJUNGAN:
             isConfirmationMessage(textLower) &&
             (historyHasVisitContext || textHasBookingSignal || replyIndicatesBooked);
 
+          // PENTING: Cegah pembuatan booking prematur saat AI masih bertanya "hari apa dan jam berapa" (menghindari duplikasi baris)
+          const isAiAskingScheduleClarification =
+            (/\?|hari\s+apa|jam\s+berapa|pukul\s+berapa|kapan\s+rencananya/i.test(reply) &&
+            !/disetujui|gatepass|gp-du-|sudah\s+(?:kami\s+)?(?:catat|terima|disetujui)/i.test(reply));
+
           if (
             !bookingSaved &&
-            (replyIndicatesBooked || isExplicitBookingConfirmation || (historyHasVisitContext && (textHasBookingSignal || isConfirmationMessage(textLower))))
+            !isAiAskingScheduleClarification &&
+            (replyIndicatesBooked || isExplicitBookingConfirmation)
           ) {
             const parsed = parseScheduleDetailsFromText(`${incomingText} ${reply}`, historyTextJoined, rtc);
-            await persistNormalizedBooking(
-              {
-                ...parsed,
-                barcode_token: candidateToken,
-                nama_santri: waliData.santriNama !== 'Ananda' ? waliData.santriNama : 'Santri',
-                kelas: waliData.kelas,
-                nama_penjenguk: waliData.namaWali,
-              },
-              'WHATSAPP_AI_RECOVERY'
-            );
+            if (parsed && (replyIndicatesBooked || isExplicitBookingConfirmation)) {
+              await persistNormalizedBooking(
+                {
+                  ...parsed,
+                  barcode_token: candidateToken,
+                  nama_santri: waliData.santriNama !== 'Ananda' ? waliData.santriNama : 'Santri',
+                  kelas: waliData.kelas,
+                  nama_penjenguk: waliData.namaWali,
+                },
+                'WHATSAPP_AI_RECOVERY'
+              );
+            }
           }
 
           // Harmonisasi: jika bookingRecord weekend dibuat, pastikan token dan link di teks WA 100% cocok dengan barcode_token yang tersimpan
