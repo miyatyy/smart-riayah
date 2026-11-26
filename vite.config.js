@@ -89,8 +89,11 @@ function stateSyncPlugin() {
 }
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react(), stateSyncPlugin()],
+  esbuild: {
+    drop: mode === 'production' || process.env.NODE_ENV === 'production' ? ['console', 'debugger'] : []
+  },
   server: {
     port: 3000,
     open: false,
@@ -145,4 +148,4 @@ export default defineConfig({
       }
     }
   }
-})
+}))
