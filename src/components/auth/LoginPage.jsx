@@ -170,10 +170,17 @@ export default function LoginPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [isDemoPanelOpen, setIsDemoPanelOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isReadOnly, setIsReadOnly] = useState(true);
 
   // Form login bersih untuk keamanan portofolio (kredensial akun demo aman di dokumen PDF)
   useEffect(() => {
-    // Form kosong secara default agar pengunjung publik tidak dapat langsung masuk
+    // Paksa form kosong dan cegah browser password manager mengisikan otomatis
+    setEmail('');
+    setPassword('');
+    const t1 = setTimeout(() => { setEmail(''); setPassword(''); }, 50);
+    const t2 = setTimeout(() => { setEmail(''); setPassword(''); }, 200);
+    const t3 = setTimeout(() => { setEmail(''); setPassword(''); }, 500);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, []);
 
   const handleSubmit = async (e) => {
@@ -295,6 +302,16 @@ export default function LoginPage() {
       
       {/* ─── SCOPED KEYFRAME ANIMATIONS (PURE CSS 60FPS) ─── */}
       <style>{`
+        /* Suppress browser autofill background coloring */
+        input:-webkit-autofill,
+        input:-webkit-autofill:hover, 
+        input:-webkit-autofill:focus,
+        input:-webkit-autofill:active {
+          -webkit-text-fill-color: #1e293b !important;
+          -webkit-box-shadow: 0 0 0 1000px #f8fafc inset !important;
+          box-shadow: 0 0 0 1000px #f8fafc inset !important;
+          transition: background-color 5000s ease-in-out 0s;
+        }
         @keyframes laserScan {
           0% { top: 6%; opacity: 0.2; }
           15% { opacity: 1; }
@@ -670,7 +687,11 @@ export default function LoginPage() {
           )}
 
           {/* Form Login */}
-          <form className="space-y-4 pt-1" onSubmit={handleSubmit}>
+          <form className="space-y-4 pt-1" onSubmit={handleSubmit} autoComplete="off">
+            {/* Hidden dummy inputs to absorb aggressive browser autofill */}
+            <input type="text" name="dummy_username_block" id="dummy_username_block" style={{ display: 'none' }} tabIndex={-1} autoComplete="off" />
+            <input type="password" name="dummy_password_block" id="dummy_password_block" style={{ display: 'none' }} tabIndex={-1} autoComplete="off" />
+
             {/* Username / Email Field */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5">
@@ -682,14 +703,19 @@ export default function LoginPage() {
                 </div>
                 <input
                   type="text"
+                  name="sr_user_auth_id"
+                  id="sr_user_auth_id"
                   value={email}
+                  readOnly={isReadOnly}
+                  onFocus={() => setIsReadOnly(false)}
+                  onClick={() => setIsReadOnly(false)}
                   onChange={(e) => {
                     setEmail(e.target.value);
                     setErrorMessage('');
                   }}
                   placeholder="Masukkan email terdaftar..."
                   className="block w-full pl-10 pr-3.5 py-2.5 bg-slate-50 hover:bg-slate-100/80 focus:bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition"
-                  autoComplete="username"
+                  autoComplete="off"
                   required
                 />
               </div>
@@ -708,14 +734,19 @@ export default function LoginPage() {
                 </div>
                 <input
                   type={showPassword ? 'text' : 'password'}
+                  name="sr_pass_auth_key"
+                  id="sr_pass_auth_key"
                   value={password}
+                  readOnly={isReadOnly}
+                  onFocus={() => setIsReadOnly(false)}
+                  onClick={() => setIsReadOnly(false)}
                   onChange={(e) => {
                     setPassword(e.target.value);
                     setErrorMessage('');
                   }}
                   placeholder="Masukkan password akun..."
                   className="block w-full pl-10 pr-10 py-2.5 bg-slate-50 hover:bg-slate-100/80 focus:bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition font-mono"
-                  autoComplete="current-password"
+                  autoComplete="new-password"
                   required
                 />
                 <button
