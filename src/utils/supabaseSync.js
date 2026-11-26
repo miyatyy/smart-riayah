@@ -879,23 +879,7 @@ export function dbToOsisReport(row) {
 export async function fetchOsisReportsFromSupabase() {
   const byId = new Map();
 
-  // 1. Query dedicated table 'osis_reports' in Supabase
-  try {
-    const { data, error } = await supabase
-      .from('osis_reports')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(200);
-
-    if (!error && Array.isArray(data)) {
-      data.forEach(row => {
-        const mapped = dbToOsisReport(row);
-        if (mapped?.id) byId.set(mapped.id, mapped);
-      });
-    }
-  } catch {}
-
-  // 2. Also read from 'messages' fallback log (if SQL table wasn't created yet)
+  // 1. Read from Supabase 'messages' table with dedicated room_id 'osis_reports_log'
   try {
     const { data: msgRows, error: msgErr } = await supabase
       .from('messages')
@@ -916,7 +900,7 @@ export async function fetchOsisReportsFromSupabase() {
     }
   } catch {}
 
-  // 3. Also pull from MongoDB / PG API (/api/mongo?entity=osis-reports)
+  // 2. Also pull from MongoDB / PG API (/api/mongo?entity=osis-reports)
   try {
     const apiRes = await fetchJsonWithTimeout('/api/mongo?entity=osis-reports&limit=200', {}, 3000);
     if (apiRes?.success && Array.isArray(apiRes.data)) {
@@ -938,7 +922,6 @@ export async function fetchOsisReportsFromSupabase() {
 
 export async function createOsisReportInDb(report) {
   if (!report?.id) return { success: false };
-  const payload = osisReportToDb(report);
   let savedSupabase = false;
   let savedMongo = false;
 
@@ -952,27 +935,19 @@ export async function createOsisReportInDb(report) {
     if (apiRes?.success) savedMongo = Boolean(apiRes.savedMongo);
   } catch {}
 
-  // 2. Write to Supabase 'osis_reports' table, with fallback to 'messages'
+  // 2. Write to Supabase 'messages' table (room_id: 'osis_reports_log')
   try {
-    const { error } = await supabase
-      .from('osis_reports')
-      .upsert([payload], { onConflict: 'id' });
-
-    if (!error) {
-      savedSupabase = true;
-    } else {
-      const { error: msgErr } = await supabase.from('messages').insert([{
-        room_id: 'osis_reports_log',
-        sender_email: 'osis@smartriayah.com',
-        sender_name: report.pelaporNama || 'Pengurus OSIS',
-        sender_role: 'osis',
-        receiver_role: 'admin_riayah',
-        message_text: JSON.stringify(report),
-        reaction: report.status || 'PENDING_ADMIN',
-        is_read: false
-      }]);
-      if (!msgErr) savedSupabase = true;
-    }
+    const { error: msgErr } = await supabase.from('messages').insert([{
+      room_id: 'osis_reports_log',
+      sender_email: 'osis@smartriayah.com',
+      sender_name: report.pelaporNama || 'Pengurus OSIS',
+      sender_role: 'osis',
+      receiver_role: 'admin_riayah',
+      message_text: JSON.stringify(report),
+      reaction: report.status || 'PENDING_ADMIN',
+      is_read: false
+    }]);
+    if (!msgErr) savedSupabase = true;
   } catch (err) {
     console.warn('⚠️ [createOsisReportInDb]:', err.message);
   }
@@ -983,7 +958,6 @@ export async function createOsisReportInDb(report) {
 export async function updateOsisReportInDb(report) {
   if (!report?.id) return { success: false };
   const updatedRecord = { ...report, updated_at: new Date().toISOString() };
-  const payload = osisReportToDb(updatedRecord);
   let updatedSupabase = false;
   let updatedMongo = false;
 
@@ -997,52 +971,43 @@ export async function updateOsisReportInDb(report) {
     if (apiRes?.success) updatedMongo = Boolean(apiRes.updatedMongo);
   } catch {}
 
-  // 2. Update in Supabase 'osis_reports' table
+  // 2. Update in Supabase 'messages' table (room_id: 'osis_reports_log')
   try {
-    const { error } = await supabase
-      .from('osis_reports')
-      .upsert([payload], { onConflict: 'id' });
+    const { data: rows } = await supabase
+      .from('messages')
+      .select('id, message_text')
+      .eq('room_id', 'osis_reports_log')
+      .order('created_at', { ascending: false })
+      .limit(200);
 
-    if (!error) {
-      updatedSupabase = true;
-    } else {
-      // Fallback: find row in 'messages' table and update or insert
-      const { data: rows } = await supabase
+    const matched = Array.isArray(rows)
+      ? rows.find(r => {
+          try { return JSON.parse(r.message_text)?.id === report.id; } catch { return false; }
+        })
+      : null;
+
+    if (matched) {
+      const { error: updErr } = await supabase
         .from('messages')
-        .select('id, message_text')
-        .eq('room_id', 'osis_reports_log')
-        .order('created_at', { ascending: false })
-        .limit(200);
-
-      const matched = Array.isArray(rows)
-        ? rows.find(r => {
-            try { return JSON.parse(r.message_text)?.id === report.id; } catch { return false; }
-          })
-        : null;
-
-      if (matched) {
-        const { error: updErr } = await supabase
-          .from('messages')
-          .update({
-            message_text: JSON.stringify(updatedRecord),
-            reaction: updatedRecord.status || 'UPDATED',
-            is_read: updatedRecord.status !== 'PENDING_ADMIN'
-          })
-          .eq('id', matched.id);
-        if (!updErr) updatedSupabase = true;
-      } else {
-        const { error: insErr } = await supabase.from('messages').insert([{
-          room_id: 'osis_reports_log',
-          sender_email: 'osis@smartriayah.com',
-          sender_name: updatedRecord.pelaporNama || 'Pengurus OSIS',
-          sender_role: 'osis',
-          receiver_role: 'admin_riayah',
+        .update({
           message_text: JSON.stringify(updatedRecord),
-          reaction: updatedRecord.status || 'PENDING_ADMIN',
+          reaction: updatedRecord.status || 'UPDATED',
           is_read: updatedRecord.status !== 'PENDING_ADMIN'
-        }]);
-        if (!insErr) updatedSupabase = true;
-      }
+        })
+        .eq('id', matched.id);
+      if (!updErr) updatedSupabase = true;
+    } else {
+      const { error: insErr } = await supabase.from('messages').insert([{
+        room_id: 'osis_reports_log',
+        sender_email: 'osis@smartriayah.com',
+        sender_name: updatedRecord.pelaporNama || 'Pengurus OSIS',
+        sender_role: 'osis',
+        receiver_role: 'admin_riayah',
+        message_text: JSON.stringify(updatedRecord),
+        reaction: updatedRecord.status || 'PENDING_ADMIN',
+        is_read: updatedRecord.status !== 'PENDING_ADMIN'
+      }]);
+      if (!insErr) updatedSupabase = true;
     }
   } catch (err) {
     console.warn('⚠️ [updateOsisReportInDb]:', err.message);
@@ -1064,14 +1029,8 @@ export async function deleteOsisReportFromDb(reportId) {
     if (apiRes?.success) deletedMongo = Boolean(apiRes.deletedMongo);
   } catch {}
 
-  // 2. Delete from Supabase 'osis_reports' table & fallback 'messages' log
+  // 2. Delete from Supabase 'messages' table (room_id: 'osis_reports_log')
   try {
-    const { error } = await supabase
-      .from('osis_reports')
-      .delete()
-      .eq('id', reportId);
-    if (!error) deletedSupabase = true;
-
     const { data: rows } = await supabase
       .from('messages')
       .select('id, message_text')
@@ -1218,15 +1177,6 @@ export function subscribeToAllTablesRealtime(callbacks = {}) {
       (payload) => {
         console.log('⚡ [Realtime RFID Trx]:', payload.new);
         if (callbacks.onRfidTransactionInsert) callbacks.onRfidTransactionInsert(payload.new);
-      }
-    )
-    // 9. OSIS Reports (CRUD Realtime 2-Arah)
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'osis_reports' },
-      (payload) => {
-        console.log('⚡ [Realtime OSIS Reports]:', payload.eventType, payload.new || payload.old);
-        if (callbacks.onOsisReportChange) callbacks.onOsisReportChange(payload);
       }
     )
     .subscribe((status) => {
