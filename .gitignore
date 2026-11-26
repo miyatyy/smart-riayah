@@ -47,6 +47,7 @@ ideaschool_assets/
 *.pdf
 *.pptx
 *.docx
+generate_*.html
 build_*.py
 generate_*.py
 extract_*.py
