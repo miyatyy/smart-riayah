@@ -6,31 +6,126 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Smart Permit & Smart Ri'ayah | Pesantren Modern Darul Ulum</title>
 
-    <!-- Security & Anti-Data-Leak: Padamkan semua output console di domain publik (production) -->
+    <!-- Security & Anti-Inspection Suite: Tutup & Lindungi Source Code, DevTools, dan Data di Production -->
     <script>
       (function () {
         var isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        if (!isLocal) {
-          var noop = function () {};
-          var methods = [
-            'log', 'debug', 'info', 'warn', 'error', 'table', 'trace',
-            'dir', 'dirxml', 'group', 'groupCollapsed', 'groupEnd',
-            'time', 'timeEnd', 'timeLog', 'count', 'assert', 'clear'
-          ];
-          for (var i = 0; i < methods.length; i++) {
-            try {
-              window.console[methods[i]] = noop;
-            } catch (e) {}
-          }
-          // Blokir pencatatan error runtime ke console publik
-          window.addEventListener('error', function (e) {
-            e.preventDefault();
-            return true;
-          });
-          window.addEventListener('unhandledrejection', function (e) {
-            e.preventDefault();
-          });
+        if (isLocal) return; // Tetap izinkan debugging saat coding lokal
+
+        // 1. Padamkan seluruh fungsi console
+        var noop = function () {};
+        var methods = [
+          'log', 'debug', 'info', 'warn', 'error', 'table', 'trace',
+          'dir', 'dirxml', 'group', 'groupCollapsed', 'groupEnd',
+          'time', 'timeEnd', 'timeLog', 'count', 'assert', 'clear'
+        ];
+        for (var i = 0; i < methods.length; i++) {
+          try { window.console[methods[i]] = noop; } catch (e) {}
         }
+
+        // 2. Blokir Klik Kanan (Context Menu / Inspect Element)
+        document.addEventListener('contextmenu', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }, true);
+
+        // 3. Blokir Tombol Shortcut DevTools & View Source
+        document.addEventListener('keydown', function (e) {
+          var key = e.key;
+          var keyCode = e.keyCode;
+          var ctrl = e.ctrlKey;
+          var meta = e.metaKey;
+          var shift = e.shiftKey;
+          var alt = e.altKey;
+
+          // F12
+          if (key === 'F12' || keyCode === 123) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+          }
+
+          // Ctrl+Shift+I (Inspect), Ctrl+Shift+J (Console), Ctrl+Shift+C (Inspect Element), Ctrl+Shift+K (Firefox)
+          if ((ctrl || meta) && shift && (key === 'I' || key === 'i' || key === 'J' || key === 'j' || key === 'C' || key === 'c' || key === 'K' || key === 'k')) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+          }
+
+          // Ctrl+U (View Source), Ctrl+S (Save Page)
+          if ((ctrl || meta) && (key === 'U' || key === 'u' || key === 'S' || key === 's')) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+          }
+
+          // Mac Option+Command+I / J / C
+          if (meta && alt && (key === 'I' || key === 'i' || key === 'J' || key === 'j' || key === 'C' || key === 'c')) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+          }
+        }, true);
+
+        // 4. Blokir error stack trace ke console
+        window.addEventListener('error', function (e) {
+          e.preventDefault();
+          return true;
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          e.preventDefault();
+        });
+
+        // 5. Anti-DevTools Detection & Source Shield Barrier
+        function triggerProtectionShield(isOpen) {
+          var shield = document.getElementById('security-source-shield');
+          var root = document.getElementById('root');
+          if (!shield) return;
+          if (isOpen) {
+            shield.style.display = 'flex';
+            if (root) root.style.filter = 'blur(16px)';
+          } else {
+            shield.style.display = 'none';
+            if (root) root.style.filter = 'none';
+          }
+        }
+
+        var devtoolsOpen = false;
+        var threshold = 160;
+
+        function checkDevTools() {
+          var widthThreshold = window.outerWidth - window.innerWidth > threshold;
+          var heightThreshold = window.outerHeight - window.innerHeight > threshold;
+          
+          if (widthThreshold || heightThreshold) {
+            if (!devtoolsOpen) {
+              devtoolsOpen = true;
+              triggerProtectionShield(true);
+            }
+          } else {
+            if (devtoolsOpen) {
+              devtoolsOpen = false;
+              triggerProtectionShield(false);
+            }
+          }
+        }
+
+        setInterval(checkDevTools, 400);
+        window.addEventListener('resize', checkDevTools);
+
+        // Anti-debugging debugger trap (mengunci debugger jika devtools terbuka)
+        setInterval(function () {
+          try {
+            var startTime = performance.now();
+            (function () { Function('debugger')(); })();
+            var endTime = performance.now();
+            if (endTime - startTime > 100) {
+              devtoolsOpen = true;
+              triggerProtectionShield(true);
+            }
+          } catch (err) {}
+        }, 1000);
       })();
     </script>
 
@@ -39,6 +134,22 @@
     <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   </head>
   <body class="bg-slate-50 text-slate-800 antialiased selection:bg-emerald-500 selection:text-white">
+    <!-- Security Shield Overlay (Tampil otomatis jika DevTools dibuka di domain publik) -->
+    <div id="security-source-shield" style="display:none; position:fixed; inset:0; z-index:999999999; background:rgba(15, 23, 42, 0.96); backdrop-filter:blur(14px); color:#ffffff; font-family:'Plus Jakarta Sans', sans-serif; align-items:center; justify-content:center; text-align:center; padding:24px;">
+      <div style="max-width:520px; background:#1e293b; border:1px solid #334155; border-radius:18px; padding:36px 28px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.5);">
+        <div style="width:68px; height:68px; margin:0 auto 20px; background:rgba(239, 68, 68, 0.15); border:1px solid rgba(239, 68, 68, 0.3); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:32px;">
+          🔒
+        </div>
+        <h2 style="font-size:22px; font-weight:700; margin-bottom:12px; color:#f87171;">Mode Proteksi Portofolio Aktif</h2>
+        <p style="font-size:14px; line-height:1.6; color:#94a3b8; margin-bottom:20px;">
+          Akses inspeksi kode sumber (Source Code & Developer Tools) dinonaktifkan untuk menjaga keamanan data dan hak cipta sistem <strong>Pesantren Modern Darul Ulum</strong>.
+        </p>
+        <div style="padding:12px 18px; background:#0f172a; border-radius:10px; font-size:13px; color:#38bdf8; font-weight:500;">
+          💡 Silakan tutup Developer Tools / jendela inspeksi untuk kembali ke tampilan aplikasi.
+        </div>
+      </div>
+    </div>
+
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

@@ -94,6 +94,10 @@ export default defineConfig(({ mode }) => ({
   esbuild: {
     drop: mode === 'production' || process.env.NODE_ENV === 'production' ? ['console', 'debugger'] : []
   },
+  build: {
+    sourcemap: false,
+    minify: 'esbuild'
+  },
   server: {
     port: 3000,
     open: false,
