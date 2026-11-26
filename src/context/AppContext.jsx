@@ -4051,7 +4051,7 @@ export const AppProvider = ({ children }) => {
       sound.playAccessDenied();
       return { 
         success: false, 
-        error: `Email "${email}" tidak terdaftar dalam sistem. Silakan periksa kembali atau pilih akun demo di bawah!` 
+        error: `Email "${email}" tidak terdaftar dalam sistem. Silakan periksa kembali email akun Anda.` 
       };
     }
 

@@ -171,23 +171,10 @@ export default function LoginPage() {
   const [isDemoPanelOpen, setIsDemoPanelOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Auto pre-fill if navigated with a specific role target from landing page
+  // Form login bersih untuk keamanan portofolio (kredensial akun demo aman di dokumen PDF)
   useEffect(() => {
-    if (loginRoleTarget) {
-      const matched = DEMO_ACCOUNTS.find(
-        (a) => a.role === loginRoleTarget || a.appRole === loginRoleTarget
-      );
-      if (matched) {
-        setEmail(matched.email);
-        setPassword(matched.password);
-      }
-    } else if (!email) {
-      // Default to Super Admin for developer convenience
-      const defaultAcc = DEMO_ACCOUNTS[0];
-      setEmail(defaultAcc.email);
-      setPassword(defaultAcc.password);
-    }
-  }, [loginRoleTarget]);
+    // Form kosong secara default agar pengunjung publik tidak dapat langsung masuk
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -700,7 +687,7 @@ export default function LoginPage() {
                     setEmail(e.target.value);
                     setErrorMessage('');
                   }}
-                  placeholder="contoh: superadmin@smartriayah.sch.id"
+                  placeholder="Masukkan email terdaftar..."
                   className="block w-full pl-10 pr-3.5 py-2.5 bg-slate-50 hover:bg-slate-100/80 focus:bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition"
                   autoComplete="username"
                   required
@@ -769,82 +756,13 @@ export default function LoginPage() {
             </div>
           </form>
 
-          {/* Collapsible Panel: Demo Accounts One-Click Quick Fill (7 Role Akses) */}
+          {/* Security & Access Notice */}
           <div className="pt-3 border-t border-slate-200/80">
-            <button
-              type="button"
-              onClick={() => setIsDemoPanelOpen(!isDemoPanelOpen)}
-              className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-slate-100/90 border border-slate-200 text-slate-700 text-xs font-bold transition"
-            >
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-amber-500" />
-                <span>Pilih Akun Demo ({DEMO_ACCOUNTS.length} Role Akses Terpadu)</span>
-              </div>
-              <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                <span>{isDemoPanelOpen ? 'Tutup' : 'Lihat'}</span>
-                {isDemoPanelOpen ? (
-                  <ChevronUp className="w-4 h-4" />
-                ) : (
-                  <ChevronDown className="w-4 h-4" />
-                )}
-              </div>
-            </button>
-
-            {isDemoPanelOpen && (
-              <div className="mt-3 space-y-1.5 max-h-64 overflow-y-auto pr-1">
-                {DEMO_ACCOUNTS.map((acc, idx) => {
-                  const Icon = roleIcons[acc.role] || ShieldCheck;
-                  const isCurrent = email.toLowerCase() === acc.email.toLowerCase();
-
-                  return (
-                    <button
-                      key={acc.id}
-                      type="button"
-                      onClick={() => handleSelectDemoAccount(acc)}
-                      className={`w-full text-left p-2.5 rounded-xl border transition flex items-center justify-between gap-3 ${
-                        isCurrent
-                          ? 'bg-emerald-50 border-emerald-300 text-emerald-900 shadow-2xs'
-                          : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className={`p-1.5 rounded-lg shrink-0 ${
-                          isCurrent ? 'bg-emerald-600 text-white shadow-2xs' : 'bg-slate-100 text-slate-500'
-                        }`}>
-                          <Icon className="w-3.5 h-3.5" />
-                        </div>
-                        <div className="truncate">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold truncate">
-                              {acc.roleName}
-                            </span>
-                            <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-slate-100 text-slate-500">
-                              Role {idx + 1}
-                            </span>
-                          </div>
-                          <div className="text-[10px] text-slate-500 font-mono truncate">
-                            {acc.email} • pass: <span className="text-emerald-700 font-semibold">{acc.password}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="shrink-0">
-                        {isCurrent ? (
-                          <span className="flex items-center gap-1 text-[10px] text-emerald-700 font-bold bg-emerald-100/90 px-2.5 py-0.5 rounded-full border border-emerald-300">
-                            <Check className="w-3 h-3" />
-                            Dipilih
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-md font-semibold transition">
-                            Gunakan
-                          </span>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-center">
+              <p className="text-[11px] text-slate-500 font-medium">
+                Sistem dilindungi autentikasi terenkripsi. Silakan masukkan kredensial resmi akun Anda untuk mengakses portal.
+              </p>
+            </div>
           </div>
 
           {/* Footer Copyright */}

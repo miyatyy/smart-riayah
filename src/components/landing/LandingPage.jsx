@@ -391,7 +391,7 @@ export default function LandingPage() {
                 Portal Akses Pengguna (8 Hak Akses Role)
               </h2>
               <p className="text-slate-500 text-xs sm:text-sm mt-1 max-w-xl">
-                Klik salah satu kartu role di bawah ini untuk langsung masuk ke Halaman Login dengan kredensial yang disesuaikan.
+                Sistem Smart Ri'ayah mendukung 8 hak akses terstruktur dengan pembagian wewenang yang aman dan terpadu.
               </p>
             </div>
 
@@ -411,7 +411,7 @@ export default function LandingPage() {
               return (
                 <div
                   key={r.id}
-                  onClick={() => navigateTo('login', r.id)}
+                  onClick={() => navigateTo('login')}
                   className={`bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-sm cursor-pointer transition-all duration-200 ${r.hoverBorder} flex flex-col justify-between group`}
                 >
                   {/* Top Bar of Card */}
@@ -439,7 +439,7 @@ export default function LandingPage() {
 
                   {/* Bottom Action */}
                   <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-emerald-700 group-hover:text-emerald-800 transition">
-                    <span>Masuk ke Dashboard Role Ini</span>
+                    <span>Masuk ke Portal Login</span>
                     <ArrowRight className="w-3.5 h-3.5 transform group-hover:translate-x-1 transition" />
                   </div>
                 </div>
